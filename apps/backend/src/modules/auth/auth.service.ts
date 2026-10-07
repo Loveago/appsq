@@ -1,16 +1,52 @@
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, OnModuleInit, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
+
+  async onModuleInit() {
+    await this.seedDefaultAdmin();
+  }
+
+  async seedDefaultAdmin() {
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@mindora.ai';
+    const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@Mindora2026!';
+    try {
+      const existing = await this.prisma.user.findUnique({ where: { email: adminEmail } });
+      const passwordHash = await bcrypt.hash(adminPassword, 10);
+
+      if (!existing) {
+        await this.prisma.user.create({
+          data: {
+            email: adminEmail,
+            passwordHash,
+            fullName: 'Mindora Super Admin',
+            role: 'SUPERADMIN',
+            subscriptionTier: 'PRO',
+          },
+        });
+        this.logger.log(`Created default Super Admin user: ${adminEmail}`);
+      } else if (existing.role !== 'SUPERADMIN' && existing.role !== 'ADMIN') {
+        await this.prisma.user.update({
+          where: { email: adminEmail },
+          data: { role: 'SUPERADMIN', subscriptionTier: 'PRO' },
+        });
+        this.logger.log(`Promoted user ${adminEmail} to SUPERADMIN`);
+      }
+    } catch (err: any) {
+      this.logger.warn(`Could not seed default admin: ${err.message}`);
+    }
+  }
 
   async register(email: string, password: string, fullName?: string) {
     if (!email || !password) {
