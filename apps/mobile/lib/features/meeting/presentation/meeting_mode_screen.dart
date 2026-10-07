@@ -26,6 +26,8 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
   bool _isPaused = false;
   int _bookmarkCount = 0;
   bool _isSynthesizing = false;
+  String _liveTranscript = '';
+  String? _recordedAudioPath;
 
   @override
   void initState() {
@@ -48,7 +50,15 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
       _animController.value = 0.5;
     }
 
-    AudioRecordingService.instance.startRecording();
+    AudioRecordingService.instance.startRecording(
+      onWords: (words) {
+        if (mounted && words.isNotEmpty) {
+          setState(() {
+            _liveTranscript = words;
+          });
+        }
+      },
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
         ProviderScope.containerOf(context, listen: false).read(adSuppressionProvider.notifier).state = true;
@@ -84,6 +94,8 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
         actionItems: [
           {'assignee': 'Self', 'task': 'Follow up on meeting items'},
         ],
+        transcript: _liveTranscript.isNotEmpty ? _liveTranscript : 'Recorded meeting follow up.',
+        audioPath: null,
       );
       return;
     }
@@ -92,8 +104,11 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
       _isSynthesizing = true;
     });
 
-    await AudioRecordingService.instance.stopRecording();
-    final meetingTranscript = 'Recorded meeting session lasting $durationStr with $_bookmarkCount key bookmarked timestamps.';
+    final audioPath = await AudioRecordingService.instance.stopRecording();
+    _recordedAudioPath = audioPath;
+    final meetingTranscript = _liveTranscript.trim().isNotEmpty
+        ? _liveTranscript.trim()
+        : 'Recorded meeting session lasting $durationStr with $_bookmarkCount key bookmarked timestamps.';
 
     // Call live distillation engine
     final distillation = await ApiClient.instance.distillMeeting(meetingTranscript);
@@ -126,6 +141,8 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
         summary: summary,
         decisions: decisions,
         actionItems: actionItems,
+        transcript: meetingTranscript,
+        audioPath: _recordedAudioPath,
       );
     }
   }
@@ -136,6 +153,8 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
     required String summary,
     required List<String> decisions,
     required List<Map<String, String>> actionItems,
+    String? transcript,
+    String? audioPath,
   }) {
     showModalBottomSheet(
       context: context,
@@ -252,10 +271,21 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                         try {
                           final container = ProviderScope.containerOf(context, listen: false);
                           final taskTitles = actionItems.map((e) => e['task'] ?? '').where((t) => t.isNotEmpty).toList();
+                          final fullContent = StringBuffer();
+                          fullContent.writeln(summary);
+                          if (decisions.isNotEmpty) {
+                            fullContent.writeln('\nKey Decisions:');
+                            for (final d in decisions) {
+                              fullContent.writeln('• $d');
+                            }
+                          }
+                          if (transcript != null && transcript.isNotEmpty) {
+                            fullContent.writeln('\nFull Transcript:\n$transcript');
+                          }
                           final note = NoteModel(
                             id: DateTime.now().millisecondsSinceEpoch.toString(),
                             title: 'Meeting Notes ($duration)',
-                            content: '$summary\n\nDecisions:\n${decisions.map((d) => '• $d').join('\n')}',
+                            content: fullContent.toString(),
                             snippet: summary.length > 80 ? '${summary.substring(0, 80)}...' : summary,
                             date: 'Just now',
                             category: 'Meetings',
@@ -263,6 +293,7 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                             tagColor: AppColors.emerald,
                             icon: NoteModel.iconForCategory('Meetings'),
                             extractedTasks: taskTitles,
+                            audioPath: audioPath,
                           );
                           container.read(notesProvider.notifier).addNote(note);
                           if (taskTitles.isNotEmpty) {
@@ -707,13 +738,16 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                     Text(
                       _isSynthesizing
                           ? 'Synthesizing key decisions, owner assignments, and action items with AI...'
-                          : (_secondsElapsed > 0
-                              ? 'Recording in progress ($_secondsElapsed s). Tap "End & Synthesize" to distill executive notes and action items.'
-                              : 'Listening to meeting discussion... Speak clearly or place device in the room.'),
-                      style: const TextStyle(
-                        color: AppColors.darkTextPrimary,
+                          : (_liveTranscript.isNotEmpty
+                              ? _liveTranscript
+                              : (_secondsElapsed > 0
+                                  ? 'Recording in progress ($_secondsElapsed s). Speak naturally; real-time words will stream here...'
+                                  : 'Listening to meeting discussion... Speak clearly or place device in the room.')),
+                      style: TextStyle(
+                        color: _liveTranscript.isNotEmpty ? Colors.white : AppColors.darkTextPrimary,
                         fontSize: 13,
                         height: 1.45,
+                        fontStyle: _liveTranscript.isEmpty ? FontStyle.italic : FontStyle.normal,
                       ),
                     ),
                   ],

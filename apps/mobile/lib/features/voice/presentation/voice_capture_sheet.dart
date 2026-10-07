@@ -18,6 +18,7 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
   bool _isRecording = true;
   bool _isProcessing = false;
   String _transcript = '';
+  String? _audioPath;
   List<String> _detectedTasks = [];
   String _detectedDue = 'Today';
   String _suggestedTitle = 'Voice Memo';
@@ -30,8 +31,16 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
 
-    // Start physical or virtual recording pipeline
-    AudioRecordingService.instance.startRecording();
+    // Start physical or virtual recording pipeline with live speech recognition
+    AudioRecordingService.instance.startRecording(
+      onWords: (words) {
+        if (mounted && words.isNotEmpty) {
+          setState(() {
+            _transcript = words;
+          });
+        }
+      },
+    );
 
     // Suppress ads during audio recording
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -67,6 +76,7 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
     });
 
     final audioPath = await AudioRecordingService.instance.stopRecording();
+    _audioPath = audioPath;
     final res = await ApiClient.instance.transcribeAudio(audioPath ?? '');
     if (mounted) {
       setState(() {
@@ -111,6 +121,7 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
       tagColor: AppColors.electricViolet,
       icon: Icons.mic_rounded,
       extractedTasks: _detectedTasks,
+      audioPath: _audioPath,
     );
     ref.read(notesProvider.notifier).addNote(note);
 

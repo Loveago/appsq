@@ -203,7 +203,7 @@ void main() {
     });
 
     test('NoteModel serializes and deserializes imagePaths properly', () {
-      final note = NoteModel(
+      const note = NoteModel(
         id: '123',
         title: 'Image Note',
         content: 'Content',
@@ -222,6 +222,27 @@ void main() {
       final restored = NoteModel.fromJson(json);
       expect(restored.imagePaths.length, 2);
       expect(restored.imagePaths.first, '/path/to/img1.png');
+    });
+
+    test('NoteModel serializes and deserializes audioPath properly', () {
+      const note = NoteModel(
+        id: 'voice-1',
+        title: 'Voice Note',
+        content: 'Transcribed text',
+        snippet: 'Transcribed text snippet',
+        date: 'Today',
+        category: 'Meetings',
+        tag: 'AUDIO',
+        tagColor: Colors.purple,
+        icon: Icons.mic_rounded,
+        audioPath: '/data/user/0/app/rec_123.m4a',
+      );
+
+      final json = note.toJson();
+      expect(json['audioPath'], '/data/user/0/app/rec_123.m4a');
+
+      final restored = NoteModel.fromJson(json);
+      expect(restored.audioPath, '/data/user/0/app/rec_123.m4a');
     });
   });
 }

@@ -16,6 +16,7 @@ class NoteEditorScreen extends StatelessWidget {
   final String tag;
   final Color tagColor;
   final List<String> initialImagePaths;
+  final String? initialAudioPath;
 
   const NoteEditorScreen({
     super.key,
@@ -25,6 +26,7 @@ class NoteEditorScreen extends StatelessWidget {
     this.tag = 'NOTE',
     this.tagColor = AppColors.primary,
     this.initialImagePaths = const [],
+    this.initialAudioPath,
   });
 
   @override
@@ -38,6 +40,7 @@ class NoteEditorScreen extends StatelessWidget {
         tag: tag,
         tagColor: tagColor,
         initialImagePaths: initialImagePaths,
+        initialAudioPath: initialAudioPath,
       );
     } catch (_) {
       return ProviderScope(
@@ -48,6 +51,7 @@ class NoteEditorScreen extends StatelessWidget {
           tag: tag,
           tagColor: tagColor,
           initialImagePaths: initialImagePaths,
+          initialAudioPath: initialAudioPath,
         ),
       );
     }
@@ -61,6 +65,7 @@ class _NoteEditorScreenView extends ConsumerStatefulWidget {
   final String tag;
   final Color tagColor;
   final List<String> initialImagePaths;
+  final String? initialAudioPath;
 
   const _NoteEditorScreenView({
     required this.noteId,
@@ -69,6 +74,7 @@ class _NoteEditorScreenView extends ConsumerStatefulWidget {
     required this.tag,
     required this.tagColor,
     this.initialImagePaths = const [],
+    this.initialAudioPath,
   });
 
   @override
@@ -79,6 +85,7 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
   late TextEditingController _titleController;
   late TextEditingController _contentController;
   late List<String> _imagePaths;
+  String? _audioPath;
   bool _isProcessingAi = false;
   String? _aiFeedbackMessage;
 
@@ -88,16 +95,22 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
     _titleController = TextEditingController(text: widget.initialTitle);
     _contentController = TextEditingController(text: widget.initialContent);
     _imagePaths = List<String>.from(widget.initialImagePaths);
+    _audioPath = widget.initialAudioPath;
 
-    // If opening an existing note from store, ensure imagePaths is populated if not explicitly provided
-    if (_imagePaths.isEmpty && widget.noteId != 'new') {
+    // If opening an existing note from store, ensure imagePaths and audioPath are populated
+    if (widget.noteId != 'new') {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         try {
           final notes = ref.read(notesProvider);
           final existing = notes.where((n) => n.id == widget.noteId).firstOrNull;
-          if (existing != null && existing.imagePaths.isNotEmpty && mounted) {
+          if (existing != null && mounted) {
             setState(() {
-              _imagePaths = List<String>.from(existing.imagePaths);
+              if (_imagePaths.isEmpty && existing.imagePaths.isNotEmpty) {
+                _imagePaths = List<String>.from(existing.imagePaths);
+              }
+              if (_audioPath == null && existing.audioPath != null) {
+                _audioPath = existing.audioPath;
+              }
             });
           }
         } catch (_) {}
@@ -162,6 +175,7 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
           content: content,
           snippet: snippet,
           imagePaths: _imagePaths,
+          audioPath: _audioPath,
         );
         ref.read(notesProvider.notifier).updateNote(updated);
       } else {
@@ -176,6 +190,7 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
           tagColor: widget.tagColor,
           icon: NoteModel.iconForCategory('Ideas'),
           imagePaths: _imagePaths,
+          audioPath: _audioPath,
         );
         ref.read(notesProvider.notifier).addNote(newNote);
       }
@@ -508,6 +523,68 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
                               ],
                             );
                           },
+                        ),
+                      ),
+                    ],
+
+                    // Voice Note Player Banner (if note has recorded audio)
+                    if (_audioPath != null && _audioPath!.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF161F2E) : const Color(0xFFEEF2FF),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: AppColors.primary.withValues(alpha: 0.35),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 16),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Audio Recording Attached',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Original voice audio preserved • Ready for replay or re-transcription',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded, size: 14),
+                              tooltip: 'Detach Audio',
+                              onPressed: () {
+                                setState(() {
+                                  _audioPath = null;
+                                });
+                                _saveNote();
+                              },
+                            ),
+                          ],
                         ),
                       ),
                     ],

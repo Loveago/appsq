@@ -15,6 +15,7 @@ class NoteModel {
   final List<String> extractedPeople;
   final List<String> extractedTasks;
   final List<String> imagePaths;
+  final String? audioPath;
 
   const NoteModel({
     required this.id,
@@ -31,6 +32,7 @@ class NoteModel {
     this.extractedPeople = const [],
     this.extractedTasks = const [],
     this.imagePaths = const [],
+    this.audioPath,
   });
 
   NoteModel copyWith({
@@ -48,6 +50,7 @@ class NoteModel {
     List<String>? extractedPeople,
     List<String>? extractedTasks,
     List<String>? imagePaths,
+    String? audioPath,
   }) {
     return NoteModel(
       id: id ?? this.id,
@@ -64,6 +67,7 @@ class NoteModel {
       extractedPeople: extractedPeople ?? this.extractedPeople,
       extractedTasks: extractedTasks ?? this.extractedTasks,
       imagePaths: imagePaths ?? this.imagePaths,
+      audioPath: audioPath ?? this.audioPath,
     );
   }
 
@@ -82,6 +86,7 @@ class NoteModel {
       'extractedPeople': extractedPeople,
       'extractedTasks': extractedTasks,
       'imagePaths': imagePaths,
+      'audioPath': audioPath,
     };
   }
 
@@ -117,6 +122,7 @@ class NoteModel {
       extractedPeople: (json['extractedPeople'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
       extractedTasks: (json['extractedTasks'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
       imagePaths: (json['imagePaths'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      audioPath: json['audioPath'] as String?,
     );
   }
 }
