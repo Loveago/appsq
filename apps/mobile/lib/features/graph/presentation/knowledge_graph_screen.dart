@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/providers/app_state_providers.dart';
+import '../../../../core/models/note_model.dart';
+import '../../../../core/models/task_model.dart';
 import '../../notes/presentation/note_editor_screen.dart';
 
 class GraphNode {
@@ -46,68 +49,81 @@ class _KnowledgeGraphScreenState extends ConsumerState<KnowledgeGraphScreen> {
   GraphNode? _selectedNode;
   String _selectedFilter = 'all'; // 'all', 'person', 'project', 'note', 'task'
 
-  final List<GraphNode> _nodes = const [
-    GraphNode(
-      id: 'n1',
-      label: 'John (Client)',
-      type: 'person',
-      color: AppColors.amber,
-      position: Offset(180, 80),
-      noteId: '2',
-    ),
-    GraphNode(
-      id: 'n2',
-      label: 'Website Project',
-      type: 'project',
-      color: AppColors.primary,
-      position: Offset(180, 180),
-      noteId: '2',
-    ),
-    GraphNode(
-      id: 'n3',
-      label: 'Payment Integration',
-      type: 'task',
-      color: AppColors.emerald,
-      position: Offset(70, 290),
-      noteId: '1',
-    ),
-    GraphNode(
-      id: 'n4',
-      label: 'Launch September',
-      type: 'topic',
-      color: AppColors.electricViolet,
-      position: Offset(290, 290),
-      noteId: '2',
-    ),
-    GraphNode(
-      id: 'n5',
-      label: 'Stripe Webhooks',
-      type: 'note',
-      color: Color(0xFF06B6D4),
-      position: Offset(60, 400),
-      noteId: '1',
-    ),
-    GraphNode(
-      id: 'n6',
-      label: 'Logo Assets',
-      type: 'task',
-      color: AppColors.amber,
-      position: Offset(300, 400),
-      noteId: '2',
-    ),
-  ];
+  ({List<GraphNode> nodes, List<GraphEdge> edges}) _buildGraphData(List<NoteModel> notes, List<TaskModel> tasks) {
+    if (notes.isEmpty && tasks.isEmpty) {
+      return (
+        nodes: const <GraphNode>[],
+        edges: const <GraphEdge>[],
+      );
+    }
 
-  final List<GraphEdge> _edges = const [
-    GraphEdge(fromId: 'n1', toId: 'n2', relationship: 'leads'),
-    GraphEdge(fromId: 'n2', toId: 'n3', relationship: 'requires'),
-    GraphEdge(fromId: 'n2', toId: 'n4', relationship: 'milestone'),
-    GraphEdge(fromId: 'n3', toId: 'n5', relationship: 'implements'),
-    GraphEdge(fromId: 'n1', toId: 'n6', relationship: 'delivers'),
-  ];
+    final nodes = <GraphNode>[];
+    final edges = <GraphEdge>[];
+    final positions = [
+      const Offset(180, 80),
+      const Offset(180, 180),
+      const Offset(70, 290),
+      const Offset(290, 290),
+      const Offset(60, 400),
+      const Offset(300, 400),
+      const Offset(180, 340),
+      const Offset(120, 230),
+      const Offset(240, 230),
+    ];
+
+    int posIndex = 0;
+    for (int i = 0; i < notes.length && i < 5; i++) {
+      final note = notes[i];
+      final pos = positions[posIndex % positions.length];
+      posIndex++;
+      nodes.add(
+        GraphNode(
+          id: 'note_${note.id}',
+          label: note.title.length > 20 ? '${note.title.substring(0, 17)}...' : note.title,
+          type: 'note',
+          color: note.tagColor,
+          position: pos,
+          noteId: note.id,
+        ),
+      );
+    }
+
+    for (int i = 0; i < tasks.length && i < 4; i++) {
+      final task = tasks[i];
+      final pos = positions[posIndex % positions.length];
+      posIndex++;
+      nodes.add(
+        GraphNode(
+          id: 'task_${task.id}',
+          label: task.title.length > 20 ? '${task.title.substring(0, 17)}...' : task.title,
+          type: 'task',
+          color: task.isCompleted ? AppColors.emerald : AppColors.amber,
+          position: pos,
+        ),
+      );
+    }
+
+    for (int i = 0; i < nodes.length - 1; i++) {
+      edges.add(
+        GraphEdge(
+          fromId: nodes[i].id,
+          toId: nodes[i + 1].id,
+          relationship: i.isEven ? 'relates' : 'references',
+        ),
+      );
+    }
+
+    return (nodes: nodes, edges: edges);
+  }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final notes = ref.watch(notesProvider);
+    final tasks = ref.watch(tasksProvider);
+    final graphData = _buildGraphData(notes, tasks);
+    final currentNodes = graphData.nodes;
+    final currentEdges = graphData.edges;
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.background,
@@ -182,7 +198,7 @@ class _KnowledgeGraphScreenState extends ConsumerState<KnowledgeGraphScreen> {
                   ],
                 ),
                 Text(
-                  '${_nodes.length} entities • ${_edges.length} neural links',
+                  '${currentNodes.length} entities • ${currentEdges.length} neural links',
                   style: TextStyle(
                     fontSize: 10,
                     color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
@@ -236,7 +252,7 @@ class _KnowledgeGraphScreenState extends ConsumerState<KnowledgeGraphScreen> {
               onTapUp: (details) {
                 final tapPos = details.localPosition;
                 GraphNode? tapped;
-                for (final node in _nodes) {
+                for (final node in currentNodes) {
                   final dist = (node.position - tapPos).distance;
                   if (dist < 40) {
                     tapped = node;
@@ -247,8 +263,8 @@ class _KnowledgeGraphScreenState extends ConsumerState<KnowledgeGraphScreen> {
               },
               child: CustomPaint(
                 painter: _GraphPainter(
-                  nodes: _nodes,
-                  edges: _edges,
+                  nodes: currentNodes,
+                  edges: currentEdges,
                   selectedNode: _selectedNode,
                   filter: _selectedFilter,
                   isDark: isDark,

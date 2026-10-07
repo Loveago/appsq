@@ -4,6 +4,7 @@ import '../models/task_model.dart';
 import '../models/project_model.dart';
 import '../models/smart_list_model.dart';
 import '../storage/local_storage_service.dart';
+import '../network/api_client.dart';
 
 // User Profile & Subscription State
 class UserProfileState {
@@ -157,6 +158,11 @@ class NotesNotifier extends StateNotifier<List<NoteModel>> {
   void addNote(NoteModel note) {
     state = [note, ...state];
     LocalStorageService.instance.saveNotes(state);
+    ApiClient.instance.createNote(
+      title: note.title,
+      content: note.content,
+      projectId: note.projectId,
+    ).catchError((_) => null);
   }
 
   void updateNote(NoteModel updatedNote) {
@@ -165,11 +171,18 @@ class NotesNotifier extends StateNotifier<List<NoteModel>> {
         if (n.id == updatedNote.id) updatedNote else n,
     ];
     LocalStorageService.instance.saveNotes(state);
+    ApiClient.instance.updateNote(
+      updatedNote.id,
+      title: updatedNote.title,
+      content: updatedNote.content,
+      isPinned: updatedNote.isPinned,
+    ).catchError((_) => false);
   }
 
   void deleteNote(String id) {
     state = state.where((n) => n.id != id).toList();
     LocalStorageService.instance.saveNotes(state);
+    ApiClient.instance.deleteNote(id).catchError((_) => false);
   }
 
   void togglePin(String id) {
@@ -178,6 +191,10 @@ class NotesNotifier extends StateNotifier<List<NoteModel>> {
         if (n.id == id) n.copyWith(isPinned: !n.isPinned) else n,
     ];
     LocalStorageService.instance.saveNotes(state);
+    final target = state.where((n) => n.id == id).firstOrNull;
+    if (target != null) {
+      ApiClient.instance.updateNote(id, isPinned: target.isPinned).catchError((_) => false);
+    }
   }
 }
 
@@ -197,6 +214,12 @@ class TasksNotifier extends StateNotifier<List<TaskModel>> {
   void addTask(TaskModel task) {
     state = [task, ...state];
     LocalStorageService.instance.saveTasks(state);
+    ApiClient.instance.createTask(
+      title: task.title,
+      priority: task.priority.toUpperCase(),
+      dueTimeStr: task.dueTime,
+      projectId: task.project,
+    ).catchError((_) => null);
   }
 
   void toggleTask(String id) {
@@ -205,15 +228,24 @@ class TasksNotifier extends StateNotifier<List<TaskModel>> {
         if (t.id == id) t.copyWith(isCompleted: !t.isCompleted) else t,
     ];
     LocalStorageService.instance.saveTasks(state);
+    ApiClient.instance.toggleTask(id).catchError((_) => false);
   }
 
   void deleteTask(String id) {
     state = state.where((t) => t.id != id).toList();
     LocalStorageService.instance.saveTasks(state);
+    ApiClient.instance.deleteTask(id).catchError((_) => false);
   }
 
   void addExtractedTasks(List<String> titles, {String project = 'Quick Capture', String? sourceNote}) {
     final newTasks = titles.map((title) {
+      ApiClient.instance.createTask(
+        title: title,
+        priority: 'HIGH',
+        dueTimeStr: 'Tomorrow',
+        projectId: project,
+      ).catchError((_) => null);
+
       return TaskModel(
         id: DateTime.now().millisecondsSinceEpoch.toString() + title.hashCode.toString(),
         title: title,

@@ -29,13 +29,7 @@ export class MeetingsService {
       return meeting;
     } catch (err) {
       if (err instanceof NotFoundException) throw err;
-      return {
-        id,
-        userId,
-        title: 'Meeting with John',
-        status: 'COMPLETED',
-        summary: 'Met John today about the website.',
-      };
+      throw new NotFoundException('Meeting not found');
     }
   }
 

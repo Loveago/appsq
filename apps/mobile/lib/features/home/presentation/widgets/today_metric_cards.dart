@@ -97,7 +97,7 @@ class TodayMetricCards extends StatelessWidget {
                     context,
                     countDisplay: '45m',
                     label: 'Audio',
-                    status: 'John Sync',
+                    status: 'Live Audio',
                     icon: Icons.graphic_eq_rounded,
                     isDark: isDark,
                     onTap: onTapAudio,

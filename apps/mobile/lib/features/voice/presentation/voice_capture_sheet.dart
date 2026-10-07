@@ -5,6 +5,7 @@ import '../../../../core/models/note_model.dart';
 import '../../../../core/providers/app_state_providers.dart';
 import '../../../../core/services/audio_service.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/widgets/audio_playback_bar.dart';
 
 class VoiceCaptureSheet extends ConsumerStatefulWidget {
   const VoiceCaptureSheet({super.key});
@@ -296,6 +297,14 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
               style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextMuted : AppColors.textMuted),
             ),
           ] else ...[
+            // Recorded Audio Playback Bar
+            if (_audioPath != null && _audioPath!.isNotEmpty) ...[
+              AudioPlaybackBar(
+                audioPath: _audioPath!,
+                title: 'Review Voice Recording',
+              ),
+              const SizedBox(height: 14),
+            ],
             // Extracted Results Card
             Container(
               padding: const EdgeInsets.all(16),

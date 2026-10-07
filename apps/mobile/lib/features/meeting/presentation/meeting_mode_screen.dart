@@ -9,6 +9,7 @@ import '../../../../core/models/note_model.dart';
 import '../../../../core/providers/app_state_providers.dart';
 import '../../../../core/services/audio_service.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/widgets/audio_playback_bar.dart';
 
 class MeetingModeScreen extends StatefulWidget {
   final VoidCallback? onStopRecording;
@@ -211,6 +212,13 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                       ),
                     ],
                   ),
+                  if (audioPath != null && audioPath.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    AudioPlaybackBar(
+                      audioPath: audioPath,
+                      title: 'Meeting Recording ($duration)',
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   const Text(
                     'EXECUTIVE DECISIONS',

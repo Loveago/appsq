@@ -124,6 +124,129 @@ class ApiClient {
     }
   }
 
+  /// Live Notes REST APIs
+  Future<List<Map<String, dynamic>>> fetchNotes() async {
+    try {
+      final response = await _dio.get('/notes');
+      if (response.statusCode == 200 && response.data is List) {
+        return (response.data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<Map<String, dynamic>?> createNote({
+    required String title,
+    required String content,
+    String? projectId,
+  }) async {
+    try {
+      final response = await _dio.post('/notes', data: {
+        'title': title,
+        'content': content,
+        if (projectId != null) 'projectId': projectId,
+      });
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<bool> updateNote(String id, {String? title, String? content, bool? isPinned}) async {
+    try {
+      final response = await _dio.put('/notes/$id', data: {
+        if (title != null) 'title': title,
+        if (content != null) 'content': content,
+        if (isPinned != null) 'isPinned': isPinned,
+      });
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> deleteNote(String id) async {
+    try {
+      final response = await _dio.delete('/notes/$id');
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Live Tasks REST APIs
+  Future<List<Map<String, dynamic>>> fetchTasks() async {
+    try {
+      final response = await _dio.get('/tasks');
+      if (response.statusCode == 200 && response.data is List) {
+        return (response.data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<Map<String, dynamic>?> createTask({
+    required String title,
+    String? description,
+    String priority = 'MEDIUM',
+    String? dueDate,
+    String? dueTimeStr,
+    String? projectId,
+  }) async {
+    try {
+      final response = await _dio.post('/tasks', data: {
+        'title': title,
+        if (description != null) 'description': description,
+        'priority': priority,
+        if (dueDate != null) 'dueDate': dueDate,
+        if (dueTimeStr != null) 'dueTimeStr': dueTimeStr,
+        if (projectId != null) 'projectId': projectId,
+      });
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<bool> toggleTask(String id) async {
+    try {
+      final response = await _dio.put('/tasks/$id/toggle');
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> deleteTask(String id) async {
+    try {
+      final response = await _dio.delete('/tasks/$id');
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Live Meeting APIs
+  Future<Map<String, dynamic>?> createMeeting({
+    required String title,
+    required String transcript,
+    int durationSec = 0,
+  }) async {
+    try {
+      final response = await _dio.post('/meetings', data: {
+        'title': title,
+        'transcript': transcript,
+        'durationSec': durationSec,
+      });
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// AI Context Extraction with offline fallback
   Future<Map<String, dynamic>> extractContext(String content, {bool isPro = false}) async {
     try {

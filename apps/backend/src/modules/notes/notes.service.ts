@@ -37,16 +37,7 @@ export class NotesService {
       return note;
     } catch (err) {
       if (err instanceof NotFoundException) throw err;
-      return {
-        id,
-        userId,
-        title: 'Product Architecture & LLM Routing',
-        content: 'Dynamic model fallback and offline Drift SQLite synchronization.',
-        isPinned: false,
-        isArchived: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
+      throw new NotFoundException('Note not found');
     }
   }
 

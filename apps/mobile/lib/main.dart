@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/app_colors.dart';
+import 'core/models/note_model.dart';
+import 'core/models/task_model.dart';
 import 'features/home/presentation/home_screen.dart';
 import 'features/auth/presentation/auth_screen.dart';
 import 'features/ai_assistant/presentation/ask_notes_screen.dart';
@@ -88,7 +91,53 @@ class _MindoraAppState extends ConsumerState<MindoraApp> {
       if (widget.initialProjects != null && widget.initialProjects is List) {
         ref.read(projectsProvider.notifier).setProjects(widget.initialProjects);
       }
+
+      // Sync latest data from backend if authenticated
+      if (ApiClient.instance.authToken.isNotEmpty) {
+        _syncWithBackend();
+      }
     });
+  }
+
+  Future<void> _syncWithBackend() async {
+    try {
+      final remoteNotes = await ApiClient.instance.fetchNotes();
+      if (remoteNotes.isNotEmpty && mounted) {
+        final parsedNotes = remoteNotes.map<NoteModel>((n) {
+          return NoteModel(
+            id: n['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+            title: n['title']?.toString() ?? 'Note',
+            content: n['content']?.toString() ?? '',
+            snippet: (n['summary'] != null && n['summary'].toString().isNotEmpty)
+                ? n['summary'].toString()
+                : (n['content']?.toString() ?? ''),
+            date: 'Synced',
+            category: 'Ideas',
+            tag: 'SYNCED',
+            tagColor: AppColors.primary,
+            icon: NoteModel.iconForCategory('Ideas'),
+            isPinned: n['isPinned'] == true,
+          );
+        }).toList();
+        ref.read(notesProvider.notifier).setNotes(parsedNotes);
+      }
+
+      final remoteTasks = await ApiClient.instance.fetchTasks();
+      if (remoteTasks.isNotEmpty && mounted) {
+        final parsedTasks = remoteTasks.map<TaskModel>((t) {
+          return TaskModel(
+            id: t['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+            title: t['title']?.toString() ?? 'Task',
+            priority: (t['priority']?.toString() ?? 'medium').toLowerCase(),
+            isCompleted: t['isCompleted'] == true,
+            dueTime: t['dueDate']?.toString() ?? 'Today',
+            project: t['projectId']?.toString() ?? 'Workspace',
+            isAiExtracted: false,
+          );
+        }).toList();
+        ref.read(tasksProvider.notifier).setTasks(parsedTasks);
+      }
+    } catch (_) {}
   }
 
   @override

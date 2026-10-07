@@ -7,6 +7,7 @@ import '../../../../core/widgets/fade_slide_in.dart';
 import '../../../../core/models/note_model.dart';
 import '../../../../core/providers/app_state_providers.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/widgets/audio_playback_bar.dart';
 import 'ai_extract_sheet.dart';
 
 class NoteEditorScreen extends StatelessWidget {
@@ -527,65 +528,18 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
                       ),
                     ],
 
-                    // Voice Note Player Banner (if note has recorded audio)
+                    // Voice Note Player (if note has recorded audio)
                     if (_audioPath != null && _audioPath!.isNotEmpty) ...[
                       const SizedBox(height: 14),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF161F2E) : const Color(0xFFEEF2FF),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: AppColors.primary.withValues(alpha: 0.35),
-                            width: 0.8,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 16),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Audio Recording Attached',
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Original voice audio preserved • Ready for replay or re-transcription',
-                                    style: TextStyle(
-                                      fontSize: 10.5,
-                                      color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close_rounded, size: 14),
-                              tooltip: 'Detach Audio',
-                              onPressed: () {
-                                setState(() {
-                                  _audioPath = null;
-                                });
-                                _saveNote();
-                              },
-                            ),
-                          ],
-                        ),
+                      AudioPlaybackBar(
+                        audioPath: _audioPath!,
+                        title: 'Attached Audio Note',
+                        onRemove: () {
+                          setState(() {
+                            _audioPath = null;
+                          });
+                          _saveNote();
+                        },
                       ),
                     ],
 
