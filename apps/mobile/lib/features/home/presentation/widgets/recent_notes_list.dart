@@ -181,6 +181,20 @@ class _RecentNotesListView extends ConsumerWidget {
                                                 color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
                                               ),
                                             ],
+                                            if (note.audioPath != null && note.audioPath!.isNotEmpty) ...[
+                                              Text(
+                                                ' · ',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                                                ),
+                                              ),
+                                              const Icon(
+                                                Icons.mic_rounded,
+                                                size: 11,
+                                                color: AppColors.electricViolet,
+                                              ),
+                                            ],
                                             Text(
                                               ' · ',
                                               style: TextStyle(

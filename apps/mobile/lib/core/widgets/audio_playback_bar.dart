@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../theme/app_colors.dart';
@@ -34,7 +35,26 @@ class _AudioPlaybackBarState extends State<AudioPlaybackBar> {
   void initState() {
     super.initState();
     _player = AudioPlayer();
+    _player.setReleaseMode(ReleaseMode.stop);
     _initAudioListeners();
+    _loadInitialDuration();
+  }
+
+  void _loadInitialDuration() {
+    try {
+      if (widget.audioPath.isNotEmpty && !widget.audioPath.startsWith('http')) {
+        final f = File(widget.audioPath);
+        if (f.existsSync()) {
+          _player.setSource(DeviceFileSource(widget.audioPath)).then((_) {
+            _player.getDuration().then((dur) {
+              if (dur != null && mounted) {
+                setState(() => _duration = dur);
+              }
+            });
+          }).catchError((_) {});
+        }
+      }
+    } catch (_) {}
   }
 
   void _initAudioListeners() {
@@ -82,8 +102,21 @@ class _AudioPlaybackBarState extends State<AudioPlaybackBar> {
           if (widget.audioPath.startsWith('http://') || widget.audioPath.startsWith('https://')) {
             source = UrlSource(widget.audioPath);
           } else {
+            final f = File(widget.audioPath);
+            if (!f.existsSync()) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Audio file is not present on this device.'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+              return;
+            }
             source = DeviceFileSource(widget.audioPath);
           }
+          await _player.stop();
           await _player.play(source);
         }
       }

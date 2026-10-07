@@ -33,6 +33,7 @@ import {
   UserX,
   CreditCard,
   Zap,
+  Mic,
 } from 'lucide-react';
 import { adminFetch, getAdminToken, setAdminToken, clearAdminToken } from '../lib/api';
 
@@ -86,6 +87,12 @@ export default function AdminDashboard() {
   const [testingProviderId, setTestingProviderId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ id: string; success: boolean; message: string } | null>(null);
 
+  // AssemblyAI Settings State
+  const [assemblyAiKey, setAssemblyAiKey] = useState<string>('');
+  const [isTestingAssemblyAi, setIsTestingAssemblyAi] = useState(false);
+  const [isSavingAssemblyAi, setIsSavingAssemblyAi] = useState(false);
+  const [assemblyAiTestResult, setAssemblyAiTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
   const [featureFlags, setFeatureFlags] = useState<any[]>([]);
   const [systemSettings, setSystemSettings] = useState<Record<string, any>>({});
   const [announcements, setAnnouncements] = useState<any[]>([]);
@@ -132,8 +139,16 @@ export default function AdminDashboard() {
       if (m) setMetrics(m);
       if (u?.users) setUsersList(u.users);
       if (Array.isArray(p)) setAiProviders(p);
+      if (s) {
+        setSystemSettings(s);
+        if (s.assemblyai_api_key) {
+          const val = typeof s.assemblyai_api_key === 'string'
+            ? s.assemblyai_api_key
+            : s.assemblyai_api_key?.key || '';
+          setAssemblyAiKey(val);
+        }
+      }
       if (Array.isArray(f)) setFeatureFlags(f);
-      if (s) setSystemSettings(s);
       if (Array.isArray(a)) setAnnouncements(a);
       if (l?.logs) setAuditLogs(l.logs);
       if (Array.isArray(e)) setSystemErrors(e);
@@ -304,6 +319,48 @@ export default function AdminDashboard() {
       refreshData();
     } catch (err: any) {
       setErrorMsg(err.message);
+    }
+  };
+
+  const handleTestAssemblyAi = async () => {
+    setIsTestingAssemblyAi(true);
+    setAssemblyAiTestResult(null);
+    try {
+      const res = await adminFetch('/admin/ai/assemblyai/test', {
+        method: 'POST',
+        body: JSON.stringify({ apiKey: assemblyAiKey || undefined }),
+      });
+      setAssemblyAiTestResult({ success: res.success, message: res.message });
+      if (res.success) {
+        showToast('AssemblyAI Universal-3.5 Pro test passed!');
+      }
+    } catch (err: any) {
+      setAssemblyAiTestResult({ success: false, message: err.message || 'Connection test failed' });
+    } finally {
+      setIsTestingAssemblyAi(false);
+    }
+  };
+
+  const handleSaveAssemblyAiKey = async () => {
+    if (!assemblyAiKey.trim()) {
+      alert('Please enter a valid AssemblyAI API key');
+      return;
+    }
+    setIsSavingAssemblyAi(true);
+    try {
+      await adminFetch('/admin/settings/assemblyai_api_key', {
+        method: 'PUT',
+        body: JSON.stringify({
+          value: assemblyAiKey.trim(),
+          description: 'AssemblyAI Universal-3.5 Pro API key for audio transcription',
+        }),
+      });
+      showToast('AssemblyAI API key saved & activated globally');
+      refreshData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to save AssemblyAI key');
+    } finally {
+      setIsSavingAssemblyAi(false);
     }
   };
 
@@ -886,6 +943,87 @@ export default function AdminDashboard() {
                   <Plus className="w-3.5 h-3.5" />
                   Add New Provider
                 </button>
+              </div>
+
+              {/* AssemblyAI Universal-3.5 Pro Speech Engine Card */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-purple-950/80 border border-purple-800 text-purple-400">
+                      <Mic className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-bold text-white">AssemblyAI Audio Transcription Engine</h3>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-800">
+                          universal-3-5-pro
+                        </span>
+                        {assemblyAiKey ? (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800">
+                            CONFIGURED
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-950 text-amber-400 border border-amber-800">
+                            KEY REQUIRED
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        Powers mobile Instant Voice Capture, audio note playback, and executive meeting diarization.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+                  <div className="md:col-span-2">
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
+                      AssemblyAI API Key (Saved in System Settings)
+                    </label>
+                    <div className="relative">
+                      <Key className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                      <input
+                        type="text"
+                        value={assemblyAiKey}
+                        onChange={(e) => setAssemblyAiKey(e.target.value)}
+                        placeholder="e.g. 984d5db83ae34999a30d75b879b66c80"
+                        className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <button
+                      type="button"
+                      onClick={handleTestAssemblyAi}
+                      disabled={isTestingAssemblyAi}
+                      className="flex-1 py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border border-slate-700 disabled:opacity-50"
+                    >
+                      <Play className={`w-3.5 h-3.5 ${isTestingAssemblyAi ? 'animate-spin' : ''}`} />
+                      <span>{isTestingAssemblyAi ? 'Testing...' : 'Test Key'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveAssemblyAiKey}
+                      disabled={isSavingAssemblyAi}
+                      className="flex-1 py-2 px-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-md shadow-purple-600/20 disabled:opacity-50"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>{isSavingAssemblyAi ? 'Saving...' : 'Save & Activate'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {assemblyAiTestResult && (
+                  <div
+                    className={`p-3 rounded-xl text-xs border ${
+                      assemblyAiTestResult.success
+                        ? 'bg-emerald-950/70 border-emerald-800 text-emerald-300'
+                        : 'bg-red-950/70 border-red-800 text-red-300'
+                    }`}
+                  >
+                    {assemblyAiTestResult.message}
+                  </div>
+                )}
               </div>
 
               {/* Provider List */}

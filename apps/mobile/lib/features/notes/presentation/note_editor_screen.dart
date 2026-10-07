@@ -8,6 +8,7 @@ import '../../../../core/models/note_model.dart';
 import '../../../../core/providers/app_state_providers.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/widgets/audio_playback_bar.dart';
+import '../../../../core/services/audio_service.dart';
 import 'ai_extract_sheet.dart';
 
 class NoteEditorScreen extends StatelessWidget {
@@ -159,6 +160,27 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
       });
       _saveNote();
     }
+  }
+
+  void _recordVoiceNote() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _NoteVoiceRecorderSheet(
+        onAudioRecorded: (path, transcript) {
+          setState(() {
+            _audioPath = path;
+            if (_contentController.text.trim().isEmpty) {
+              _contentController.text = transcript;
+            } else if (transcript.isNotEmpty && !_contentController.text.contains(transcript)) {
+              _contentController.text = '${_contentController.text.trim()}\n\n$transcript';
+            }
+          });
+          _saveNote();
+        },
+      ),
+    );
   }
 
   void _saveNote() {
@@ -609,6 +631,39 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
                             ),
                           ),
                         ),
+                        if (_audioPath == null || _audioPath!.isEmpty) ...[
+                          const SizedBox(width: 8),
+                          InkWell(
+                            onTap: _recordVoiceNote,
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isDark ? AppColors.darkSurfaceSubtle : AppColors.surfaceSubtle,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: AppColors.electricViolet.withValues(alpha: 0.4),
+                                  width: 0.6,
+                                ),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.mic_rounded, size: 14, color: AppColors.electricViolet),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'Add Voice',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.electricViolet,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
 
@@ -802,3 +857,175 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
     );
   }
 }
+
+class _NoteVoiceRecorderSheet extends StatefulWidget {
+  final void Function(String audioPath, String transcript) onAudioRecorded;
+
+  const _NoteVoiceRecorderSheet({required this.onAudioRecorded});
+
+  @override
+  State<_NoteVoiceRecorderSheet> createState() => _NoteVoiceRecorderSheetState();
+}
+
+class _NoteVoiceRecorderSheetState extends State<_NoteVoiceRecorderSheet> with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+  bool _isRecording = true;
+  String _liveText = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+
+    AudioRecordingService.instance.startRecording(
+      onWords: (words) {
+        if (mounted && words.isNotEmpty) {
+          setState(() => _liveText = words);
+        }
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    AudioRecordingService.instance.stopRecording();
+    super.dispose();
+  }
+
+  Future<void> _stopAndFinish() async {
+    setState(() {
+      _isRecording = false;
+    });
+
+    final audioPath = await AudioRecordingService.instance.stopRecording();
+    String finalTranscript = _liveText;
+
+    if (audioPath != null && audioPath.isNotEmpty) {
+      try {
+        final res = await ApiClient.instance.transcribeAudio(audioPath);
+        if (res['transcript'] != null && res['transcript'].toString().isNotEmpty) {
+          finalTranscript = res['transcript'].toString();
+        }
+      } catch (_) {}
+    }
+
+    if (mounted) {
+      Navigator.pop(context);
+      widget.onAudioRecorded(audioPath ?? '', finalTranscript);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(22, 16, 22, 34),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF11141C) : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        border: Border.all(
+          color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+          width: 0.8,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.mic_rounded, size: 18, color: AppColors.electricViolet),
+                  SizedBox(width: 8),
+                  Text(
+                    'Record Audio Note',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded, size: 18),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          if (_isRecording) ...[
+            AnimatedBuilder(
+              animation: _pulseController,
+              builder: (context, child) {
+                final scale = 1.0 + (_pulseController.value * 0.15);
+                return Transform.scale(
+                  scale: scale,
+                  child: Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.electricViolet.withValues(alpha: 0.15 + (_pulseController.value * 0.1)),
+                      border: Border.all(
+                        color: AppColors.electricViolet.withValues(alpha: 0.5),
+                        width: 2,
+                      ),
+                    ),
+                    child: const Icon(Icons.mic_rounded, size: 34, color: AppColors.electricViolet),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 14),
+            Text(
+              _liveText.isNotEmpty ? '"$_liveText"' : 'Listening... Speak your thought',
+              style: TextStyle(
+                fontSize: 13,
+                fontStyle: FontStyle.italic,
+                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _stopAndFinish,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF43F5E),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.stop_rounded, size: 16, color: Colors.white),
+                  SizedBox(width: 6),
+                  Text('Stop & Attach Audio', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
+                ],
+              ),
+            ),
+          ] else ...[
+            const CircularProgressIndicator(color: AppColors.primary),
+            const SizedBox(height: 14),
+            Text(
+              'Transcribing audio with AssemblyAI...',
+              style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextMuted : AppColors.textMuted),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+

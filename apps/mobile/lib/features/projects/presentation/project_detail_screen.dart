@@ -279,6 +279,8 @@ class ProjectDetailScreen extends ConsumerWidget {
                       initialContent: note.content,
                       tag: note.tag,
                       tagColor: note.tagColor,
+                      initialImagePaths: note.imagePaths,
+                      initialAudioPath: note.audioPath,
                     ),
                   ),
                 );

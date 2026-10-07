@@ -298,6 +298,7 @@ class _NotesScreenViewState extends ConsumerState<_NotesScreenView> {
                   tag: note.tag,
                   tagColor: tagColor,
                   initialImagePaths: note.imagePaths,
+                  initialAudioPath: note.audioPath,
                 ),
               ),
             );
@@ -363,6 +364,31 @@ class _NotesScreenViewState extends ConsumerState<_NotesScreenView> {
                                   Text(
                                     '${note.imagePaths.length}',
                                     style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: isDark ? AppColors.darkTextMuted : AppColors.textMuted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (note.audioPath != null && note.audioPath!.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: AppColors.electricViolet.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.mic_rounded, size: 10, color: AppColors.electricViolet),
+                                  SizedBox(width: 3),
+                                  Text(
+                                    'VOICE',
+                                    style: TextStyle(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.electricViolet,
+                                    ),
                                   ),
                                 ],
                               ),

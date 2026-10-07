@@ -637,6 +637,52 @@ export class AdminService {
     return { success: true };
   }
 
+  async testAssemblyAi(customKey?: string) {
+    let key = customKey?.trim();
+    if (!key) {
+      const setting = await this.prisma.systemSetting.findUnique({
+        where: { key: 'assemblyai_api_key' },
+      });
+      if (setting && setting.value) {
+        key = typeof setting.value === 'string' ? setting.value.trim() : (setting.value as any)?.key?.toString()?.trim();
+      }
+    }
+    if (!key) {
+      key = process.env.ASSEMBLYAI_API_KEY;
+    }
+    if (!key) {
+      throw new BadRequestException('No AssemblyAI API key configured or provided');
+    }
+
+    const startTime = Date.now();
+    try {
+      const res = await fetch('https://api.assemblyai.com/v2/transcript?limit=1', {
+        headers: { Authorization: key },
+      });
+      const latencyMs = Date.now() - startTime;
+      if (res.ok) {
+        return {
+          success: true,
+          latencyMs,
+          message: `AssemblyAI Universal-3.5 Pro verified operational (${latencyMs}ms)`,
+        };
+      } else {
+        const text = await res.text();
+        return {
+          success: false,
+          latencyMs,
+          message: `AssemblyAI rejected key (HTTP ${res.status}): ${text}`,
+        };
+      }
+    } catch (err: any) {
+      return {
+        success: false,
+        latencyMs: Date.now() - startTime,
+        message: `Failed to connect to AssemblyAI: ${err.message || err}`,
+      };
+    }
+  }
+
   // ==========================================
   // 4. FEATURE FLAGS & ADS MANAGEMENT
   // ==========================================

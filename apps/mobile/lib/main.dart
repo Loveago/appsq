@@ -162,27 +162,38 @@ class _MindoraAppState extends ConsumerState<MindoraApp> {
     try {
       final remoteNotes = await ApiClient.instance.fetchNotes();
       if (remoteNotes.isNotEmpty && mounted) {
-        final parsedNotes = <NoteModel>[];
+        final currentNotes = ref.read(notesProvider);
+        final notesMap = <String, NoteModel>{for (final note in currentNotes) note.id: note};
+
         for (final n in remoteNotes) {
-          try {
-            parsedNotes.add(NoteModel(
-              id: n['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
-              title: n['title']?.toString() ?? 'Note',
-              content: n['content']?.toString() ?? '',
-              snippet: (n['summary'] != null && n['summary'].toString().isNotEmpty)
-                  ? n['summary'].toString()
-                  : (n['content']?.toString() ?? ''),
-              date: 'Synced',
-              category: 'Ideas',
-              tag: 'SYNCED',
-              tagColor: AppColors.primary,
-              icon: NoteModel.iconForCategory('Ideas'),
-              isPinned: n['isPinned'] == true,
-            ));
-          } catch (_) {}
+          final id = n['id']?.toString();
+          if (id == null) continue;
+          final existing = notesMap[id];
+          final category = (n['category']?.toString()) ?? existing?.category ?? 'Ideas';
+          final tag = (n['tag']?.toString()) ?? existing?.tag ?? 'NOTE';
+
+          notesMap[id] = NoteModel(
+            id: id,
+            title: n['title']?.toString() ?? existing?.title ?? 'Note',
+            content: n['content']?.toString() ?? existing?.content ?? '',
+            snippet: (n['summary'] != null && n['summary'].toString().isNotEmpty)
+                ? n['summary'].toString()
+                : (existing?.snippet ?? (n['content']?.toString() ?? '')),
+            date: existing?.date ?? 'Synced',
+            category: category,
+            tag: tag,
+            tagColor: existing?.tagColor ?? AppColors.primary,
+            icon: NoteModel.iconForCategory(category),
+            isPinned: n['isPinned'] == true || (existing?.isPinned ?? false),
+            imagePaths: existing?.imagePaths ?? const [],
+            audioPath: existing?.audioPath, // Preserve local audio recording path
+            extractedTasks: existing?.extractedTasks ?? const [],
+            extractedPeople: existing?.extractedPeople ?? const [],
+          );
         }
-        if (parsedNotes.isNotEmpty && mounted) {
-          ref.read(notesProvider.notifier).setNotes(parsedNotes);
+
+        if (notesMap.isNotEmpty && mounted) {
+          ref.read(notesProvider.notifier).setNotes(notesMap.values.toList());
         }
       }
 

@@ -687,10 +687,39 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
     };
   }
 
-  async transcribeWithAssemblyAI(audioBuffer?: Buffer, audioUrl?: string): Promise<string> {
-    const apiKey =
+  async getAssemblyAiKey(): Promise<string | null> {
+    try {
+      const setting = await this.prisma.systemSetting.findUnique({
+        where: { key: 'assemblyai_api_key' },
+      });
+      if (setting && setting.value) {
+        if (typeof setting.value === 'string' && setting.value.trim().length > 0) {
+          return setting.value.trim();
+        }
+        if (typeof setting.value === 'object' && (setting.value as any).key) {
+          return (setting.value as any).key.toString().trim();
+        }
+      }
+    } catch (_) {}
+
+    try {
+      const prov = await this.prisma.aiProviderConfig.findUnique({
+        where: { name: 'AssemblyAI' },
+      });
+      if (prov && prov.apiKeyEncrypted && prov.apiKeyEncrypted.trim().length > 0) {
+        return prov.apiKeyEncrypted.trim();
+      }
+    } catch (_) {}
+
+    return (
       this.configService.get<string>('ASSEMBLYAI_API_KEY') ||
-      process.env.ASSEMBLYAI_API_KEY;
+      process.env.ASSEMBLYAI_API_KEY ||
+      null
+    );
+  }
+
+  async transcribeWithAssemblyAI(audioBuffer?: Buffer, audioUrl?: string): Promise<string> {
+    const apiKey = await this.getAssemblyAiKey();
 
     if (!apiKey) {
       throw new Error('ASSEMBLYAI_API_KEY is not configured in environment or database.');
@@ -731,7 +760,7 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
       },
       body: JSON.stringify({
         audio_url: finalAudioUrl,
-        speech_model: 'universal-3-5-pro',
+        speech_models: ['universal-3-5-pro', 'universal-2'],
         punctuate: true,
         format_text: true,
       }),

@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:dio/dio.dart';
 import '../models/note_model.dart';
@@ -382,7 +384,7 @@ class ApiClient {
 
     try {
       dynamic data;
-      if (audioPath.isNotEmpty) {
+      if (audioPath.isNotEmpty && !kIsWeb && File(audioPath).existsSync()) {
         data = FormData.fromMap({
           'file': await MultipartFile.fromFile(
             audioPath,
@@ -402,7 +404,9 @@ class ApiClient {
       if (response.statusCode == 200 || response.statusCode == 201) {
         return Map<String, dynamic>.from(response.data as Map);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('ApiClient transcribeAudio error notice: $e');
+    }
 
     final raw = (transcriptText != null && transcriptText.trim().isNotEmpty)
         ? transcriptText.trim()

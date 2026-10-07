@@ -336,13 +336,19 @@ class _KnowledgeGraphScreenState extends ConsumerState<KnowledgeGraphScreen> {
                     if (_selectedNode!.noteId != null)
                       ElevatedButton(
                         onPressed: () {
+                          final notes = ref.read(notesProvider);
+                          final matchedNote = notes.where((n) => n.id == _selectedNode!.noteId).firstOrNull;
                           Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (context) => NoteEditorScreen(
                                 noteId: _selectedNode!.noteId!,
-                                initialTitle: _selectedNode!.label,
-                                initialContent: 'Extracted entity connected to knowledge graph.',
+                                initialTitle: matchedNote?.title ?? _selectedNode!.label,
+                                initialContent: matchedNote?.content ?? 'Extracted entity connected to knowledge graph.',
+                                tag: matchedNote?.tag ?? 'NOTE',
+                                tagColor: matchedNote?.tagColor ?? AppColors.primary,
+                                initialImagePaths: matchedNote?.imagePaths ?? const [],
+                                initialAudioPath: matchedNote?.audioPath,
                               ),
                             ),
                           );

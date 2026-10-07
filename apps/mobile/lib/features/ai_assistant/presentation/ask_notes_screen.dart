@@ -972,6 +972,8 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                                 initialContent: match.content,
                                 tag: match.tag,
                                 tagColor: match.tagColor,
+                                initialImagePaths: match.imagePaths,
+                                initialAudioPath: match.audioPath,
                               ),
                             ),
                           );
@@ -1066,6 +1068,8 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                         initialContent: match.content,
                         tag: match.tag,
                         tagColor: match.tagColor,
+                        initialImagePaths: match.imagePaths,
+                        initialAudioPath: match.audioPath,
                       ),
                     ),
                   );

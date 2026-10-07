@@ -114,6 +114,11 @@ export class AdminController {
     return this.adminService.deleteAiProvider(req.user, providerId);
   }
 
+  @Post('ai/assemblyai/test')
+  async testAssemblyAi(@Body('apiKey') apiKey?: string) {
+    return this.adminService.testAssemblyAi(apiKey);
+  }
+
   // 4. FEATURE FLAGS
   @Get('features')
   async getFeatureFlags() {
