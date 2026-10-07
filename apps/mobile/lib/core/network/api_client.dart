@@ -17,8 +17,8 @@ class ApiClient {
     _dio = Dio(
       BaseOptions(
         baseUrl: _currentBaseUrl,
-        connectTimeout: const Duration(seconds: 8),
-        receiveTimeout: const Duration(seconds: 12),
+        connectTimeout: const Duration(seconds: 20),
+        receiveTimeout: const Duration(seconds: 60),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -297,7 +297,9 @@ class ApiClient {
       if (response.statusCode == 200 || response.statusCode == 201) {
         return Map<String, dynamic>.from(response.data as Map);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('ApiClient chat error: $e');
+    }
 
     // Fallback to offline intelligent assistant with natural action detection
     return _fallbackChatWithAssistant(message, conversationId, localNotes ?? []);
