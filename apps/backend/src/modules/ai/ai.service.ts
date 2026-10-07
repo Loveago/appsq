@@ -245,6 +245,58 @@ Return ONLY valid JSON without markdown formatting or codeblocks.`;
     return `TL;DR: ${sentences.slice(0, 2).join('. ')}.`;
   }
 
+  async rewriteNote(content: string, style: string = 'professional', userId?: string): Promise<string> {
+    if (userId) {
+      await this.checkAndTrackQuota(userId, 400);
+    }
+
+    if (this.openaiClient) {
+      try {
+        let styleInstruction = 'Rewrite the following text with improved clarity, structure, and professional tone.';
+        if (style === 'concise') {
+          styleInstruction = 'Rewrite the following text to be concise, punchy, and eliminate all fluff.';
+        } else if (style === 'checklist') {
+          styleInstruction = 'Convert the key actionable points in the following text into a clean Markdown checklist with - [ ] items.';
+        } else if (style === 'email') {
+          styleInstruction = 'Transform the following note content into a well-crafted executive email draft with subject line and sign-off.';
+        } else if (style === 'executive') {
+          styleInstruction = 'Elevate the following note into high-level executive communication with clear strategic implications.';
+        }
+
+        const completion = await this.openaiClient.chat.completions.create({
+          model: this.defaultModel,
+          messages: [
+            {
+              role: 'system',
+              content: `You are Mindora AI, an elite second brain assistant. ${styleInstruction}`,
+            },
+            {
+              role: 'user',
+              content,
+            },
+          ],
+          temperature: 0.4,
+          max_tokens: 600,
+        });
+
+        const rewritten = completion.choices[0]?.message?.content?.trim();
+        if (rewritten) return rewritten;
+      } catch (err) {
+        console.warn('LLM rewrite failed, falling back:', err);
+      }
+    }
+
+    // Fallback transformations
+    if (style === 'checklist') {
+      const lines = content.split('\n').filter((l) => l.trim().length > 0);
+      return lines.map((l) => `- [ ] ${l.replace(/^[-*•\d.]\s*/, '')}`).join('\n');
+    }
+    if (style === 'email') {
+      return `Subject: Note Overview & Updates\n\nHi Team,\n\nHere is the latest update:\n\n${content}\n\nBest regards,\nExecutive Team`;
+    }
+    return `Structured Overview:\n\n${content}`;
+  }
+
   async distillMeeting(transcript: string, userId?: string): Promise<MeetingDistillationResult> {
     if (userId) {
       await this.checkAndTrackQuota(userId, 1500);

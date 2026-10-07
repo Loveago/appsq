@@ -297,6 +297,7 @@ class _NotesScreenViewState extends ConsumerState<_NotesScreenView> {
                   initialContent: note.content,
                   tag: note.tag,
                   tagColor: tagColor,
+                  initialImagePaths: note.imagePaths,
                 ),
               ),
             );
@@ -346,6 +347,27 @@ class _NotesScreenViewState extends ConsumerState<_NotesScreenView> {
                               ),
                             ),
                           ),
+                          if (note.imagePaths.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: isDark ? AppColors.darkSurfaceSubtle : AppColors.surfaceSubtle,
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.image_outlined, size: 10, color: isDark ? AppColors.darkTextMuted : AppColors.textMuted),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    '${note.imagePaths.length}',
+                                    style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: isDark ? AppColors.darkTextMuted : AppColors.textMuted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                           const Spacer(),
                           Text(
                             note.date,

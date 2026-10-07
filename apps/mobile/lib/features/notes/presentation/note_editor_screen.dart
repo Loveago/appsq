@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/fade_slide_in.dart';
 import '../../../../core/models/note_model.dart';
@@ -13,15 +15,16 @@ class NoteEditorScreen extends StatelessWidget {
   final String initialContent;
   final String tag;
   final Color tagColor;
+  final List<String> initialImagePaths;
 
   const NoteEditorScreen({
     super.key,
-    this.noteId = '1',
-    this.initialTitle = 'Product Architecture & LLM Routing',
-    this.initialContent =
-        'Dynamic model fallback, token latency budgets & latency telemetry.\n\nKey decisions:\n1. Route fast queries to Groq / Llama 3 for sub-200ms latency.\n2. Complex vector reasoning routes to Anthropic Claude 3.5 Sonnet.\n3. Offline mobile cache will synchronize via SQLite Drift.\n\nNext steps: finalize database indexes and verify pgvector similarity performance.',
-    this.tag = 'SYSTEM',
+    this.noteId = 'new',
+    this.initialTitle = '',
+    this.initialContent = '',
+    this.tag = 'NOTE',
     this.tagColor = AppColors.primary,
+    this.initialImagePaths = const [],
   });
 
   @override
@@ -34,6 +37,7 @@ class NoteEditorScreen extends StatelessWidget {
         initialContent: initialContent,
         tag: tag,
         tagColor: tagColor,
+        initialImagePaths: initialImagePaths,
       );
     } catch (_) {
       return ProviderScope(
@@ -43,6 +47,7 @@ class NoteEditorScreen extends StatelessWidget {
           initialContent: initialContent,
           tag: tag,
           tagColor: tagColor,
+          initialImagePaths: initialImagePaths,
         ),
       );
     }
@@ -55,6 +60,7 @@ class _NoteEditorScreenView extends ConsumerStatefulWidget {
   final String initialContent;
   final String tag;
   final Color tagColor;
+  final List<String> initialImagePaths;
 
   const _NoteEditorScreenView({
     required this.noteId,
@@ -62,6 +68,7 @@ class _NoteEditorScreenView extends ConsumerStatefulWidget {
     required this.initialContent,
     required this.tag,
     required this.tagColor,
+    this.initialImagePaths = const [],
   });
 
   @override
@@ -71,6 +78,7 @@ class _NoteEditorScreenView extends ConsumerStatefulWidget {
 class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
   late TextEditingController _titleController;
   late TextEditingController _contentController;
+  late List<String> _imagePaths;
   bool _isProcessingAi = false;
   String? _aiFeedbackMessage;
 
@@ -79,6 +87,22 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
     super.initState();
     _titleController = TextEditingController(text: widget.initialTitle);
     _contentController = TextEditingController(text: widget.initialContent);
+    _imagePaths = List<String>.from(widget.initialImagePaths);
+
+    // If opening an existing note from store, ensure imagePaths is populated if not explicitly provided
+    if (_imagePaths.isEmpty && widget.noteId != 'new') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          final notes = ref.read(notesProvider);
+          final existing = notes.where((n) => n.id == widget.noteId).firstOrNull;
+          if (existing != null && existing.imagePaths.isNotEmpty && mounted) {
+            setState(() {
+              _imagePaths = List<String>.from(existing.imagePaths);
+            });
+          }
+        } catch (_) {}
+      });
+    }
 
     // Ad suppression guardrail: strictly never show ads while typing / editing
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -95,6 +119,34 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
     super.dispose();
   }
 
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: source, imageQuality: 85);
+      if (picked != null) {
+        setState(() {
+          _imagePaths.add(picked.path);
+        });
+        _saveNote();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not access image: $e')),
+        );
+      }
+    }
+  }
+
+  void _removeImage(int index) {
+    if (index >= 0 && index < _imagePaths.length) {
+      setState(() {
+        _imagePaths.removeAt(index);
+      });
+      _saveNote();
+    }
+  }
+
   void _saveNote() {
     final title = _titleController.text.trim().isEmpty ? 'Untitled Note' : _titleController.text.trim();
     final content = _contentController.text;
@@ -109,6 +161,7 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
           title: title,
           content: content,
           snippet: snippet,
+          imagePaths: _imagePaths,
         );
         ref.read(notesProvider.notifier).updateNote(updated);
       } else {
@@ -122,6 +175,7 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
           tag: widget.tag,
           tagColor: widget.tagColor,
           icon: NoteModel.iconForCategory('Ideas'),
+          imagePaths: _imagePaths,
         );
         ref.read(notesProvider.notifier).addNote(newNote);
       }
@@ -136,6 +190,7 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
         backgroundColor: Colors.transparent,
         builder: (context) => AiExtractSheet(
           rawThought: _contentController.text,
+          imagePath: _imagePaths.isNotEmpty ? _imagePaths.first : null,
         ),
       );
       return;
@@ -156,30 +211,78 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
       return;
     }
 
-    await Future.delayed(const Duration(milliseconds: 600));
+    if (action == 'extract_tasks_direct') {
+      try {
+        final res = await ApiClient.instance.extractContext(_contentController.text);
+        final tasksRaw = (res['tasks'] as List<dynamic>?) ?? [];
+        final titles = <String>[];
+        for (final t in tasksRaw) {
+          if (t is Map && t['title'] != null) {
+            titles.add(t['title'].toString());
+          } else if (t is String) {
+            titles.add(t);
+          }
+        }
+        if (titles.isNotEmpty) {
+          ref.read(tasksProvider.notifier).addExtractedTasks(
+            titles,
+            project: _titleController.text.isNotEmpty ? _titleController.text : 'Note Tasks',
+            sourceNote: _titleController.text,
+          );
+          if (!mounted) return;
+          setState(() {
+            _isProcessingAi = false;
+            _aiFeedbackMessage = 'Successfully extracted & added ${titles.length} tasks to your Tasks board!';
+          });
+          return;
+        }
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() {
+        _isProcessingAi = false;
+        _aiFeedbackMessage = 'No specific action items detected in this note.';
+      });
+      return;
+    }
+
+    if (action == 'rewrite' || action == 'professional' || action == 'checklist' || action == 'email') {
+      final style = action == 'professional' ? 'executive' : action;
+      final rewritten = await ApiClient.instance.rewriteNote(_contentController.text, style: style);
+      if (!mounted) return;
+      setState(() {
+        _contentController.text = rewritten;
+        _saveNote();
+        _isProcessingAi = false;
+        _aiFeedbackMessage = action == 'checklist'
+            ? 'Action checklist generated from note.'
+            : (action == 'email'
+                ? 'Drafted executive email from note.'
+                : 'Note polished with improved executive clarity.');
+      });
+      return;
+    }
+
+    if (action == 'ask') {
+      try {
+        final notes = ref.read(notesProvider);
+        final res = await ApiClient.instance.askNotes('Analyze and provide key takeaways: ${_contentController.text}', notes);
+        final ans = res['answer']?.toString() ?? 'Note analyzed with key strategic takeaways identified.';
+        if (!mounted) return;
+        setState(() {
+          _isProcessingAi = false;
+          _aiFeedbackMessage = ans;
+        });
+        return;
+      } catch (_) {}
+    }
+
+    await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
 
     setState(() {
       _isProcessingAi = false;
       if (action == 'context') {
-        _aiFeedbackMessage = 'Detected entities: People [John, Emmanuel], Project [Delivery App], Deadline [Before Sep].';
-      } else if (action == 'rewrite') {
-        _contentController.text = 'Structured Overview:\n\n${_contentController.text}';
-        _saveNote();
-        _aiFeedbackMessage = 'Note rewritten with improved structure and clarity.';
-      } else if (action == 'professional') {
-        _aiFeedbackMessage = 'Note phrasing elevated to executive standard.';
-      } else if (action == 'checklist') {
-        _contentController.text += '\n\n✓ Finalize pgvector indexes\n✓ Measure sub-200ms roundtrip latency';
-        _saveNote();
-        _aiFeedbackMessage = 'Checklist generated from note content.';
-      } else if (action == 'email') {
-        _contentController.text =
-            'Subject: Update regarding ${_titleController.text}\n\nHi Team,\n\nPlease find the summary below:\n${_contentController.text}\n\nBest regards,\nEmmanuel';
-        _saveNote();
-        _aiFeedbackMessage = 'Drafted professional executive email from note.';
-      } else if (action == 'ask') {
-        _aiFeedbackMessage = 'AI Assistant: Note contains 2 high priority dependencies and 1 milestone target.';
+        _aiFeedbackMessage = 'Detected entities: People, Projects, and Deadlines mapped to neural graph.';
       }
     });
   }
@@ -342,6 +445,142 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
+                    // Images Gallery Strip
+                    if (_imagePaths.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        height: 94,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(),
+                          itemCount: _imagePaths.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 10),
+                          itemBuilder: (context, index) {
+                            final path = _imagePaths[index];
+                            final file = File(path);
+                            final exists = file.existsSync();
+                            return Stack(
+                              children: [
+                                Container(
+                                  width: 94,
+                                  height: 94,
+                                  decoration: BoxDecoration(
+                                    color: isDark ? AppColors.darkSurfaceSubtle : AppColors.surfaceSubtle,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: exists
+                                      ? Image.file(
+                                          file,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : Center(
+                                          child: Icon(
+                                            Icons.image_rounded,
+                                            size: 28,
+                                            color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                                          ),
+                                        ),
+                                ),
+                                Positioned(
+                                  top: 4,
+                                  right: 4,
+                                  child: GestureDetector(
+                                    onTap: () => _removeImage(index),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(3),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.black54,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.close_rounded,
+                                        size: 14,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 16),
+
+                    // Quick Media Attachment Affordance (Camera & Gallery)
+                    Row(
+                      children: [
+                        InkWell(
+                          onTap: () => _pickImage(ImageSource.gallery),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isDark ? AppColors.darkSurfaceSubtle : AppColors.surfaceSubtle,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                                width: 0.6,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.photo_library_outlined, size: 14, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Add Image',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: () => _pickImage(ImageSource.camera),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isDark ? AppColors.darkSurfaceSubtle : AppColors.surfaceSubtle,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                                width: 0.6,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.camera_alt_outlined, size: 14, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Take Photo',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
                     const SizedBox(height: 16),
 
                     // Content Input
@@ -418,6 +657,13 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
                           accent: AppColors.emerald,
                           isDark: isDark,
                           onTap: () => _triggerAiAction('extract'),
+                        ),
+                        _buildAiToolPill(
+                          icon: Icons.add_task_rounded,
+                          label: 'Quick Tasks Board',
+                          accent: AppColors.matrixEmerald,
+                          isDark: isDark,
+                          onTap: () => _triggerAiAction('extract_tasks_direct'),
                         ),
                         _buildAiToolPill(
                           icon: Icons.summarize_rounded,

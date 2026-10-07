@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/providers/app_state_providers.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/storage/local_storage_service.dart';
 import '../../../../main.dart';
 import '../../paywall/presentation/paywall_screen.dart';
 
@@ -571,6 +572,7 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                   onTap: () {
                     ApiClient.instance.setAuthToken('');
+                    LocalStorageService.instance.clearAuthToken();
                     ref.read(userProfileProvider.notifier).resetProfile();
                     ref.read(isAuthenticatedProvider.notifier).state = false;
                   },

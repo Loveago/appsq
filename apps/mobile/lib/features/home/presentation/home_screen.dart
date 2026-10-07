@@ -536,6 +536,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           initialContent: note.content,
                           tag: note.tag,
                           tagColor: note.tagColor,
+                          initialImagePaths: note.imagePaths,
                         ),
                       ),
                     );

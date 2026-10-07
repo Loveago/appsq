@@ -109,6 +109,7 @@ class _AiExtractSheetState extends ConsumerState<AiExtractSheet> {
         tagColor: widget.imagePath != null ? AppColors.matrixEmerald : AppColors.primary,
         icon: widget.imagePath != null ? Icons.document_scanner_rounded : Icons.auto_awesome_rounded,
         extractedTasks: selectedTasks,
+        imagePaths: widget.imagePath != null ? [widget.imagePath!] : const [],
       );
       ref.read(notesProvider.notifier).addNote(note);
 

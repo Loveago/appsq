@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:dio/dio.dart';
 import '../models/note_model.dart';
+import '../storage/local_storage_service.dart';
 
 class ApiClient {
   static const String defaultBaseUrl = String.fromEnvironment('API_URL', defaultValue: 'https://mindora-backend-jbxx.onrender.com');
@@ -48,6 +49,11 @@ class ApiClient {
 
   void setAuthToken(String token) {
     _authToken = token;
+    if (token.isNotEmpty) {
+      LocalStorageService.instance.saveAuthToken(token);
+    } else {
+      LocalStorageService.instance.clearAuthToken();
+    }
   }
 
   /// User Registration
@@ -148,6 +154,28 @@ class ApiClient {
     } catch (_) {}
 
     return _fallbackSummarize(content);
+  }
+
+  /// AI Note Rewrite / Polish with offline fallback
+  Future<String> rewriteNote(String content, {String style = 'professional'}) async {
+    try {
+      final response = await _dio.post(
+        '/ai/rewrite',
+        data: {'content': content, 'style': style},
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return (response.data as Map)['result'] as String;
+      }
+    } catch (_) {}
+
+    if (style == 'checklist') {
+      final lines = content.split('\n').where((l) => l.trim().isNotEmpty);
+      return lines.map((l) => '- [ ] ${l.replaceAll(RegExp(r'^[-*•\d.]\s*'), '')}').join('\n');
+    }
+    if (style == 'email') {
+      return 'Subject: Note Overview\n\nHi Team,\n\nHere is the latest update:\n\n$content\n\nBest regards,\nExecutive Team';
+    }
+    return 'Structured Overview:\n\n$content';
   }
 
   /// Ask Your Notes (RAG) with grounded fallback

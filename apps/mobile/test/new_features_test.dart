@@ -8,7 +8,9 @@ import 'package:mindora_mobile/features/briefing/presentation/daily_briefing_dia
 import 'package:mindora_mobile/features/voice/presentation/voice_capture_sheet.dart';
 import 'package:mindora_mobile/features/tasks/presentation/widgets/smart_lists_view.dart';
 import 'package:mindora_mobile/features/ads/presentation/native_ad_card.dart';
+import 'package:mindora_mobile/features/notes/presentation/note_editor_screen.dart';
 import 'package:mindora_mobile/core/models/project_model.dart';
+import 'package:mindora_mobile/core/models/note_model.dart';
 import 'package:mindora_mobile/core/providers/app_state_providers.dart';
 
 void main() {
@@ -174,6 +176,52 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Sponsored'), findsNothing);
+    });
+  });
+
+  group('Session & Note Image Attachment Tests', () {
+    testWidgets('NoteEditorScreen displays Add Image button and loads initialImagePaths', (tester) async {
+      tester.view.physicalSize = const Size(800, 1800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await tester.pumpWidget(
+        buildTestableWidget(
+          const NoteEditorScreen(
+            noteId: 'test-note-1',
+            initialTitle: 'Test Note with Media',
+            initialContent: 'Testing media attachment.',
+            initialImagePaths: ['/tmp/sample_photo.jpg'],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Add Image'), findsOneWidget);
+      expect(find.text('Take Photo'), findsOneWidget);
+      expect(find.text('Quick Tasks Board'), findsOneWidget);
+    });
+
+    test('NoteModel serializes and deserializes imagePaths properly', () {
+      final note = NoteModel(
+        id: '123',
+        title: 'Image Note',
+        content: 'Content',
+        snippet: 'Snippet',
+        date: 'Today',
+        category: 'Ideas',
+        tag: 'NOTE',
+        tagColor: Colors.blue,
+        icon: Icons.notes_rounded,
+        imagePaths: ['/path/to/img1.png', '/path/to/img2.jpg'],
+      );
+
+      final json = note.toJson();
+      expect(json['imagePaths'], ['/path/to/img1.png', '/path/to/img2.jpg']);
+
+      final restored = NoteModel.fromJson(json);
+      expect(restored.imagePaths.length, 2);
+      expect(restored.imagePaths.first, '/path/to/img1.png');
     });
   });
 }

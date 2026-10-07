@@ -12,11 +12,35 @@ class LocalStorageService {
   static const String _keyProjects = 'mindora_offline_projects';
   static const String _keySmartLists = 'mindora_offline_smart_lists';
   static const String _keyUserProfile = 'mindora_offline_user_profile';
+  static const String _keyAuthToken = 'mindora_auth_token';
 
   static LocalStorageService? _instance;
   static LocalStorageService get instance => _instance ??= LocalStorageService._();
 
   LocalStorageService._();
+
+  Future<void> saveAuthToken(String token) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyAuthToken, token);
+    } catch (_) {}
+  }
+
+  Future<String?> loadAuthToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_keyAuthToken);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> clearAuthToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_keyAuthToken);
+    } catch (_) {}
+  }
 
   Future<void> saveNotes(List<NoteModel> notes) async {
     try {

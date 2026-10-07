@@ -27,6 +27,16 @@ export class AiController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('rewrite')
+  async rewriteNote(
+    @Body('content') content: string,
+    @Body('style') style: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return { result: await this.aiService.rewriteNote(content, style || 'professional', userId) };
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('distill-meeting')
   async distillMeeting(
     @Body('transcript') transcript: string,
