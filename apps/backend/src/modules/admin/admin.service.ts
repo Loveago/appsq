@@ -117,7 +117,7 @@ export class AdminService {
           monthlyTokens,
           estimatedAiCost,
           activeProvidersCount: activeAiProviders.length,
-          primaryProvider: activeAiProviders[0]?.name || 'ModelFlare / OpenAI',
+          primaryProvider: activeAiProviders[0]?.name || 'OpenAI-Compatible Gateway',
         },
         product: {
           notes: totalNotes,
@@ -139,7 +139,7 @@ export class AdminService {
       return {
         users: { total: 1, pro: 1, free: 0, activeToday: 1, newThisWeek: 1, conversionRate: '100%' },
         revenue: { mrr: 4.99, arr: 59.88, proPrice: 4.99, currency: 'USD' },
-        ai: { monthlyTokens: 12000, estimatedAiCost: 0.05, activeProvidersCount: 1, primaryProvider: 'ModelFlare' },
+        ai: { monthlyTokens: 12000, estimatedAiCost: 0.05, activeProvidersCount: 1, primaryProvider: 'OpenAI-Compatible' },
         product: { notes: 12, meetings: 3, tasks: 8 },
         systemStatus: { api: 'OPERATIONAL', database: 'DEGRADED', aiGateway: 'OPERATIONAL', backgroundJobs: 'OPERATIONAL', storage: 'OPERATIONAL' },
         recentErrors: [],

@@ -25,23 +25,29 @@ export class AiService {
     private readonly configService: ConfigService,
   ) {
     const apiKey =
-      this.configService.get<string>('MODELFLARE_API_KEY') ||
+      this.configService.get<string>('AI_API_KEY') ||
       this.configService.get<string>('OPENAI_API_KEY') ||
-      process.env.MODELFLARE_API_KEY ||
-      process.env.OPENAI_API_KEY;
+      this.configService.get<string>('MODELFLARE_API_KEY') ||
+      process.env.AI_API_KEY ||
+      process.env.OPENAI_API_KEY ||
+      process.env.MODELFLARE_API_KEY;
 
     const baseURL =
-      this.configService.get<string>('MODELFLARE_BASE_URL') ||
+      this.configService.get<string>('AI_BASE_URL') ||
       this.configService.get<string>('OPENAI_BASE_URL') ||
-      process.env.MODELFLARE_BASE_URL ||
+      this.configService.get<string>('MODELFLARE_BASE_URL') ||
+      process.env.AI_BASE_URL ||
       process.env.OPENAI_BASE_URL ||
-      'https://api.modelflare.com/v1';
+      process.env.MODELFLARE_BASE_URL ||
+      'https://api.openai.com/v1';
 
     this.defaultModel =
-      this.configService.get<string>('MODELFLARE_MODEL') ||
+      this.configService.get<string>('AI_MODEL') ||
       this.configService.get<string>('OPENAI_MODEL') ||
-      process.env.MODELFLARE_MODEL ||
+      this.configService.get<string>('MODELFLARE_MODEL') ||
+      process.env.AI_MODEL ||
       process.env.OPENAI_MODEL ||
+      process.env.MODELFLARE_MODEL ||
       'gpt-4o-mini';
 
     if (apiKey && apiKey !== 'mock-key' && baseURL.startsWith('http')) {
@@ -81,17 +87,21 @@ export class AiService {
     // If client wasn't created in constructor or env changed, recreate dynamically from env
     if (!this.openaiClient) {
       const apiKey =
-        this.configService.get<string>('MODELFLARE_API_KEY') ||
+        this.configService.get<string>('AI_API_KEY') ||
         this.configService.get<string>('OPENAI_API_KEY') ||
-        process.env.MODELFLARE_API_KEY ||
-        process.env.OPENAI_API_KEY;
+        this.configService.get<string>('MODELFLARE_API_KEY') ||
+        process.env.AI_API_KEY ||
+        process.env.OPENAI_API_KEY ||
+        process.env.MODELFLARE_API_KEY;
 
       const baseURL =
-        this.configService.get<string>('MODELFLARE_BASE_URL') ||
+        this.configService.get<string>('AI_BASE_URL') ||
         this.configService.get<string>('OPENAI_BASE_URL') ||
-        process.env.MODELFLARE_BASE_URL ||
+        this.configService.get<string>('MODELFLARE_BASE_URL') ||
+        process.env.AI_BASE_URL ||
         process.env.OPENAI_BASE_URL ||
-        'https://api.modelflare.com/v1';
+        process.env.MODELFLARE_BASE_URL ||
+        'https://api.openai.com/v1';
 
       if (apiKey && apiKey !== 'mock-key' && baseURL.startsWith('http')) {
         try {
@@ -106,7 +116,7 @@ export class AiService {
     return {
       client: this.openaiClient,
       model: this.defaultModel,
-      providerName: this.openaiClient ? 'Environment (ModelFlare / OpenAI)' : 'Offline Local Fallback',
+      providerName: this.openaiClient ? 'OpenAI-Compatible Gateway (Environment)' : 'Offline Local Fallback',
     };
   }
 

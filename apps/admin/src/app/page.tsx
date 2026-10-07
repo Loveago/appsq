@@ -76,7 +76,7 @@ export default function AdminDashboard() {
     isEnabled: boolean;
   }>({
     name: '',
-    baseUrl: 'https://api.modelflare.com/v1',
+    baseUrl: '',
     apiKey: '',
     chatModel: 'gpt-4o-mini',
     priority: 1,
@@ -253,7 +253,7 @@ export default function AdminDashboard() {
       setIsEditingProvider(false);
       setProviderForm({
         name: '',
-        baseUrl: 'https://api.modelflare.com/v1',
+        baseUrl: '',
         apiKey: '',
         chatModel: 'gpt-4o-mini',
         priority: 1,
@@ -571,7 +571,7 @@ export default function AdminDashboard() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-xl text-slate-300 font-mono">
-                    Provider: {metrics?.ai?.primaryProvider || 'ModelFlare / OpenAI'}
+                    Provider: {metrics?.ai?.primaryProvider || 'OpenAI-Compatible Gateway'}
                   </span>
                 </div>
               </div>
@@ -962,7 +962,7 @@ export default function AdminDashboard() {
                   ))
                 ) : (
                   <div className="md:col-span-2 p-8 text-center text-xs text-slate-500 bg-slate-900/60 rounded-2xl border border-slate-800">
-                    No custom AI providers configured in DB yet. The backend is currently using environment defaults (MODELFLARE_BASE_URL / OPENAI_BASE_URL). Click "Add New Provider" above to add dynamic providers.
+                    No custom AI providers configured in DB yet. The backend is currently using environment defaults (AI_BASE_URL / OPENAI_BASE_URL). Click "Add New Provider" above to add dynamic providers.
                   </div>
                 )}
               </div>
@@ -984,7 +984,7 @@ export default function AdminDashboard() {
                           required
                           value={providerForm.name}
                           onChange={(e) => setProviderForm({ ...providerForm, name: e.target.value })}
-                          placeholder="ModelFlare / Groq / OpenRouter / Custom"
+                          placeholder="e.g. OpenAI / Groq / OpenRouter / Custom"
                           className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs focus:outline-none"
                         />
                       </div>
@@ -995,7 +995,7 @@ export default function AdminDashboard() {
                           required
                           value={providerForm.baseUrl}
                           onChange={(e) => setProviderForm({ ...providerForm, baseUrl: e.target.value })}
-                          placeholder="https://api.modelflare.com/v1"
+                          placeholder="https://api.openai.com/v1"
                           className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono focus:outline-none"
                         />
                       </div>
@@ -1308,7 +1308,7 @@ export default function AdminDashboard() {
                 <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl space-y-1">
                   <div className="text-[11px] text-slate-500 uppercase font-bold">AI Providers</div>
                   <div className="text-sm font-bold text-emerald-400 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4" /> ModelFlare / OpenAI Online
+                    <CheckCircle2 className="w-4 h-4" /> AI Gateway (OpenAI Compatible) Online
                   </div>
                 </div>
               </div>
