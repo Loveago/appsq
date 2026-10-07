@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -16,16 +18,22 @@ import 'core/network/api_client.dart';
 import 'core/storage/local_storage_service.dart';
 import 'core/providers/app_state_providers.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // Allow runtime fetching or fallback cleanly if offline
-  GoogleFonts.config.allowRuntimeFetching = true;
+    // Allow runtime fetching or fallback cleanly if offline
+    GoogleFonts.config.allowRuntimeFetching = true;
 
-  FlutterError.onError = (FlutterErrorDetails details) {
-    FlutterError.presentError(details);
-    debugPrint('Flutter uncaught error: ${details.exception}');
-  };
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.presentError(details);
+      debugPrint('Flutter uncaught error: ${details.exception}');
+    };
+
+    PlatformDispatcher.instance.onError = (error, stack) {
+      debugPrint('Platform uncaught error: $error\n$stack');
+      return true; // Handled, prevent app crash
+    };
 
   String? savedToken;
   UserProfileState? savedProfile;
@@ -73,21 +81,24 @@ void main() async {
     debugPrint('Error loading smart lists: $e');
   }
 
-  runApp(
-    ProviderScope(
-      overrides: [
-        if (savedToken != null && savedToken.isNotEmpty)
-          isAuthenticatedProvider.overrideWith((ref) => true),
-      ],
-      child: MindoraApp(
-        initialProfile: savedProfile,
-        initialNotes: savedNotes,
-        initialTasks: savedTasks,
-        initialProjects: savedProjects,
-        initialSmartLists: savedSmartLists,
+    runApp(
+      ProviderScope(
+        overrides: [
+          if (savedToken != null && savedToken.isNotEmpty)
+            isAuthenticatedProvider.overrideWith((ref) => true),
+        ],
+        child: MindoraApp(
+          initialProfile: savedProfile,
+          initialNotes: savedNotes,
+          initialTasks: savedTasks,
+          initialProjects: savedProjects,
+          initialSmartLists: savedSmartLists,
+        ),
       ),
-    ),
-  );
+    );
+  }, (error, stack) {
+    debugPrint('runZonedGuarded uncaught error: $error\n$stack');
+  });
 }
 
 final isAuthenticatedProvider = StateProvider<bool>((ref) {

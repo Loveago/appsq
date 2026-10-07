@@ -15,18 +15,9 @@ class AudioRecordingService {
   String _liveTranscript = '';
   void Function(String words)? onLiveWordsChanged;
 
-  AudioRecordingService._() {
-    try {
-      _recorder = AudioRecorder();
-    } catch (e) {
-      debugPrint('AudioRecorder init notice: $e');
-    }
-    try {
-      _speech = stt.SpeechToText();
-    } catch (e) {
-      debugPrint('SpeechToText init notice: $e');
-    }
-  }
+  AudioRecordingService._();
+
+  AudioRecorder get recorder => _recorder ??= AudioRecorder();
 
   bool get isRecording => _isRecording;
   String? get currentRecordingPath => _currentRecordingPath;
@@ -34,8 +25,7 @@ class AudioRecordingService {
 
   Future<bool> checkPermission() async {
     try {
-      if (_recorder == null) return false;
-      return await _recorder!.hasPermission();
+      return await recorder.hasPermission();
     } catch (e) {
       debugPrint('Audio permission check notice: $e');
       return true; // Fallback in mock environments
