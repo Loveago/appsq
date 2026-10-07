@@ -10,6 +10,7 @@ import { MeetingsModule } from './modules/meetings/meetings.module';
 import { BriefingsModule } from './modules/briefings/briefings.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -25,5 +26,6 @@ import { AdminModule } from './modules/admin/admin.module';
     BillingModule,
     AdminModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule {}
