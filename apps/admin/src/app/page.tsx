@@ -34,7 +34,7 @@ import {
   CreditCard,
   Zap,
 } from 'lucide-react';
-import { adminFetch, getAdminToken, setAdminToken, clearAdminToken } from '@/lib/api';
+import { adminFetch, getAdminToken, setAdminToken, clearAdminToken } from '../lib/api';
 
 type Tab =
   | 'overview'
