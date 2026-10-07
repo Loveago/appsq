@@ -640,13 +640,34 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
     }
   }
 
-  async transcribeAudio(transcript?: string, userId?: string) {
+  async transcribeAudio(
+    transcript?: string,
+    userId?: string,
+    audioBuffer?: Buffer,
+    audioUrl?: string,
+  ) {
     if (userId) {
       await this.checkAndTrackQuota(userId, 500);
     }
-    const text = transcript && transcript.trim().length > 0
-      ? transcript.trim()
+
+    let rawTranscript = transcript?.trim() || '';
+
+    // If audio buffer or audioUrl is supplied, transcribe with AssemblyAI Universal-3.5 Pro
+    if (audioBuffer || audioUrl) {
+      try {
+        const assemblyAiResult = await this.transcribeWithAssemblyAI(audioBuffer, audioUrl);
+        if (assemblyAiResult && assemblyAiResult.trim().length > 0) {
+          rawTranscript = assemblyAiResult.trim();
+        }
+      } catch (err) {
+        console.warn('AssemblyAI transcription failed, using fallback:', err);
+      }
+    }
+
+    const text = rawTranscript.length > 0
+      ? rawTranscript
       : 'Voice memo recording captured.';
+
     const context = await this.extractContext(text, userId);
     return {
       transcript: text,
@@ -654,6 +675,92 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
       detectedDue: context.deadlines[0] || 'Tomorrow',
       suggestedTitle: context.suggestedTitle,
     };
+  }
+
+  async transcribeWithAssemblyAI(audioBuffer?: Buffer, audioUrl?: string): Promise<string> {
+    const apiKey =
+      this.configService.get<string>('ASSEMBLYAI_API_KEY') ||
+      process.env.ASSEMBLYAI_API_KEY;
+
+    if (!apiKey) {
+      throw new Error('ASSEMBLYAI_API_KEY is not configured in environment or database.');
+    }
+
+    let finalAudioUrl = audioUrl;
+
+    // If a raw buffer was uploaded, upload it to AssemblyAI /v2/upload
+    if (audioBuffer && !finalAudioUrl) {
+      const uploadRes = await fetch('https://api.assemblyai.com/v2/upload', {
+        method: 'POST',
+        headers: {
+          Authorization: apiKey,
+          'Content-Type': 'application/octet-stream',
+        },
+        body: new Uint8Array(audioBuffer),
+      });
+
+      if (!uploadRes.ok) {
+        const errText = await uploadRes.text();
+        throw new Error(`AssemblyAI file upload failed: ${uploadRes.status} ${errText}`);
+      }
+
+      const uploadData = (await uploadRes.json()) as { upload_url: string };
+      finalAudioUrl = uploadData.upload_url;
+    }
+
+    if (!finalAudioUrl) {
+      throw new Error('No audio URL or buffer provided for transcription.');
+    }
+
+    // Submit transcription job using Universal-3.5 Pro model
+    const transcriptRes = await fetch('https://api.assemblyai.com/v2/transcript', {
+      method: 'POST',
+      headers: {
+        Authorization: apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        audio_url: finalAudioUrl,
+        speech_model: 'universal-3-5-pro',
+        punctuate: true,
+        format_text: true,
+      }),
+    });
+
+    if (!transcriptRes.ok) {
+      const errText = await transcriptRes.text();
+      throw new Error(`AssemblyAI transcript submission failed: ${transcriptRes.status} ${errText}`);
+    }
+
+    const transcriptData = (await transcriptRes.json()) as { id: string; status: string; text?: string };
+    const transcriptId = transcriptData.id;
+
+    // Poll until completed or error (up to 90 seconds)
+    const maxPolls = 30;
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const pollRes = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+        headers: { Authorization: apiKey },
+      });
+
+      if (!pollRes.ok) continue;
+
+      const pollData = (await pollRes.json()) as {
+        status: string;
+        text?: string;
+        error?: string;
+      };
+
+      if (pollData.status === 'completed') {
+        return pollData.text || '';
+      }
+
+      if (pollData.status === 'error') {
+        throw new Error(`AssemblyAI transcription error: ${pollData.error || 'Unknown error'}`);
+      }
+    }
+
+    throw new Error('AssemblyAI transcription timed out waiting for completion.');
   }
 
   async generateEmbedding(text: string): Promise<number[]> {

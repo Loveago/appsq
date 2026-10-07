@@ -379,9 +379,23 @@ class ApiClient {
     }
 
     try {
+      dynamic data;
+      if (audioPath.isNotEmpty) {
+        data = FormData.fromMap({
+          'file': await MultipartFile.fromFile(
+            audioPath,
+            filename: audioPath.split('/').last.split('\\').last,
+          ),
+          if (transcriptText != null && transcriptText.isNotEmpty)
+            'transcript': transcriptText,
+        });
+      } else {
+        data = {'transcript': transcriptText ?? ''};
+      }
+
       final response = await _dio.post(
         '/ai/transcribe',
-        data: {'transcript': transcriptText ?? ''},
+        data: data,
       );
       if (response.statusCode == 200 || response.statusCode == 201) {
         return Map<String, dynamic>.from(response.data as Map);

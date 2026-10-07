@@ -1,4 +1,14 @@
-import { Controller, Post, Get, Body, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Query,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AiService } from './ai.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -72,11 +82,14 @@ export class AiController {
 
   @UseGuards(JwtAuthGuard)
   @Post('transcribe')
+  @UseInterceptors(FileInterceptor('file'))
   async transcribeAudio(
+    @UploadedFile() file: Express.Multer.File,
     @Body('transcript') transcript: string,
+    @Body('audioUrl') audioUrl: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.aiService.transcribeAudio(transcript, userId);
+    return this.aiService.transcribeAudio(transcript, userId, file?.buffer, audioUrl);
   }
 
   // ==========================================
