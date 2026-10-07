@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "prisma generate && npx nest build",
-    "render:build": "npm install --include=dev && npx prisma generate && npx prisma db push --accept-data-loss && npx nest build",
+    "render:build": "npm install --include=dev && npx prisma generate && npx prisma db push --accept-data-loss && (cd ../admin && npm install && npm run build) && npx nest build",
     "render:start": "node dist/main",
     "format": "prettier --write \"src/**/*.ts\"",
     "start": "npx nest start",
@@ -30,6 +30,7 @@
     "@nestjs/jwt": "^10.2.0",
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.3.8",
+    "@nestjs/serve-static": "^4.0.2",
     "@nestjs/swagger": "^7.3.1",
     "@prisma/client": "^5.14.0",
     "bcryptjs": "^2.4.3",

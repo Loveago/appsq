@@ -9,12 +9,19 @@ import { AiModule } from './modules/ai/ai.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
 import { BriefingsModule } from './modules/briefings/briefings.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 import { AdminModule } from './modules/admin/admin.module';
 import { AppController } from './app.controller';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), '..', 'admin', 'out'),
+      serveRoot: '/admin',
+      exclude: ['/api/(.*)', '/admin/users/(.*)', '/admin/ai/(.*)', '/admin/overview', '/admin/features/(.*)', '/admin/settings/(.*)', '/admin/announcements/(.*)', '/admin/audit', '/admin/system/(.*)'],
+    }),
     DatabaseModule,
     AuthModule,
     NotesModule,
