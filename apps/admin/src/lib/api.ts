@@ -39,6 +39,7 @@ export async function adminFetch(endpoint: string, options: RequestInit = {}) {
   if (response.status === 401 || response.status === 403) {
     // Session expired or unauthorized
     if (endpoint !== '/auth/login') {
+      clearAdminToken();
       const isUnauth = response.status === 401;
       const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.message || (isUnauth ? 'Session expired. Please sign in again.' : 'Access restricted to administrators.'));

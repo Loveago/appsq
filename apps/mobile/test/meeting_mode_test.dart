@@ -16,9 +16,8 @@ void main() {
 
     // Verify recording status and speakers
     expect(find.text('STUDIO RECORDING'), findsOneWidget);
-    expect(find.text('SPEAKER DIARIZATION (3)'), findsOneWidget);
-    expect(find.text('Alex (You)'), findsOneWidget);
-    expect(find.text('John'), findsOneWidget);
+    expect(find.text('RECORDING STATUS'), findsOneWidget);
+    expect(find.text('You'), findsOneWidget);
 
     // Verify pause/resume toggle
     expect(find.text('Pause'), findsOneWidget);

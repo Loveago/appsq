@@ -78,16 +78,9 @@ class ApiClient {
         }
         return data;
       }
-      return {'accessToken': 'mock-jwt-token', 'user': {'email': email, 'fullName': fullName ?? 'User'}};
+      throw const FormatException('Expected a JSON object response from server.');
     } catch (e) {
-      // Offline fallback token for seamless testing
-      const mockToken = 'mock-jwt-token';
-      setAuthToken(mockToken);
-      return {
-        'accessToken': mockToken,
-        'user': {'email': email, 'fullName': fullName ?? 'Mindora Executive'},
-        'isOfflineFallback': true,
-      };
+      rethrow;
     }
   }
 
@@ -111,16 +104,9 @@ class ApiClient {
         }
         return data;
       }
-      return {'accessToken': 'mock-jwt-token', 'user': {'email': email}};
+      throw const FormatException('Expected a JSON object response from server.');
     } catch (e) {
-      // Offline fallback token for seamless testing
-      const mockToken = 'mock-jwt-token';
-      setAuthToken(mockToken);
-      return {
-        'accessToken': mockToken,
-        'user': {'email': email, 'fullName': 'Mindora Executive'},
-        'isOfflineFallback': true,
-      };
+      rethrow;
     }
   }
 
@@ -291,14 +277,7 @@ class ApiClient {
       }
     } catch (_) {}
 
-    if (style == 'checklist') {
-      final lines = content.split('\n').where((l) => l.trim().isNotEmpty);
-      return lines.map((l) => '- [ ] ${l.replaceAll(RegExp(r'^[-*•\d.]\s*'), '')}').join('\n');
-    }
-    if (style == 'email') {
-      return 'Subject: Note Overview\n\nHi Team,\n\nHere is the latest update:\n\n$content\n\nBest regards,\nExecutive Team';
-    }
-    return 'Structured Overview:\n\n$content';
+    return 'Unable to rewrite — AI service unreachable. Original content preserved:\n\n$content';
   }
 
   /// General AI Assistant & Second Brain Chat with Tool Actions
@@ -341,7 +320,7 @@ class ApiClient {
       final response = await _dio.post('/ai/conversations/$id/delete');
       return response.statusCode == 200 || response.statusCode == 201;
     } catch (_) {
-      return true;
+      return false;
     }
   }
 
@@ -376,14 +355,12 @@ class ApiClient {
     } catch (_) {}
 
     return {
-      'summary': 'Executive meeting synchronization covering milestone deliverables and action items.',
-      'decisions': [
-        'Review priorities and upcoming targets.',
-      ],
+      'summary': 'Meeting summary unavailable — AI service unreachable. Transcript saved for later processing.',
+      'decisions': <String>[],
       'actionItems': [
-        {'assignee': 'Self', 'task': 'Follow up on action items', 'deadline': 'Upcoming'},
+        {'assignee': 'Self', 'task': 'Review transcript when AI service is available', 'deadline': 'Soon'},
       ],
-      'sentiment': 'Focused and positive',
+      'sentiment': 'Unknown',
     };
   }
 
@@ -417,11 +394,9 @@ class ApiClient {
 
     return {
       'transcript': raw,
-      'detectedTasks': [
-        'Review voice thought and finalize details',
-      ],
-      'detectedDue': 'Today',
-      'suggestedTitle': 'Voice Capture',
+      'detectedTasks': <String>[],
+      'detectedDue': null,
+      'suggestedTitle': 'Voice Memo',
     };
   }
 
@@ -431,79 +406,58 @@ class ApiClient {
       final response = await _dio.post('/billing/upgrade');
       return response.statusCode == 200 || response.statusCode == 201;
     } catch (_) {
-      return true; // Local simulation succeeds
+      return false; // Local simulation fails
     }
   }
 
   // --- Local Fallback Engines ---
 
   Map<String, dynamic> _fallbackExtract(String content, {bool isPro = false}) {
-    final lower = content.toLowerCase();
-    final people = <String>[];
-    final projects = <String>[];
-    final deadlines = <String>[];
     final tasks = <Map<String, dynamic>>[];
-
-    if (lower.contains('john')) people.add('John');
-    if (lower.contains('sarah')) people.add('Sarah');
-    if (lower.contains('michael')) people.add('Michael');
-
-    if (lower.contains('website') || lower.contains('web')) projects.add('Website Project');
-    if (lower.contains('delivery')) projects.add('Delivery App');
-    if (lower.contains('stripe') || lower.contains('payment')) projects.add('Finance');
-
-    if (lower.contains('september')) deadlines.add('Before September 01');
-    if (lower.contains('tomorrow')) deadlines.add('Tomorrow');
-
     final lines = content.split('\n');
     for (final line in lines) {
-      final trimmed = line.trim().replaceAll(RegExp(r'^[-*•]\s*'), '');
-      final tLower = trimmed.toLowerCase();
-      if (tLower.contains('need to') ||
-          tLower.contains('finish') ||
-          tLower.contains('call') ||
-          tLower.contains('review') ||
-          tLower.contains('verify')) {
-        tasks.add({
-          'title': trimmed.replaceAll(RegExp(r'^(i need to|we need to)\s+', caseSensitive: false), '').trim(),
-          'priority': isPro ? 'HIGH' : 'MEDIUM',
-          'dueDate': lower.contains('tomorrow') ? 'Tomorrow' : null,
-        });
+      final trimmed = line.trim();
+      if (trimmed.startsWith('-') || trimmed.startsWith('*') || trimmed.startsWith('•')) {
+        final taskTitle = trimmed.substring(1).trim();
+        if (taskTitle.isNotEmpty) {
+          tasks.add({
+            'title': taskTitle,
+            'priority': isPro ? 'HIGH' : 'MEDIUM',
+            'dueDate': null,
+          });
+        }
+      } else {
+        final tLower = trimmed.toLowerCase();
+        if (tLower.contains('need to') ||
+            tLower.contains('finish') ||
+            tLower.contains('call') ||
+            tLower.contains('review') ||
+            tLower.contains('verify') ||
+            tLower.contains('todo')) {
+          tasks.add({
+            'title': trimmed.replaceAll(RegExp(r'^(i need to|we need to)\s+', caseSensitive: false), '').trim(),
+            'priority': isPro ? 'HIGH' : 'MEDIUM',
+            'dueDate': null,
+          });
+        }
       }
     }
 
-    if (tasks.isEmpty) {
-      tasks.add({
-        'title': 'Review action items from note',
-        'priority': 'MEDIUM',
-        'dueDate': null,
-      });
-    }
+    final words = content.split(' ').where((w) => w.trim().isNotEmpty).toList();
+    final suggestedTitle = words.isEmpty ? 'Untitled Note' : '${words.take(3).join(' ')}...';
 
     return {
-      'people': people,
-      'projects': projects.isNotEmpty ? projects : ['General'],
-      'deadlines': deadlines.isNotEmpty ? deadlines : ['No fixed deadline'],
+      'people': <String>[],
+      'projects': ['General'],
+      'deadlines': ['No deadline set'],
       'tasks': tasks,
-      'relatedTopics': ['Architecture', 'Milestones'],
-      'suggestedTitle': people.isNotEmpty ? 'Sync with ${people.join(', ')}' : 'Executive Notes',
+      'relatedTopics': <String>[],
+      'suggestedTitle': suggestedTitle,
     };
   }
 
   String _fallbackSummarize(String content) {
-    final sentences = content
-        .split(RegExp(r'[.!?]'))
-        .map((s) => s.trim())
-        .where((s) => s.length > 8)
-        .toList();
-
-    if (sentences.isEmpty) {
-      return 'Summary: ${content.trim()}';
-    }
-    if (sentences.length <= 2) {
-      return 'TL;DR: ${content.trim()}';
-    }
-    return 'TL;DR: ${sentences.take(2).join('. ')}. Key decisions highlighted for tracking.';
+    return 'Unable to generate AI summary — backend unreachable. Raw content preserved.';
   }
 
   Map<String, dynamic> _fallbackAskNotes(String query, List<NoteModel> notes) {
@@ -517,7 +471,7 @@ class ApiClient {
     if (matching.isEmpty) {
       return {
         'answer':
-            "I couldn't find any direct reference to that in your indexed notes. Try capturing a thought, note, or asking a general question.",
+            "I couldn't find any direct reference to that in your local notes.",
         'citedNoteIds': <String>[],
       };
     }
@@ -558,7 +512,7 @@ class ApiClient {
       final title = words.length > 5 ? '${words.take(5).join(' ')}...' : (cleanContent.isNotEmpty ? cleanContent : 'Quick Note');
 
       return {
-        'answer': 'Done! I created the note **$title** with your instructions.',
+        'answer': 'Note created locally. It will sync to the cloud when connection is restored.',
         'conversationId': convId,
         'citedNoteIds': <String>[],
         'actionsExecuted': [
@@ -584,7 +538,7 @@ class ApiClient {
           .trim();
 
       return {
-        'answer': 'Done! I added the task **$cleanTask** to your commitments.',
+        'answer': 'Task created locally. It will sync to the cloud when connection is restored.',
         'conversationId': convId,
         'citedNoteIds': <String>[],
         'actionsExecuted': [
@@ -620,8 +574,7 @@ class ApiClient {
 
     // 4. General conversational response
     return {
-      'answer':
-          'I am Mindora, your AI Second Brain. I can answer general knowledge questions, write plans, strategize, or take action to create notes and tasks directly whenever you need.',
+      'answer': 'I\'m unable to reach the AI service right now. Please check your internet connection and try again.',
       'conversationId': convId,
       'citedNoteIds': <String>[],
       'actionsExecuted': <dynamic>[],

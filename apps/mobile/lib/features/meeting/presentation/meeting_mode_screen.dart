@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/fade_slide_in.dart';
 import '../../../../core/models/note_model.dart';
@@ -30,10 +31,12 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
   bool _isSynthesizing = false;
   String _liveTranscript = '';
   String? _recordedAudioPath;
+  late final String _startTime;
 
   @override
   void initState() {
     super.initState();
+    _startTime = DateFormat.jm().format(DateTime.now());
     final isTesting = WidgetsBinding.instance.runtimeType.toString().contains('Test');
     _animController = AnimationController(
       vsync: this,
@@ -575,10 +578,10 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                 const SizedBox(height: 10),
 
                 // Title & Speaker metadata
-                const Text(
-                  'Sync: Product Architecture & Payments',
+                Text(
+                  'Meeting Session • $_startTime',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -615,7 +618,7 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                                 const SizedBox(width: 8),
                                 const Expanded(
                                   child: Text(
-                                    'SPEAKER DIARIZATION (3)',
+                                    'RECORDING STATUS',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -643,11 +646,7 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                       const SizedBox(height: 12),
                       Row(
                         children: [
-                          _buildSpeakerChip('Alex (You)', '48% active', AppColors.matrixEmerald, true),
-                          const SizedBox(width: 8),
-                          _buildSpeakerChip('John', '36% active', AppColors.primary, false),
-                          const SizedBox(width: 8),
-                          _buildSpeakerChip('Sarah', '16% active', AppColors.electricViolet, false),
+                          _buildSpeakerChip('You', 'Recording', AppColors.matrixEmerald, true),
                         ],
                       ),
                     ],

@@ -21,6 +21,7 @@ import '../../briefing/presentation/daily_briefing_dialog.dart';
 import '../../voice/presentation/voice_capture_sheet.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../ads/presentation/native_ad_card.dart';
+import '../../../../core/services/ocr_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final VoidCallback? onOpenSearch;
@@ -598,15 +599,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         if (pickedFile != null && context.mounted) {
           final now = DateTime.now();
           final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: Colors.transparent,
-            builder: (context) => AiExtractSheet(
-              imagePath: pickedFile.path,
-              rawThought: 'Photo captured at $timeStr. Image saved to device.',
-            ),
-          );
+          
+          if (context.mounted) {
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (ctx) => const Center(
+                child: CircularProgressIndicator(color: AppColors.primary),
+              ),
+            );
+          }
+
+          String extractedText = '';
+          try {
+            extractedText = await OcrService.instance.extractTextFromImage(pickedFile.path);
+          } catch (e) {
+            extractedText = '';
+          }
+
+          if (context.mounted) {
+            Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
+          }
+
+          if (extractedText.trim().isEmpty) {
+            extractedText = 'No text detected in image. Image saved at $timeStr.';
+          }
+
+          if (context.mounted) {
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (context) => AiExtractSheet(
+                imagePath: pickedFile.path,
+                rawThought: extractedText,
+              ),
+            );
+          }
         }
       } catch (e) {
         if (context.mounted) {
@@ -626,15 +655,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         if (pickedFile != null && context.mounted) {
           final now = DateTime.now();
           final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: Colors.transparent,
-            builder: (context) => AiExtractSheet(
-              imagePath: pickedFile.path,
-              rawThought: 'Document scanned at $timeStr. Ready for neural analysis.',
-            ),
-          );
+          
+          if (context.mounted) {
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (ctx) => const Center(
+                child: CircularProgressIndicator(color: AppColors.primary),
+              ),
+            );
+          }
+
+          String extractedText = '';
+          try {
+            extractedText = await OcrService.instance.extractTextFromImage(pickedFile.path);
+          } catch (e) {
+            extractedText = '';
+          }
+
+          if (context.mounted) {
+            Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
+          }
+
+          if (extractedText.trim().isEmpty) {
+            extractedText = 'No text detected in image. Document scanned at $timeStr.';
+          }
+
+          if (context.mounted) {
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (context) => AiExtractSheet(
+                imagePath: pickedFile.path,
+                rawThought: extractedText,
+              ),
+            );
+          }
         }
       } catch (e) {
         if (context.mounted) {

@@ -138,6 +138,9 @@ export default function AdminDashboard() {
       if (l?.logs) setAuditLogs(l.logs);
       if (Array.isArray(e)) setSystemErrors(e);
     } catch (err: any) {
+      if (err.message?.includes('Session expired') || err.message?.includes('Authentication token required')) {
+        setAuthToken(null);
+      }
       setErrorMsg(err.message || 'Error fetching data from server');
     } finally {
       setIsLoading(false);

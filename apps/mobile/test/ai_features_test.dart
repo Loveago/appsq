@@ -48,8 +48,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('NEURAL THOUGHT EXTRACTION'), findsOneWidget);
-    expect(find.text('John'), findsOneWidget);
-    expect(find.text('Website Project'), findsOneWidget);
+    expect(find.text('RAW CAPTURE'), findsOneWidget);
+    expect(find.text('STRUCTURED GRAPH ENTITIES'), findsOneWidget);
 
     // Ensure action items header and button are visible
     final buttonFinder = find.text('Sync & Commit to Neural Brain');

@@ -78,10 +78,35 @@ export class AiService {
       // DB lookup error, continue with default env client
     }
 
+    // If client wasn't created in constructor or env changed, recreate dynamically from env
+    if (!this.openaiClient) {
+      const apiKey =
+        this.configService.get<string>('MODELFLARE_API_KEY') ||
+        this.configService.get<string>('OPENAI_API_KEY') ||
+        process.env.MODELFLARE_API_KEY ||
+        process.env.OPENAI_API_KEY;
+
+      const baseURL =
+        this.configService.get<string>('MODELFLARE_BASE_URL') ||
+        this.configService.get<string>('OPENAI_BASE_URL') ||
+        process.env.MODELFLARE_BASE_URL ||
+        process.env.OPENAI_BASE_URL ||
+        'https://api.modelflare.com/v1';
+
+      if (apiKey && apiKey !== 'mock-key' && baseURL.startsWith('http')) {
+        try {
+          this.openaiClient = new OpenAI({
+            apiKey,
+            baseURL,
+          });
+        } catch {}
+      }
+    }
+
     return {
       client: this.openaiClient,
       model: this.defaultModel,
-      providerName: 'Default / Environment',
+      providerName: this.openaiClient ? 'Environment (ModelFlare / OpenAI)' : 'Offline Local Fallback',
     };
   }
 
