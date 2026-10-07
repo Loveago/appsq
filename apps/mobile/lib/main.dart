@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/app_colors.dart';
 import 'core/models/note_model.dart';
@@ -17,6 +18,9 @@ import 'core/providers/app_state_providers.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Allow runtime fetching or fallback cleanly if offline
+  GoogleFonts.config.allowRuntimeFetching = true;
 
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);

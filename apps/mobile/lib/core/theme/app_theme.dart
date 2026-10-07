@@ -4,7 +4,12 @@ import 'app_colors.dart';
 
 class AppTheme {
   static ThemeData get darkTheme {
-    final textTheme = GoogleFonts.plusJakartaSansTextTheme(ThemeData.dark().textTheme);
+    TextTheme textTheme;
+    try {
+      textTheme = GoogleFonts.plusJakartaSansTextTheme(ThemeData.dark().textTheme);
+    } catch (_) {
+      textTheme = ThemeData.dark().textTheme;
+    }
 
     return ThemeData(
       useMaterial3: true,
@@ -62,7 +67,12 @@ class AppTheme {
   }
 
   static ThemeData get lightTheme {
-    final textTheme = GoogleFonts.plusJakartaSansTextTheme();
+    TextTheme textTheme;
+    try {
+      textTheme = GoogleFonts.plusJakartaSansTextTheme(ThemeData.light().textTheme);
+    } catch (_) {
+      textTheme = ThemeData.light().textTheme;
+    }
 
     return ThemeData(
       useMaterial3: true,
