@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/providers/app_state_providers.dart';
 
 class DailyBriefingDialog extends ConsumerWidget {
   const DailyBriefingDialog({super.key});
@@ -8,6 +9,11 @@ class DailyBriefingDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final profile = ref.watch(userProfileProvider);
+
+    final tasks = ref.watch(tasksProvider);
+    final notes = ref.watch(notesProvider);
+    final pendingTasks = tasks.where((t) => !t.isCompleted).take(3).toList();
 
     return Container(
       padding: const EdgeInsets.fromLTRB(22, 14, 22, 34),
@@ -84,7 +90,9 @@ class DailyBriefingDialog extends ConsumerWidget {
                         ],
                       ),
                       Text(
-                        '07:00 AM • Synthesized from 4 active notes',
+                        notes.isNotEmpty
+                            ? '07:00 AM • Synthesized from ${notes.length} active ${notes.length == 1 ? 'note' : 'notes'}'
+                            : '07:00 AM • Second Brain Initialized',
                         style: TextStyle(
                           fontSize: 10.5,
                           color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
@@ -123,7 +131,9 @@ class DailyBriefingDialog extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Good morning, Emmanuel',
+                        profile.fullName.isNotEmpty
+                            ? 'Good morning, ${profile.fullName.split(' ')[0]}'
+                            : 'Good morning!',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
@@ -132,7 +142,9 @@ class DailyBriefingDialog extends ConsumerWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Here is what matters most today to keep your projects on schedule.',
+                        pendingTasks.isNotEmpty
+                            ? 'Here is what matters most today to keep your projects on schedule.'
+                            : 'Your workspace is clear. Capture thoughts or tasks anytime.',
                         style: TextStyle(
                           fontSize: 11,
                           color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
@@ -147,7 +159,7 @@ class DailyBriefingDialog extends ConsumerWidget {
 
           const SizedBox(height: 16),
 
-          // 3 Priority Tasks Section
+          // Priority Tasks Section
           Row(
             children: [
               Container(
@@ -157,7 +169,9 @@ class DailyBriefingDialog extends ConsumerWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                '3 CRITICAL PRIORITIES',
+                pendingTasks.isNotEmpty
+                    ? '${pendingTasks.length} CRITICAL ${pendingTasks.length == 1 ? 'PRIORITY' : 'PRIORITIES'}'
+                    : 'NO CRITICAL PRIORITIES',
                 style: TextStyle(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w800,
@@ -169,58 +183,19 @@ class DailyBriefingDialog extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
 
-          _buildPriorityItem('Finish Stripe payment webhook integration', 'Delivery App • High', isDark),
-          _buildPriorityItem('Call John regarding new logo assets', 'Delivery App • 10:30 AM', isDark),
-          _buildPriorityItem('Send proposal & monthly invoice', 'Finance • Urgent', isDark),
-
-          const SizedBox(height: 16),
-
-          // Upcoming Events / Meetings
-          Row(
-            children: [
-              const Icon(Icons.calendar_today_rounded, size: 12, color: AppColors.primary),
-              const SizedBox(width: 6),
-              Text(
-                'UPCOMING TODAY',
+          if (pendingTasks.isNotEmpty)
+            ...pendingTasks.map((t) => _buildPriorityItem(t.title, '${t.project} • ${t.dueTime}', isDark))
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'No pending priorities right now. All caught up!',
                 style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.8,
+                  fontSize: 12,
                   color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: isDark ? AppColors.darkSurfaceSubtle : AppColors.surfaceSubtle,
-              borderRadius: BorderRadius.circular(10),
             ),
-            child: Row(
-              children: [
-                const Icon(Icons.schedule_rounded, size: 14, color: AppColors.primary),
-                const SizedBox(width: 8),
-                Text(
-                  '2:00 PM',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '— Design Architecture Sync with John & Sarah',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
 
           const SizedBox(height: 16),
 
@@ -252,7 +227,9 @@ class DailyBriefingDialog extends ConsumerWidget {
               ),
             ),
             child: Text(
-              'Yesterday in your John meeting audio, you noted that the website launch is blocked until payment webhooks are verified. Completing priority #1 unblocks 3 pending deliverables.',
+              pendingTasks.isNotEmpty
+                  ? 'You have ${pendingTasks.length} pending items queued. Tackle your top priority first to maintain steady momentum.'
+                  : 'Start capturing thoughts, recordings, or notes to let Mindora synthesize strategic insights for your day.',
               style: TextStyle(
                 fontSize: 12,
                 color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,

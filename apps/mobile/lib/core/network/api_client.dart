@@ -181,14 +181,12 @@ class ApiClient {
     } catch (_) {}
 
     return {
-      'summary': 'Executive meeting synchronization covering milestone deliverables, deadlines, and technical blockers.',
+      'summary': 'Executive meeting synchronization covering milestone deliverables and action items.',
       'decisions': [
-        'Production launch target scheduled before September 01.',
-        'Stripe webhooks and checkout redirection must pass validation prior to release.',
+        'Review priorities and upcoming targets.',
       ],
       'actionItems': [
-        {'assignee': 'Emmanuel', 'task': 'Finish payment integration and webhook tests', 'deadline': 'Tomorrow 1:30 PM'},
-        {'assignee': 'John', 'task': 'Send updated vector logo assets and brand deck', 'deadline': 'Tomorrow'},
+        {'assignee': 'Self', 'task': 'Follow up on action items', 'deadline': 'Upcoming'},
       ],
       'sentiment': 'Focused and positive',
     };
@@ -311,22 +309,16 @@ class ApiClient {
 
   Map<String, dynamic> _fallbackAskNotes(String query, List<NoteModel> notes) {
     final q = query.toLowerCase();
+    final words = q.split(' ').where((w) => w.length > 2);
     final matching = notes.where((n) {
       final text = '${n.title} ${n.content}'.toLowerCase();
-      final words = q.split(' ').where((w) => w.length > 3);
-      for (final w in words) {
-        if (text.contains(w)) return true;
-      }
-      return text.contains(q) ||
-          (q.contains('john') && text.contains('john')) ||
-          (q.contains('stripe') && text.contains('stripe')) ||
-          (q.contains('delivery') && text.contains('delivery'));
+      return text.contains(q) || words.any((w) => text.contains(w));
     }).toList();
 
     if (matching.isEmpty) {
       return {
         'answer':
-            "I couldn't find any direct reference to that in your indexed notes. Try capturing a thought or searching for related keywords like John, Stripe, or Delivery App.",
+            "I couldn't find any direct reference to that in your indexed notes. Try capturing a thought, note, or asking a general question.",
         'citedNoteIds': <String>[],
       };
     }
@@ -337,10 +329,9 @@ class ApiClient {
       final snippet = note.content.length > 130 ? '${note.content.substring(0, 130)}...' : note.content;
       buffer.writeln('• In "${note.title}": $snippet\n');
     }
-    buffer.write('All deliverables remain aligned with upcoming project milestones.');
 
     return {
-      'answer': buffer.toString(),
+      'answer': buffer.toString().trim(),
       'citedNoteIds': citedIds,
     };
   }

@@ -21,7 +21,7 @@ import '../../briefing/presentation/daily_briefing_dialog.dart';
 import '../../voice/presentation/voice_capture_sheet.dart';
 import '../../ads/presentation/native_ad_card.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   final VoidCallback? onOpenSearch;
   final VoidCallback? onOpenMeetingMode;
   final VoidCallback? onOpenPaywall;
@@ -36,10 +36,10 @@ class HomeScreen extends StatefulWidget {
   });
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _currentNavIndex = 0;
 
   void _onSelectTab(int index) {
@@ -125,13 +125,21 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                             alignment: Alignment.center,
-                            child: Text(
-                              'M',
-                              style: TextStyle(
-                                color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                              ),
+                            child: Consumer(
+                              builder: (context, ref, _) {
+                                final p = ref.watch(userProfileProvider);
+                                final initial = p.fullName.isNotEmpty
+                                    ? p.fullName[0].toUpperCase()
+                                    : (p.email.isNotEmpty ? p.email[0].toUpperCase() : 'M');
+                                return Text(
+                                  initial,
+                                  style: TextStyle(
+                                    color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         ),
@@ -318,67 +326,86 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 14),
 
                   // Clean status line
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Flexible(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 4,
-                              height: 4,
-                              decoration: BoxDecoration(
-                                color: isDark ? AppColors.emerald : const Color(0xFF059669),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
-                                'Focus session active',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                  color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final tasks = ref.watch(tasksProvider);
+                      final pendingTasks = tasks.where((t) => !t.isCompleted).toList();
+                      final notes = ref.watch(notesProvider);
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Flexible(
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 4,
+                                      height: 4,
+                                      decoration: BoxDecoration(
+                                        color: isDark ? AppColors.emerald : const Color(0xFF059669),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        pendingTasks.isNotEmpty ? 'Focus session active' : 'Workspace ready',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Synced just now',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w400,
+                                  color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            pendingTasks.isNotEmpty
+                                ? pendingTasks.first.title
+                                : (notes.isNotEmpty ? notes.first.title : 'Welcome to Mindora'),
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -0.3,
+                              color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
                             ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Synced just now',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w400,
-                          color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Stripe Integration & Deliverables',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.3,
-                      color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '2 urgent decisions prepared from your John meeting audio.',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                      fontWeight: FontWeight.w400,
-                      height: 1.35,
-                    ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            pendingTasks.isNotEmpty
+                                ? '${pendingTasks.length} pending action ${pendingTasks.length == 1 ? 'item' : 'items'} queued for today.'
+                                : (notes.isNotEmpty
+                                    ? '${notes.length} notes captured in your Second Brain.'
+                                    : 'Your Second Brain is ready. Capture your first thought below.'),
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                              fontWeight: FontWeight.w400,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
@@ -396,19 +423,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
           // Bento Pulse Metrics
           SliverToBoxAdapter(
-            child: TodayMetricCards(
-              onSeeAll: () => _onSelectTab(2),
-              onTapActions: () => _onSelectTab(2),
-              onTapAudio: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const MeetingModeScreen()),
-                );
-              },
-              onTapSynapse: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const KnowledgeGraphScreen()),
+            child: Consumer(
+              builder: (context, ref, _) {
+                final tasks = ref.watch(tasksProvider);
+                final pendingTasks = tasks.where((t) => !t.isCompleted).toList();
+                return TodayMetricCards(
+                  taskCount: pendingTasks.length,
+                  eventCount: 0,
+                  reminderCount: pendingTasks.isNotEmpty ? 1 : 0,
+                  onSeeAll: () => _onSelectTab(2),
+                  onTapActions: () => _onSelectTab(2),
+                  onTapAudio: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const MeetingModeScreen()),
+                    );
+                  },
+                  onTapSynapse: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const KnowledgeGraphScreen()),
+                    );
+                  },
                 );
               },
             ),
@@ -418,13 +454,25 @@ class _HomeScreenState extends State<HomeScreen> {
 
           // AI Neural Daily Synthesis Card
           SliverToBoxAdapter(
-            child: DailyBriefingCard(
-              onViewBriefing: () {
-                showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (context) => const DailyBriefingDialog(),
+            child: Consumer(
+              builder: (context, ref, _) {
+                final tasks = ref.watch(tasksProvider);
+                final pendingTasks = tasks.where((t) => !t.isCompleted).toList();
+                return DailyBriefingCard(
+                  headline: pendingTasks.isNotEmpty
+                      ? 'Focus for today: ${pendingTasks.first.title}'
+                      : 'Welcome to Mindora! Your Second Brain is ready.',
+                  insight: pendingTasks.isNotEmpty
+                      ? 'You have ${pendingTasks.length} tasks pending completion.'
+                      : 'Capture a note or record an audio meeting to populate your daily brief.',
+                  onViewBriefing: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (context) => const DailyBriefingDialog(),
+                    );
+                  },
                 );
               },
             ),
@@ -432,20 +480,32 @@ class _HomeScreenState extends State<HomeScreen> {
 
           const SliverToBoxAdapter(child: SizedBox(height: 10)),
 
-          // Active Thread Card
-          SliverToBoxAdapter(
-            child: ContinueProjectCard(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ProjectDetailScreen(
-                      projectId: 'proj-mindora',
-                    ),
-                  ),
-                );
-              },
-            ),
+          // Active Thread Card (shown only if projects exist)
+          Consumer(
+            builder: (context, ref, _) {
+              final projects = ref.watch(projectsProvider);
+              if (projects.isEmpty) {
+                return const SliverToBoxAdapter(child: SizedBox.shrink());
+              }
+              final proj = projects.first;
+              return SliverToBoxAdapter(
+                child: ContinueProjectCard(
+                  projectName: proj.name,
+                  activeTask: proj.description,
+                  progress: 0.5,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ProjectDetailScreen(
+                          projectId: proj.id,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
           ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 6)),

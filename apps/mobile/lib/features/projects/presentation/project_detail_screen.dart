@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/models/project_model.dart';
 import '../../../../core/providers/app_state_providers.dart';
 import '../../notes/presentation/note_editor_screen.dart';
 
@@ -19,10 +20,20 @@ class ProjectDetailScreen extends ConsumerWidget {
     final notes = ref.watch(notesProvider);
     final tasks = ref.watch(tasksProvider);
 
-    final project = projects.firstWhere(
-      (p) => p.id == projectId,
-      orElse: () => projects.first,
-    );
+    final project = projects.where((p) => p.id == projectId).firstOrNull ??
+        (projects.isNotEmpty
+            ? projects.first
+            : ProjectModel(
+                id: projectId,
+                name: 'New Project',
+                description: 'Project details and task management.',
+                colorHex: '#6366F1',
+                icon: 'folder',
+                aiSummary: 'No active tasks yet. Capture thoughts to build this project.',
+                noteCount: 0,
+                taskCount: 0,
+                meetingCount: 0,
+              ));
 
     final projectNotes = notes.where((n) => n.projectId == project.id).toList();
     final projectTasks = tasks.where((t) => t.project == project.name || t.project.contains(project.name)).toList();

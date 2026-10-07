@@ -22,34 +22,7 @@ export class ProjectsService {
         taskCount: p.tasks.length,
       }));
     } catch {
-      return [
-        {
-          id: 'proj-delivery',
-          userId,
-          name: 'Delivery App',
-          description: 'Hyperlocal rider logistics & customer checkout app.',
-          colorHex: '#6366F1',
-          aiSummary: 'You are currently working on the rider tracking and Stripe webhook payment systems.',
-          noteCount: 34,
-          taskCount: 12,
-          meetingCount: 4,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        {
-          id: 'proj-mindora',
-          userId,
-          name: 'Mindora Studio v2.0',
-          description: 'AI Second Brain mobile app and multi-provider LLM infrastructure.',
-          colorHex: '#10B981',
-          aiSummary: 'Designing neural canvas specs and offline SQLite synchronization.',
-          noteCount: 18,
-          taskCount: 8,
-          meetingCount: 2,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ];
+      return [];
     }
   }
 

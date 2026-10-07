@@ -18,21 +18,31 @@ void main() {
     expect(find.text('Action Items'), findsOneWidget);
     expect(find.textContaining('All'), findsOneWidget);
     expect(find.textContaining('Urgent'), findsOneWidget);
-    expect(find.textContaining('AI Extracted'), findsWidgets);
     expect(find.text('Completed'), findsOneWidget);
 
-    // Initial task presence
-    expect(find.text('Finish Stripe payment webhook integration'), findsOneWidget);
+    // Initial clean empty state
+    expect(find.text('No tasks in this category'), findsOneWidget);
+
+    // Enter a new task
+    final inputFinder = find.byType(TextField);
+    expect(inputFinder, findsOneWidget);
+
+    await tester.enterText(inputFinder, 'Verify Stripe integration');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    // Task is now visible
+    expect(find.text('Verify Stripe integration'), findsOneWidget);
 
     // Tap task item to toggle completion
-    await tester.tap(find.text('Finish Stripe payment webhook integration'));
+    await tester.tap(find.text('Verify Stripe integration'));
     await tester.pumpAndSettle();
 
     // Verify task is completed by switching to 'Completed' filter
     await tester.tap(find.text('Completed'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Finish Stripe payment webhook integration'), findsOneWidget);
+    expect(find.text('Verify Stripe integration'), findsOneWidget);
   });
 
   testWidgets('TasksScreen supports adding a new task', (WidgetTester tester) async {

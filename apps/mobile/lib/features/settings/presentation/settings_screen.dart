@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/providers/app_state_providers.dart';
+import '../../../../core/network/api_client.dart';
+import '../../../../main.dart';
 import '../../paywall/presentation/paywall_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -544,6 +546,33 @@ class SettingsScreen extends ConsumerWidget {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Offline cache cleared and re-synchronized.')),
                     );
+                  },
+                ),
+                Divider(
+                  height: 1,
+                  color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.logout_rounded, size: 20, color: Color(0xFFEF4444)),
+                  title: const Text(
+                    'Sign Out',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFEF4444),
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Clear session and return to login screen',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                    ),
+                  ),
+                  onTap: () {
+                    ApiClient.instance.setAuthToken('');
+                    ref.read(userProfileProvider.notifier).resetProfile();
+                    ref.read(isAuthenticatedProvider.notifier).state = false;
                   },
                 ),
               ],

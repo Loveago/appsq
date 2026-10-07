@@ -16,17 +16,7 @@ export class MeetingsService {
         orderBy: { createdAt: 'desc' },
       });
     } catch {
-      return [
-        {
-          id: 'meet-1',
-          userId,
-          title: 'Meeting with John (Stripe Webhook)',
-          durationSec: 2712,
-          status: 'COMPLETED',
-          summary: 'Met John today about the website. Launch scheduled before September.',
-          createdAt: new Date(),
-        },
-      ];
+      return [];
     }
   }
 

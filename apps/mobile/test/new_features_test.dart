@@ -8,6 +8,7 @@ import 'package:mindora_mobile/features/briefing/presentation/daily_briefing_dia
 import 'package:mindora_mobile/features/voice/presentation/voice_capture_sheet.dart';
 import 'package:mindora_mobile/features/tasks/presentation/widgets/smart_lists_view.dart';
 import 'package:mindora_mobile/features/ads/presentation/native_ad_card.dart';
+import 'package:mindora_mobile/core/models/project_model.dart';
 import 'package:mindora_mobile/core/providers/app_state_providers.dart';
 
 void main() {
@@ -27,12 +28,23 @@ void main() {
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
 
-      await tester.pumpWidget(buildTestableWidget(const SettingsScreen()));
+      await tester.pumpWidget(
+        buildTestableWidget(
+          const SettingsScreen(),
+          overrides: [
+            userProfileProvider.overrideWith((ref) => UserProfileNotifier()
+              ..setUser(
+                email: 'test@mindora.ai',
+                fullName: 'Test User',
+              )),
+          ],
+        ),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('Account & Settings'), findsOneWidget);
-      expect(find.text('Emmanuel Mensah'), findsOneWidget);
-      expect(find.text('emmanuel@mindora.ai'), findsOneWidget);
+      expect(find.text('Test User'), findsOneWidget);
+      expect(find.text('test@mindora.ai'), findsOneWidget);
       expect(find.text('Monthly AI Usage'), findsOneWidget);
       expect(find.text('AI Model Engine'), findsOneWidget);
       expect(find.text('Automatic Task Extraction'), findsOneWidget);
@@ -42,14 +54,32 @@ void main() {
 
   group('Project Detail Screen', () {
     testWidgets('renders project metrics, AI synthesis, and next action items', (tester) async {
-      await tester.pumpWidget(buildTestableWidget(const ProjectDetailScreen(projectId: 'proj-delivery')));
+      const sampleProj = ProjectModel(
+        id: 'proj-delivery',
+        name: 'Delivery App',
+        description: 'Logistics and delivery',
+        colorHex: '#6366F1',
+        icon: 'local_shipping_rounded',
+        aiSummary: 'Rider app build',
+        noteCount: 5,
+        taskCount: 3,
+        meetingCount: 1,
+      );
+
+      await tester.pumpWidget(
+        buildTestableWidget(
+          const ProjectDetailScreen(projectId: 'proj-delivery'),
+          overrides: [
+            projectsProvider.overrideWith((ref) => ProjectsNotifier()..setProjects([sampleProj])),
+          ],
+        ),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('Delivery App'), findsWidgets);
       expect(find.text('PROJECT OVERVIEW'), findsOneWidget);
       expect(find.text('AI SECOND BRAIN SYNTHESIS'), findsOneWidget);
       expect(find.text('NEXT ACTION ITEMS'), findsOneWidget);
-      expect(find.textContaining('Fix payment webhook'), findsOneWidget);
     });
   });
 
@@ -77,8 +107,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Daily AI Briefing'), findsOneWidget);
-      expect(find.text('Good morning, Emmanuel'), findsOneWidget);
-      expect(find.text('3 CRITICAL PRIORITIES'), findsOneWidget);
+      expect(find.text('Good morning!'), findsOneWidget);
+      expect(find.text('NO CRITICAL PRIORITIES'), findsOneWidget);
       expect(find.text('SECOND BRAIN CONTEXT INSIGHT'), findsOneWidget);
       expect(find.text('Got It — Start My Day'), findsOneWidget);
     });
@@ -90,13 +120,17 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('AI SMART LIST GENERATOR'), findsOneWidget);
-      expect(find.text('Office Setup Essentials'), findsOneWidget);
-      expect(find.text('Product Launch Checklist'), findsOneWidget);
+      expect(find.text('No smart lists yet. Use the prompt above to generate your first checklist.'), findsOneWidget);
 
-      final itemFinder = find.text('Ergonomic Desk Chair');
-      expect(itemFinder, findsOneWidget);
-      await tester.tap(itemFinder);
+      final promptField = find.byType(TextField);
+      await tester.enterText(promptField, 'Office setup');
+      await tester.tap(find.text('Generate'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1000));
       await tester.pumpAndSettle();
+
+      expect(find.text('Office Setup Checklist'), findsOneWidget);
+      expect(find.text('Ergonomic Monitor Arm'), findsOneWidget);
     });
   });
 

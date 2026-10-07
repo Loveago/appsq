@@ -3,11 +3,15 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/fade_slide_in.dart';
 
 class DailyBriefingCard extends StatefulWidget {
+  final String? headline;
+  final String? insight;
   final VoidCallback? onViewBriefing;
   final VoidCallback? onPlayAudio;
 
   const DailyBriefingCard({
     super.key,
+    this.headline,
+    this.insight,
     this.onViewBriefing,
     this.onPlayAudio,
   });
@@ -93,7 +97,7 @@ class _DailyBriefingCardState extends State<DailyBriefingCard> {
             const SizedBox(height: 10),
 
             Text(
-              'Finish webhook & Stripe checkout flow prior to 14:00 sync with John.',
+              widget.headline ?? 'Welcome to Mindora! Your Second Brain is ready.',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -106,7 +110,7 @@ class _DailyBriefingCardState extends State<DailyBriefingCard> {
             const SizedBox(height: 4),
 
             Text(
-              'Key takeaway: John will provide brand assets and approved copy after staging test.',
+              widget.insight ?? 'Capture a quick thought or audio note below to populate your daily executive brief.',
               style: TextStyle(
                 fontSize: 12,
                 height: 1.35,

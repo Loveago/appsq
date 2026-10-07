@@ -16,44 +16,7 @@ export class TasksService {
         include: { note: true, project: true },
       });
     } catch {
-      return [
-        {
-          id: '1',
-          userId,
-          title: 'Finish Stripe payment webhook integration',
-          status: 'PENDING',
-          priority: 'HIGH',
-          dueDate: new Date(),
-          dueTimeStr: '14:00 Today',
-          isAiExtracted: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        {
-          id: '2',
-          userId,
-          title: 'Review landing page draft & approve typography',
-          status: 'PENDING',
-          priority: 'HIGH',
-          dueDate: new Date(),
-          dueTimeStr: '16:30 Today',
-          isAiExtracted: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        {
-          id: '3',
-          userId,
-          title: 'Follow up with John regarding new logo assets',
-          status: 'PENDING',
-          priority: 'MEDIUM',
-          dueDate: null,
-          dueTimeStr: 'Tomorrow',
-          isAiExtracted: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ];
+      return [];
     }
   }
 

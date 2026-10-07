@@ -156,6 +156,20 @@ class _SmartListsViewState extends ConsumerState<SmartListsView> {
 
         const SizedBox(height: 16),
 
+        if (smartLists.isEmpty)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Text(
+                'No smart lists yet. Use the prompt above to generate your first checklist.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                ),
+              ),
+            ),
+          ),
+
         // Lists Rendering
         for (final list in smartLists) ...[
           Container(

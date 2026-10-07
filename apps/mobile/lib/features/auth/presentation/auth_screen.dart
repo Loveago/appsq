@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/widgets/fade_slide_in.dart';
+import '../../../../core/providers/app_state_providers.dart';
 
-class AuthScreen extends StatefulWidget {
+class AuthScreen extends ConsumerStatefulWidget {
   final VoidCallback onAuthSuccess;
 
   const AuthScreen({super.key, required this.onAuthSuccess});
 
   @override
-  State<AuthScreen> createState() => _AuthScreenState();
+  ConsumerState<AuthScreen> createState() => _AuthScreenState();
 }
 
-class _AuthScreenState extends State<AuthScreen> {
+class _AuthScreenState extends ConsumerState<AuthScreen> {
   bool _isSignUp = false;
   bool _isLoading = false;
   bool _obscurePassword = true;
@@ -70,18 +72,32 @@ class _AuthScreenState extends State<AuthScreen> {
     }
 
     try {
+      Map<String, dynamic> result;
       if (_isSignUp) {
-        await ApiClient.instance.register(
+        result = await ApiClient.instance.register(
           email: email,
           password: password,
           fullName: fullName,
         );
       } else {
-        await ApiClient.instance.login(
+        result = await ApiClient.instance.login(
           email: email,
           password: password,
         );
       }
+
+      final userData = result['user'] as Map<dynamic, dynamic>? ?? {};
+      final returnedEmail = userData['email']?.toString() ?? email;
+      final returnedName = userData['fullName']?.toString() ?? (fullName.isNotEmpty ? fullName : returnedEmail.split('@')[0]);
+      final isPro = userData['subscriptionTier'] == 'PRO';
+      final tokensUsed = (userData['monthlyAiTokensUsed'] as num?)?.toInt() ?? 0;
+
+      ref.read(userProfileProvider.notifier).setUser(
+        email: returnedEmail,
+        fullName: returnedName,
+        isPro: isPro,
+        monthlyAiTokensUsed: tokensUsed,
+      );
 
       if (!mounted) return;
       widget.onAuthSuccess();

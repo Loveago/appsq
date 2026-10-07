@@ -39,15 +39,10 @@ export class BriefingsService {
         id: 'briefing-today',
         userId,
         date: today,
-        headline: 'Good morning! Here is what matters today.',
-        tasksJson: [
-          'Finish Stripe payment webhook integration',
-          'Call John regarding new logo assets',
-          'Send proposal & monthly invoice',
-        ],
-        meetingsJson: ['2:00 PM — Design Architecture Sync with John & Sarah'],
-        contextInsight:
-          'Yesterday in your John meeting audio, you noted that the website launch depends on payment integration being completed.',
+        headline: 'Welcome to Mindora! Capture your first thought or task to begin.',
+        tasksJson: [],
+        meetingsJson: [],
+        contextInsight: 'Your Second Brain is ready. Start by recording audio or taking notes to populate your daily brief.',
       };
     }
   }

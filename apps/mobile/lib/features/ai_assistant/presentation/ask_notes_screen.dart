@@ -75,30 +75,12 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
   bool _isSynthesizing = false;
 
   final List<({String category, String prompt, Color color})> _suggestedPrompts = const [
-    (category: 'DECISION', prompt: 'What did John decide on Stripe?', color: AppColors.primary),
-    (category: 'TIMELINE', prompt: 'Upcoming milestones for Delivery App', color: AppColors.emerald),
-    (category: 'BLOCKERS', prompt: 'List all unresolved blockers', color: AppColors.amber),
+    (category: 'SUMMARY', prompt: 'Summarize my recent thoughts', color: AppColors.primary),
+    (category: 'TASKS', prompt: 'What tasks do I have pending?', color: AppColors.emerald),
+    (category: 'ASSISTANT', prompt: 'How can you help organize my work?', color: AppColors.amber),
   ];
 
-  final List<_ChatMessage> _messages = [
-    _ChatMessage(
-      text: 'What did John ask me to do before the next sync?',
-      isUser: true,
-    ),
-    _ChatMessage(
-      text:
-          'Based on your recorded conversation and project notes, John highlighted three critical deliverables:\n\n'
-          '1. Verify Stripe webhook signature handling before 1:30 PM.\n'
-          '2. Test the checkout redirection edge cases.\n'
-          '3. Review the brand assets he is sending tomorrow.',
-      isUser: false,
-      groundedAccuracy: '98.4% GROUNDED',
-      sources: [
-        (title: 'Meeting with John', tag: 'AUDIO 45m', noteId: '2'),
-        (title: 'Delivery App Repo', tag: 'PROJECT', noteId: null),
-      ],
-    ),
-  ];
+  final List<_ChatMessage> _messages = [];
 
   @override
   void dispose() {
@@ -118,29 +100,6 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
     });
 
     _scrollToBottom();
-
-    if (userText.toLowerCase().contains('what did john decide on stripe')) {
-      await Future.delayed(const Duration(milliseconds: 1000));
-      if (!mounted) return;
-      setState(() {
-        _isSynthesizing = false;
-        _messages.add(
-          _ChatMessage(
-            text: 'Synthesized from your Second Brain:\n\n'
-                'Target delivery for this milestone is scheduled before September 01. '
-                'Stripe integration tests have 2 pending items, and staging deployment will occur once webhooks pass authentication.',
-            isUser: false,
-            groundedAccuracy: '99.1% GROUNDED',
-            sources: [
-              (title: 'Meeting with John', tag: 'AUDIO 45m', noteId: '2'),
-              (title: 'Product Architecture', tag: 'SYSTEM', noteId: '1'),
-            ],
-          ),
-        );
-      });
-      _scrollToBottom();
-      return;
-    }
 
     final notes = ref.read(notesProvider);
     final response = await ApiClient.instance.askNotes(userText, notes);
@@ -189,6 +148,8 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final notesCount = ref.watch(notesProvider).length;
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.background,
@@ -247,7 +208,7 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                   ),
                 ),
                 Text(
-                  '14 indexed sources • RAG Active',
+                  '$notesCount indexed ${notesCount == 1 ? 'source' : 'sources'} • RAG Active',
                   style: TextStyle(
                     fontSize: 10,
                     color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
@@ -262,7 +223,7 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
           IconButton(
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Vector index synced with 14 notes.')),
+                SnackBar(content: Text('Vector index synchronized with $notesCount notes.')),
               );
             },
             icon: Icon(
@@ -338,23 +299,61 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
           ),
 
           Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
-              physics: const BouncingScrollPhysics(),
-              itemCount: _messages.length + (_isSynthesizing ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (index == _messages.length && _isSynthesizing) {
-                  return _buildSynthesizingIndicator(isDark);
-                }
-                final message = _messages[index];
-                if (message.isUser) {
-                  return _buildUserBubble(message.text, isDark);
-                } else {
-                  return _buildAiBubble(message, isDark);
-                }
-              },
-            ),
+            child: _messages.isEmpty && !_isSynthesizing
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.08),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.chat_bubble_outline_rounded, color: AppColors.primary, size: 28),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Ask Mindora Anything',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 40),
+                          child: Text(
+                            'Ask general questions or query your indexed notes and audio transcriptions in real time.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: _messages.length + (_isSynthesizing ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index == _messages.length && _isSynthesizing) {
+                        return _buildSynthesizingIndicator(isDark);
+                      }
+                      final message = _messages[index];
+                      if (message.isUser) {
+                        return _buildUserBubble(message.text, isDark);
+                      } else {
+                        return _buildAiBubble(message, isDark);
+                      }
+                    },
+                  ),
           ),
 
           // Query Input Bar

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:mindora_mobile/core/models/note_model.dart';
+import 'package:mindora_mobile/core/providers/app_state_providers.dart';
 import 'package:mindora_mobile/features/notes/presentation/notes_screen.dart';
 import 'package:mindora_mobile/features/notes/presentation/note_editor_screen.dart';
 
@@ -11,47 +14,94 @@ void main() {
     );
   }
 
-  testWidgets('NotesScreen renders notes list and filters by category', (WidgetTester tester) async {
+  testWidgets('NotesScreen renders clean empty state when no notes exist', (WidgetTester tester) async {
     await tester.pumpWidget(buildTestableWidget(const NotesScreen()));
     await tester.pumpAndSettle();
 
     expect(find.text('Indexed Notes'), findsOneWidget);
-    expect(find.text('Product Architecture & LLM Routing'), findsOneWidget);
-    expect(find.text('Meeting with John (Stripe Webhook)'), findsOneWidget);
+    expect(find.text('No notes found'), findsOneWidget);
+    expect(find.text('All Notes'), findsOneWidget);
+  });
 
-    // Tap 'Meetings' category filter
+  testWidgets('NotesScreen filters notes by search query and category when notes exist', (WidgetTester tester) async {
+    final sampleNotes = [
+      const NoteModel(
+        id: '1',
+        title: 'Project Roadmap',
+        snippet: 'Roadmap deliverables for Q4',
+        content: 'Deliverables and milestones',
+        tag: 'DOC',
+        tagColor: Colors.blue,
+        icon: Icons.description_rounded,
+        date: 'Today',
+        category: 'architecture',
+      ),
+      const NoteModel(
+        id: '2',
+        title: 'Team Sync Meeting',
+        snippet: 'Discussed timeline and budget',
+        content: 'All team members aligned',
+        tag: 'AUDIO',
+        tagColor: Colors.green,
+        icon: Icons.mic_rounded,
+        date: 'Yesterday',
+        category: 'meetings',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          notesProvider.overrideWith((ref) => NotesNotifier()..setNotes(sampleNotes)),
+        ],
+        child: buildTestableWidget(const NotesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Project Roadmap'), findsOneWidget);
+    expect(find.text('Team Sync Meeting'), findsOneWidget);
+
+    // Filter by Meetings
     await tester.tap(find.textContaining('Meetings'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Meeting with John (Stripe Webhook)'), findsOneWidget);
-    expect(find.text('Product Architecture & LLM Routing'), findsNothing);
+    expect(find.text('Team Sync Meeting'), findsOneWidget);
+    expect(find.text('Project Roadmap'), findsNothing);
 
-    // Switch back to 'All Notes'
-    await tester.tap(find.text('All Notes'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Product Architecture & LLM Routing'), findsOneWidget);
-  });
-
-  testWidgets('NotesScreen filters notes by search query', (WidgetTester tester) async {
-    await tester.pumpWidget(buildTestableWidget(const NotesScreen()));
-    await tester.pumpAndSettle();
-
+    // Search query
     final searchField = find.byType(TextField);
-    expect(searchField, findsOneWidget);
-
-    await tester.enterText(searchField, 'Screenshots');
+    await tester.enterText(searchField, 'Sync');
     await tester.pumpAndSettle();
-
-    expect(find.text('App Store Screenshots & Value Proposition'), findsOneWidget);
-    expect(find.text('Product Architecture & LLM Routing'), findsNothing);
+    expect(find.text('Team Sync Meeting'), findsOneWidget);
   });
 
-  testWidgets('NotesScreen navigates to NoteEditorScreen on tap', (WidgetTester tester) async {
-    await tester.pumpWidget(buildTestableWidget(const NotesScreen()));
+  testWidgets('NotesScreen navigates to NoteEditorScreen on tap when notes exist', (WidgetTester tester) async {
+    final sampleNotes = [
+      const NoteModel(
+        id: '1',
+        title: 'Project Roadmap',
+        snippet: 'Roadmap deliverables for Q4',
+        content: 'Deliverables and milestones',
+        tag: 'DOC',
+        tagColor: Colors.blue,
+        icon: Icons.description_rounded,
+        date: 'Today',
+        category: 'architecture',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          notesProvider.overrideWith((ref) => NotesNotifier()..setNotes(sampleNotes)),
+        ],
+        child: buildTestableWidget(const NotesScreen()),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Product Architecture & LLM Routing'));
+    await tester.tap(find.text('Project Roadmap'));
     await tester.pumpAndSettle();
 
     expect(find.byType(NoteEditorScreen), findsOneWidget);

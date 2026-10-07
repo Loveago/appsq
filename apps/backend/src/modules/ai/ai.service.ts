@@ -170,18 +170,39 @@ export class AiService {
       await this.checkAndTrackQuota(userId, 1500);
     }
 
+    const sentences = transcript.split(/[.!?\n]/).map((s) => s.trim()).filter((s) => s.length > 5);
+    const summary = sentences.length > 0
+      ? sentences.slice(0, 2).join('. ')
+      : 'Executive meeting notes and discussion.';
+
+    let actionItems = sentences
+      .filter((s) => s.toLowerCase().includes('need to') || s.toLowerCase().includes('todo') || s.toLowerCase().includes('action') || s.toLowerCase().includes('checks') || s.toLowerCase().includes('review'))
+      .map((t) => ({
+        assignee: 'Self',
+        task: t,
+        deadline: 'Upcoming',
+      }));
+
+    if (actionItems.length === 0 && sentences.length > 0) {
+      actionItems = [
+        {
+          assignee: 'Self',
+          task: sentences[sentences.length - 1],
+          deadline: 'Follow up',
+        },
+      ];
+    }
+
     const result = {
-      summary: 'Executive synchronization discussing milestone timeline, payment webhook blockers, and asset deliveries.',
-      decisions: [
-        'Launch target scheduled before September 01.',
-        'Stripe webhooks must pass signature verification prior to staging deploy.',
-      ],
-      actionItems: [
-        { assignee: 'Emmanuel', task: 'Finish payment integration and webhook tests', deadline: 'Tomorrow 1:30 PM' },
-        { assignee: 'John', task: 'Send updated vector logo assets and brand deck', deadline: 'Tomorrow' },
-      ],
-      sentiment: 'Highly focused and actionable',
+      summary,
+      decisions: sentences.filter((s) => s.toLowerCase().includes('decid') || s.toLowerCase().includes('will') || s.toLowerCase().includes('agreed') || s.toLowerCase().includes('roadmap')).slice(0, 3),
+      actionItems,
+      sentiment: 'Productive and actionable',
     };
+
+    if (result.decisions.length === 0) {
+      result.decisions.push('Meeting discussion noted for future reference.');
+    }
 
     return MeetingDistillationSchema.parse(result) as unknown as MeetingDistillationResult;
   }
@@ -191,16 +212,24 @@ export class AiService {
       await this.checkAndTrackQuota(userId, 600);
     }
 
+    let topTasks: string[] = [];
+    if (userId) {
+      try {
+        const dbTasks = await this.prisma.task.findMany({
+          where: { userId, status: 'PENDING' },
+          take: 3,
+        });
+        topTasks = dbTasks.map((t) => t.title);
+      } catch (_) {}
+    }
+
     const briefing = {
-      greeting: 'Good morning! Here is what matters most today to keep your projects on schedule.',
-      topTasks: [
-        'Finish Stripe payment webhook integration',
-        'Call John regarding new logo assets',
-        'Send proposal & monthly cloud infrastructure invoice',
-      ],
-      upcomingMeetings: ['2:00 PM — Design Architecture Sync with John & Sarah'],
-      contextualInsight:
-        'Yesterday in your John meeting audio, you noted that the website launch depends on payment integration being completed.',
+      greeting: 'Welcome back! Here is what matters today.',
+      topTasks,
+      upcomingMeetings: [],
+      contextualInsight: topTasks.length > 0
+        ? `You have ${topTasks.length} pending actions queued for completion.`
+        : 'Your workspace is clear. Capture a new note or task to begin planning your day.',
     };
 
     return DailyBriefingSchema.parse(briefing) as unknown as DailyBriefingResult;
@@ -225,49 +254,38 @@ export class AiService {
       } catch (_) {}
     }
 
+    const qTokens = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
     const matchingNotes = searchNotes.filter((n) => {
-      const q = query.toLowerCase();
-      return (
-        n.title.toLowerCase().includes(q) ||
-        n.content.toLowerCase().includes(q) ||
-        (q.includes('john') && n.content.toLowerCase().includes('john')) ||
-        (q.includes('stripe') && n.content.toLowerCase().includes('stripe')) ||
-        (q.includes('milestone') || q.includes('target'))
-      );
+      const text = `${n.title} ${n.content}`.toLowerCase();
+      return query.toLowerCase().includes(text) || text.includes(query.toLowerCase()) || qTokens.some((t) => text.includes(t));
     });
 
     const citedNoteIds = matchingNotes.map((n) => n.id);
 
-    if (matchingNotes.length === 0) {
-      return {
-        answer:
-          "I couldn't find any direct reference to that in your indexed notes. Try capturing a thought or searching for related keywords like John, Stripe, or Delivery App.",
-        citedNoteIds: [],
-      };
-    }
-
     if (this.openaiClient) {
       try {
-        const contextStr = matchingNotes
-          .map((n, i) => `[Source ${i + 1}: ${n.title}]\n${n.content}`)
-          .join('\n\n');
+        const hasNotes = matchingNotes.length > 0;
+        const systemPrompt = hasNotes
+          ? 'You are Mindora, an intelligent executive AI Second Brain. Answer the user query using the provided indexed notes when relevant. Be concise, executive, and cite note titles when stating facts.'
+          : 'You are Mindora, an intelligent executive AI Second Brain. Answer the user query helpfully, professionally, and concisely. If the user asks about specific saved notes they have not created yet, explain that they can capture thoughts or notes anytime.';
+
+        const contextStr = hasNotes
+          ? matchingNotes.map((n, i) => `[Source ${i + 1}: ${n.title}]\n${n.content}`).join('\n\n')
+          : 'No specific notes saved yet.';
 
         const completion = await this.openaiClient.chat.completions.create({
           model: this.defaultModel,
           messages: [
             {
               role: 'system',
-              content:
-                'You are Mindora, an intelligent executive AI Second Brain. ' +
-                'Answer the user query strictly using the provided indexed notes. ' +
-                'Be concise, executive, and cite note titles when stating facts.',
+              content: systemPrompt,
             },
             {
               role: 'user',
-              content: `Context:\n${contextStr}\n\nQuestion: ${query}`,
+              content: hasNotes ? `Context:\n${contextStr}\n\nQuestion: ${query}` : query,
             },
           ],
-          temperature: 0.3,
+          temperature: 0.5,
           max_tokens: 600,
         });
 
@@ -276,16 +294,23 @@ export class AiService {
           return { answer, citedNoteIds };
         }
       } catch (err) {
-        console.warn('ModelFlare LLM request failed, using local synthesizer fallback:', err);
+        console.warn('AI LLM request failed, using local synthesizer fallback:', err);
       }
+    }
+
+    if (matchingNotes.length === 0) {
+      return {
+        answer:
+          "I'm here to help. You haven't captured any notes matching this query yet. Try creating a note, voice memo, or asking me anything directly.",
+        citedNoteIds: [],
+      };
     }
 
     const answer =
       `Synthesized from your Second Brain:\n\n` +
       matchingNotes
         .map((n) => `• In "${n.title}": ${n.content.substring(0, 140)}...`)
-        .join('\n\n') +
-      `\n\nAll deliverables remain aligned with upcoming project milestones.`;
+        .join('\n\n');
 
     return { answer, citedNoteIds };
   }
@@ -315,15 +340,7 @@ export class AiService {
         .filter((n) => n.similarity > 0.6)
         .sort((a, b) => b.similarity - a.similarity);
     } catch {
-      return [
-        {
-          id: '1',
-          title: 'Product Architecture & LLM Routing',
-          summary: 'Multi-tier routing architecture with offline SQLite synchronization.',
-          snippet: 'Dynamic model fallback, token latency budgets & latency telemetry...',
-          similarity: 0.92,
-        },
-      ];
+      return [];
     }
   }
 

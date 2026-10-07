@@ -23,30 +23,7 @@ export class NotesService {
         },
       });
     } catch {
-      return [
-        {
-          id: '1',
-          userId,
-          title: 'Product Architecture & LLM Routing',
-          content: 'Dynamic model fallback, token latency budgets & latency telemetry across Groq & Claude 3.5 Sonnet.',
-          summary: 'Multi-tier routing architecture with offline SQLite synchronization.',
-          isPinned: true,
-          isArchived: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        {
-          id: '2',
-          userId,
-          title: 'Meeting with John (Stripe Webhook)',
-          content: 'Met John today about the website. He wants it live before September. Need to finish payment integration.',
-          summary: 'Launch scheduled before September with Stripe webhook verification.',
-          isPinned: false,
-          isArchived: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ];
+      return [];
     }
   }
 
