@@ -4,6 +4,8 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/app_colors.dart';
 import 'core/models/note_model.dart';
 import 'core/models/task_model.dart';
+import 'core/models/project_model.dart';
+import 'core/models/smart_list_model.dart';
 import 'features/home/presentation/home_screen.dart';
 import 'features/auth/presentation/auth_screen.dart';
 import 'features/ai_assistant/presentation/ask_notes_screen.dart';
@@ -15,15 +17,57 @@ import 'core/providers/app_state_providers.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final savedToken = await LocalStorageService.instance.loadAuthToken();
-  if (savedToken != null && savedToken.isNotEmpty) {
-    ApiClient.instance.setAuthToken(savedToken);
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    debugPrint('Flutter uncaught error: ${details.exception}');
+  };
+
+  String? savedToken;
+  UserProfileState? savedProfile;
+  List<NoteModel>? savedNotes;
+  List<TaskModel>? savedTasks;
+  List<ProjectModel>? savedProjects;
+  List<SmartListModel>? savedSmartLists;
+
+  try {
+    savedToken = await LocalStorageService.instance.loadAuthToken();
+    if (savedToken != null && savedToken.isNotEmpty) {
+      ApiClient.instance.setAuthToken(savedToken);
+    }
+  } catch (e) {
+    debugPrint('Error loading auth token: $e');
   }
-  final savedProfile = await LocalStorageService.instance.loadUserProfile();
-  final savedNotes = await LocalStorageService.instance.loadNotes();
-  final savedTasks = await LocalStorageService.instance.loadTasks();
-  final savedProjects = await LocalStorageService.instance.loadProjects();
-  final savedSmartLists = await LocalStorageService.instance.loadSmartLists();
+
+  try {
+    savedProfile = await LocalStorageService.instance.loadUserProfile();
+  } catch (e) {
+    debugPrint('Error loading user profile: $e');
+  }
+
+  try {
+    savedNotes = await LocalStorageService.instance.loadNotes();
+  } catch (e) {
+    debugPrint('Error loading notes: $e');
+  }
+
+  try {
+    savedTasks = await LocalStorageService.instance.loadTasks();
+  } catch (e) {
+    debugPrint('Error loading tasks: $e');
+  }
+
+  try {
+    savedProjects = await LocalStorageService.instance.loadProjects();
+  } catch (e) {
+    debugPrint('Error loading projects: $e');
+  }
+
+  try {
+    savedSmartLists = await LocalStorageService.instance.loadSmartLists();
+  } catch (e) {
+    debugPrint('Error loading smart lists: $e');
+  }
 
   runApp(
     ProviderScope(
@@ -50,10 +94,10 @@ final isAuthenticatedProvider = StateProvider<bool>((ref) {
 
 class MindoraApp extends ConsumerStatefulWidget {
   final UserProfileState? initialProfile;
-  final dynamic initialNotes;
-  final dynamic initialTasks;
-  final dynamic initialProjects;
-  final dynamic initialSmartLists;
+  final List<NoteModel>? initialNotes;
+  final List<TaskModel>? initialTasks;
+  final List<ProjectModel>? initialProjects;
+  final List<SmartListModel>? initialSmartLists;
 
   const MindoraApp({
     super.key,
@@ -73,28 +117,32 @@ class _MindoraAppState extends ConsumerState<MindoraApp> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.initialProfile != null) {
-        ref.read(userProfileProvider.notifier).setUser(
-          email: widget.initialProfile!.email,
-          fullName: widget.initialProfile!.fullName,
-          isPro: widget.initialProfile!.isPro,
-          monthlyAiTokensUsed: widget.initialProfile!.monthlyAiTokensUsed,
-          monthlyAiTokensLimit: widget.initialProfile!.monthlyAiTokensLimit,
-        );
-      }
-      if (widget.initialNotes != null && widget.initialNotes is List) {
-        ref.read(notesProvider.notifier).setNotes(widget.initialNotes);
-      }
-      if (widget.initialTasks != null && widget.initialTasks is List) {
-        ref.read(tasksProvider.notifier).setTasks(widget.initialTasks);
-      }
-      if (widget.initialProjects != null && widget.initialProjects is List) {
-        ref.read(projectsProvider.notifier).setProjects(widget.initialProjects);
-      }
+      try {
+        if (widget.initialProfile != null) {
+          ref.read(userProfileProvider.notifier).setUser(
+            email: widget.initialProfile!.email,
+            fullName: widget.initialProfile!.fullName,
+            isPro: widget.initialProfile!.isPro,
+            monthlyAiTokensUsed: widget.initialProfile!.monthlyAiTokensUsed,
+            monthlyAiTokensLimit: widget.initialProfile!.monthlyAiTokensLimit,
+          );
+        }
+        if (widget.initialNotes != null && widget.initialNotes!.isNotEmpty) {
+          ref.read(notesProvider.notifier).setNotes(widget.initialNotes!);
+        }
+        if (widget.initialTasks != null && widget.initialTasks!.isNotEmpty) {
+          ref.read(tasksProvider.notifier).setTasks(widget.initialTasks!);
+        }
+        if (widget.initialProjects != null && widget.initialProjects!.isNotEmpty) {
+          ref.read(projectsProvider.notifier).setProjects(widget.initialProjects!);
+        }
 
-      // Sync latest data from backend if authenticated
-      if (ApiClient.instance.authToken.isNotEmpty) {
-        _syncWithBackend();
+        // Sync latest data from backend if authenticated
+        if (ApiClient.instance.authToken.isNotEmpty) {
+          _syncWithBackend();
+        }
+      } catch (e) {
+        debugPrint('PostFrameCallback initialization error: $e');
       }
     });
   }
@@ -103,39 +151,49 @@ class _MindoraAppState extends ConsumerState<MindoraApp> {
     try {
       final remoteNotes = await ApiClient.instance.fetchNotes();
       if (remoteNotes.isNotEmpty && mounted) {
-        final parsedNotes = remoteNotes.map<NoteModel>((n) {
-          return NoteModel(
-            id: n['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
-            title: n['title']?.toString() ?? 'Note',
-            content: n['content']?.toString() ?? '',
-            snippet: (n['summary'] != null && n['summary'].toString().isNotEmpty)
-                ? n['summary'].toString()
-                : (n['content']?.toString() ?? ''),
-            date: 'Synced',
-            category: 'Ideas',
-            tag: 'SYNCED',
-            tagColor: AppColors.primary,
-            icon: NoteModel.iconForCategory('Ideas'),
-            isPinned: n['isPinned'] == true,
-          );
-        }).toList();
-        ref.read(notesProvider.notifier).setNotes(parsedNotes);
+        final parsedNotes = <NoteModel>[];
+        for (final n in remoteNotes) {
+          try {
+            parsedNotes.add(NoteModel(
+              id: n['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+              title: n['title']?.toString() ?? 'Note',
+              content: n['content']?.toString() ?? '',
+              snippet: (n['summary'] != null && n['summary'].toString().isNotEmpty)
+                  ? n['summary'].toString()
+                  : (n['content']?.toString() ?? ''),
+              date: 'Synced',
+              category: 'Ideas',
+              tag: 'SYNCED',
+              tagColor: AppColors.primary,
+              icon: NoteModel.iconForCategory('Ideas'),
+              isPinned: n['isPinned'] == true,
+            ));
+          } catch (_) {}
+        }
+        if (parsedNotes.isNotEmpty && mounted) {
+          ref.read(notesProvider.notifier).setNotes(parsedNotes);
+        }
       }
 
       final remoteTasks = await ApiClient.instance.fetchTasks();
       if (remoteTasks.isNotEmpty && mounted) {
-        final parsedTasks = remoteTasks.map<TaskModel>((t) {
-          return TaskModel(
-            id: t['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
-            title: t['title']?.toString() ?? 'Task',
-            priority: (t['priority']?.toString() ?? 'medium').toLowerCase(),
-            isCompleted: t['isCompleted'] == true,
-            dueTime: t['dueDate']?.toString() ?? 'Today',
-            project: t['projectId']?.toString() ?? 'Workspace',
-            isAiExtracted: false,
-          );
-        }).toList();
-        ref.read(tasksProvider.notifier).setTasks(parsedTasks);
+        final parsedTasks = <TaskModel>[];
+        for (final t in remoteTasks) {
+          try {
+            parsedTasks.add(TaskModel(
+              id: t['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+              title: t['title']?.toString() ?? 'Task',
+              priority: (t['priority']?.toString() ?? 'medium').toLowerCase(),
+              isCompleted: t['isCompleted'] == true,
+              dueTime: t['dueDate']?.toString() ?? 'Today',
+              project: t['projectId']?.toString() ?? 'Workspace',
+              isAiExtracted: false,
+            ));
+          } catch (_) {}
+        }
+        if (parsedTasks.isNotEmpty && mounted) {
+          ref.read(tasksProvider.notifier).setTasks(parsedTasks);
+        }
       }
     } catch (_) {}
   }
