@@ -1,15 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 
 class AppTheme {
   static ThemeData get darkTheme {
-    TextTheme textTheme;
-    try {
-      textTheme = GoogleFonts.plusJakartaSansTextTheme(ThemeData.dark().textTheme);
-    } catch (_) {
-      textTheme = ThemeData.dark().textTheme;
-    }
+    final textTheme = ThemeData.dark().textTheme;
 
     return ThemeData(
       useMaterial3: true,
@@ -67,12 +61,7 @@ class AppTheme {
   }
 
   static ThemeData get lightTheme {
-    TextTheme textTheme;
-    try {
-      textTheme = GoogleFonts.plusJakartaSansTextTheme(ThemeData.light().textTheme);
-    } catch (_) {
-      textTheme = ThemeData.light().textTheme;
-    }
+    final textTheme = ThemeData.light().textTheme;
 
     return ThemeData(
       useMaterial3: true,
