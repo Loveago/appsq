@@ -1,0 +1,872 @@
+# AI Second Brain — Final Product Draft
+
+## 1. Product Vision
+
+Build a beautiful, intelligent note-taking app for **Android and iOS** that acts as the user's personal AI second brain.
+
+The app should allow users to capture thoughts naturally through text, voice, images, and recordings. Instead of simply storing information, the AI understands the content, extracts context, creates tasks and lists, connects related information, and helps users retrieve their knowledge later.
+
+### Core Promise
+
+> **Capture anything. Your AI organizes the rest.**
+
+The experience should feel fast, minimal, modern and premium — not like a traditional notes application.
+
+---
+
+# 2. Subscription Model
+
+## Free Plan — $0/month
+
+The free version should be genuinely useful and not feel like a crippled trial.
+
+### Included
+
+* Unlimited basic text notes
+* Basic note organization
+* AI note summarization
+* Basic context extraction
+* AI-generated lists
+* Basic task extraction
+* AI-powered note search
+* Limited AI conversations
+* Voice-to-text
+* Basic reminders
+* Basic projects
+* Standard AI models
+* Ads
+
+### Free AI Usage
+
+Free users receive a reasonable monthly AI allowance.
+
+When the allowance is reached, they can:
+
+* Wait for the allowance to reset
+* Upgrade to Pro
+
+The exact limits should be configurable from the backend rather than hard-coded into the app.
+
+---
+
+# 3. Pro — $4.99/month
+
+### Pro users get
+
+* Everything in Free
+* **No ads**
+* Higher AI usage limits
+* Priority AI processing
+* Advanced AI models
+* Unlimited AI conversations within fair-use limits
+* Advanced context extraction
+* Advanced project intelligence
+* AI daily briefing
+* Smart reminders
+* Advanced task extraction
+* Ask Your Notes
+* Meeting Mode
+* Meeting summaries
+* Action-item extraction
+* Automatic note connections
+* Knowledge graph
+* Advanced voice features
+* AI note rewriting
+* AI note transformation
+* Priority features and future AI tools
+
+### Pro Badge
+
+The app should subtly indicate Pro features with a premium badge such as:
+
+**✦ PRO**
+
+Do not make every screen feel like an advertisement for the subscription.
+
+---
+
+# 4. Advertising Strategy
+
+Ads should **never destroy the note-taking experience**.
+
+The goal is to monetize free users while keeping the product pleasant.
+
+## Where ads can appear
+
+### Home Screen
+
+A small native/sponsored card can occasionally appear between content sections.
+
+Example:
+
+> **Sponsored**
+>
+> Discover a productivity tool that helps you stay organized.
+>
+> Learn More →
+
+It should visually match the application's design.
+
+### Notes List
+
+Occasionally insert a small native ad between groups of notes.
+
+### AI Usage / Upgrade Moment
+
+When a free user reaches an AI limit, show the upgrade screen rather than immediately forcing an ad.
+
+Example:
+
+> You've used your free AI allowance.
+>
+> **Unlock unlimited AI with Pro**
+>
+> $4.99/month
+>
+> [Upgrade to Pro]
+>
+> Continue with Free
+
+### Important Advertising Rules
+
+Never:
+
+* Show an ad immediately when opening the app
+* Show an ad while the user is typing
+* Interrupt voice recording
+* Interrupt a meeting
+* Cover notes
+* Display pop-up ads repeatedly
+* Show ads after every action
+* Interrupt an AI response
+* Put ads inside private/personal content
+
+Ads should be **native, sparse and contextual**.
+
+---
+
+# 5. Home Screen
+
+The home screen should immediately communicate that this is an AI assistant rather than a traditional notes app.
+
+```text
+┌──────────────────────────────┐
+│ Good morning 👋              │
+│                              │
+│ What are you thinking about? │
+│ ┌──────────────────────────┐ │
+│ │ 🔍 Ask your second brain │ │
+│ └──────────────────────────┘ │
+│                              │
+│ + Quick Capture              │
+│                              │
+│ 🎙 Voice     ✍ Note          │
+│ ✅ Task      📋 List         │
+│                              │
+│ ──────────────────────────── │
+│                              │
+│ TODAY                        │
+│                              │
+│ 🔴 3 tasks                  │
+│ 📅 2 reminders              │
+│                              │
+│ ──────────────────────────── │
+│                              │
+│ CONTINUE WHERE YOU LEFT OFF │
+│                              │
+│ Delivery App                 │
+│ Fix payment webhook...       │
+│                              │
+│ ──────────────────────────── │
+│                              │
+│ Recent Notes                 │
+│                              │
+│ Meeting with John            │
+│ App launch ideas             │
+│ Office shopping list         │
+└──────────────────────────────┘
+```
+
+The home screen should change dynamically based on what is important to the user.
+
+---
+
+# 6. AI Assistant
+
+The AI screen is one of the most important parts of the application.
+
+```text
+┌──────────────────────────────┐
+│ AI Assistant             ✦   │
+│                              │
+│ Ask anything about your      │
+│ notes and knowledge.         │
+│                              │
+│ ┌──────────────────────────┐ │
+│ │ Ask your notes...        │ │
+│ └──────────────────────────┘ │
+│                              │
+│ Try asking                  │
+│                              │
+│ "What do I need to do today?"│
+│                              │
+│ "What did John ask me to do?"│
+│                              │
+│ "Show me everything about   │
+│ my delivery app."           │
+│                              │
+│ "When did I decide to launch│
+│ the website?"               │
+└──────────────────────────────┘
+```
+
+Answers should reference the user's notes so they can jump directly to the source.
+
+---
+
+# 7. Intelligent Note Creation
+
+Users should not need to structure notes manually.
+
+Example:
+
+> "Had a meeting with John today. He wants the website launched before September. I need to finish the payment integration and he said he'll send the new logo tomorrow."
+
+AI automatically detects:
+
+### People
+
+John
+
+### Project
+
+Website
+
+### Deadline
+
+Before September
+
+### Tasks
+
+* Finish payment integration
+* Wait for John to send logo
+
+### Related Topic
+
+Website launch
+
+The user can review the extracted information before saving.
+
+---
+
+# 8. AI Note Editor
+
+Inside a note:
+
+```text
+Meeting with John
+
+Had a meeting with John today...
+
+────────────────────
+
+✨ AI
+
+Summarize
+Extract Tasks
+Find Context
+Rewrite
+Make Professional
+Create Checklist
+Create Email
+Ask AI
+```
+
+The AI should understand the current note and perform actions without requiring the user to explain the entire context again.
+
+---
+
+# 9. Voice Capture
+
+Large microphone button:
+
+```text
+        🎙
+
+     Listening...
+
+"I need to finish the
+payment system tomorrow
+and call John about the
+logo."
+
+        [Stop]
+```
+
+After processing:
+
+### AI detected
+
+**Tasks**
+
+* Finish payment system
+* Call John about logo
+
+**Due**
+
+Tomorrow
+
+[Save Everything]
+
+---
+
+# 10. Meeting Mode — PRO
+
+Meeting Mode should be a premium feature.
+
+```text
+┌──────────────────────────────┐
+│ Meeting Mode             ✦PRO│
+│                              │
+│        ● Recording           │
+│                              │
+│       32:14                  │
+│                              │
+│     🎙 Recording...          │
+│                              │
+│        [ Stop ]              │
+│                              │
+│ AI will automatically create:│
+│                              │
+│ ✓ Transcript                │
+│ ✓ Summary                   │
+│ ✓ Decisions                 │
+│ ✓ Action Items              │
+│ ✓ Deadlines                 │
+└──────────────────────────────┘
+```
+
+After the meeting:
+
+### Meeting Summary
+
+**Decisions**
+
+Launch website before September.
+
+**Action Items**
+
+* Emmanuel — Finish payment integration
+* John — Send new logo
+* Sarah — Review landing page
+
+---
+
+# 11. Tasks
+
+The Tasks screen combines manually created tasks with tasks extracted by AI.
+
+```text
+TODAY
+
+🔴 Finish payment integration
+   Delivery App
+
+🟡 Call John
+   Website
+
+🟡 Send invoice
+   Finance
+
+UPCOMING
+
+Tomorrow
+- Review landing page
+
+Friday
+- Send proposal
+```
+
+AI should automatically understand relationships between tasks, notes and projects.
+
+---
+
+# 12. Smart Lists
+
+Users can simply tell the AI what they need.
+
+Example:
+
+> "Create a shopping list for my new office."
+
+The AI generates:
+
+### Office Shopping
+
+* Monitor
+* Keyboard
+* Mouse
+* Desk
+* Chair
+* Router
+* Extension board
+
+Users can check items off normally.
+
+---
+
+# 13. Projects
+
+Projects become intelligent containers.
+
+Example:
+
+### Delivery App
+
+**Overview**
+
+* 34 Notes
+* 12 Tasks
+* 4 Meetings
+* 8 People
+* 17 Links
+
+**AI Summary**
+
+> You are currently working on the rider tracking and payment systems.
+
+**Next Tasks**
+
+* Fix payment webhook
+* Test rider location tracking
+* Review order flow
+
+---
+
+# 14. Knowledge Connections — PRO
+
+The app automatically connects information.
+
+Example:
+
+```text
+             John
+              │
+              ▼
+        Website Project
+          /         \
+         ▼           ▼
+   Payment        Launch
+ Integration      September
+```
+
+Users can explore relationships between:
+
+* People
+* Projects
+* Notes
+* Tasks
+* Meetings
+* Companies
+* Topics
+
+This becomes the user's personal knowledge graph.
+
+---
+
+# 15. Daily AI Briefing — PRO
+
+Every morning:
+
+> **Good morning 👋**
+>
+> Here's what matters today.
+>
+> 🔴 **3 important tasks**
+>
+> Finish payment integration
+> Call John
+> Send proposal
+>
+> 📅 **Upcoming**
+>
+> Meeting at 2:00 PM
+>
+> 💡 **Context**
+>
+> Yesterday you mentioned that the website launch depends on the payment integration being completed.
+
+---
+
+# 16. Smart Reminders
+
+The AI detects potential reminders.
+
+User writes:
+
+> "I need to call Michael after the meeting tomorrow."
+
+The app responds:
+
+> **Create reminder?**
+>
+> 📅 Tomorrow
+> 🕐 After your meeting
+>
+> [Create Reminder]
+
+The user remains in control. AI should suggest, not silently create important commitments.
+
+---
+
+# 17. Search
+
+Search should be much more powerful than keyword matching.
+
+User searches:
+
+> "That note where I talked about the Airbnb website."
+
+The app finds the relevant note even if the words don't exactly match.
+
+Search modes:
+
+* Keyword
+* Semantic search
+* People
+* Projects
+* Dates
+* Tasks
+* Topics
+* AI search
+
+---
+
+# 18. Pro Upgrade Screen
+
+Keep it simple and premium.
+
+```text
+        ✦
+
+    Upgrade to Pro
+
+Your second brain,
+with more intelligence.
+
+✓ No Ads
+✓ Advanced AI
+✓ Meeting Mode
+✓ Daily AI Briefing
+✓ Smart Reminders
+✓ Knowledge Connections
+✓ Higher AI Limits
+✓ Priority Processing
+
+       $4.99 / month
+
+   [ Start Pro ]
+
+Cancel anytime.
+```
+
+Don't aggressively interrupt free users with this screen.
+
+Use natural upgrade moments when a user tries to access a Pro feature.
+
+---
+
+# 19. Profile & Settings
+
+### Account
+
+* Profile
+* Email
+* Subscription
+* Usage
+
+### AI
+
+* AI model preference
+* Response style
+* Automatic context
+* Automatic task detection
+* AI suggestions
+
+### Notifications
+
+* Tasks
+* Reminders
+* Daily briefing
+* AI suggestions
+
+### Privacy
+
+* Data controls
+* Delete notes
+* Export data
+* Delete account
+
+### Integrations
+
+Future integrations:
+
+* Google Calendar
+* Apple Calendar
+* Google Drive
+* Dropbox
+* Email
+* Notion
+* Slack
+
+---
+
+# 20. Bottom Navigation
+
+The primary navigation should remain simple:
+
+**Home · Notes · Tasks · AI · Profile**
+
+A floating capture button can sit above the navigation:
+
+**＋**
+
+Pressing it opens:
+
+* Note
+* Voice
+* Task
+* List
+* Scan
+* Meeting
+
+---
+
+# 21. Visual Design Direction
+
+The UI should feel like a premium modern AI product.
+
+### Design principles
+
+* Minimal
+* Spacious
+* Smooth animations
+* Rounded cards
+* Subtle gradients
+* Beautiful typography
+* Strong hierarchy
+* Dark and light themes
+* Soft shadows
+* Fluid page transitions
+* Haptic feedback
+* Skeleton loading states
+* Micro-interactions
+
+Avoid making it look like a generic ChatGPT clone.
+
+The application should have its own visual identity.
+
+---
+
+# 22. AI Architecture
+
+The backend should use a provider-independent AI layer.
+
+```text
+Flutter App
+     │
+     ▼
+NestJS API
+     │
+     ▼
+AI Service Layer
+     │
+ ┌───┴──────────────┐
+ │                  │
+AI Provider A    AI Provider B
+ │                  │
+ └───────┬──────────┘
+         ▼
+       Models
+```
+
+AI providers should be configurable through environment variables.
+
+This allows the application to switch between OpenAI-compatible providers without rewriting the mobile application.
+
+## AI Operations
+
+The backend should provide separate AI services:
+
+* `summarizeNote()`
+* `extractContext()`
+* `extractTasks()`
+* `createList()`
+* `answerFromNotes()`
+* `generateBriefing()`
+* `analyzeMeeting()`
+* `rewriteNote()`
+* `semanticSearch()`
+
+AI responses should use validated structured output wherever possible.
+
+---
+
+# 23. Recommended Technology Stack
+
+## Mobile
+
+* Flutter
+* Dart
+* Riverpod
+* GoRouter
+* Dio
+* Material 3
+* Custom animations
+
+## Backend
+
+* Node.js
+* TypeScript
+* NestJS
+* PostgreSQL
+* Prisma
+* Redis
+
+## AI
+
+* OpenAI-compatible API layer
+* Multiple model providers
+* Embeddings
+* Vector search
+* Speech-to-text
+* Structured AI outputs
+
+## Infrastructure
+
+* Docker
+* Cloudflare
+* VPS/cloud deployment
+* PostgreSQL backups
+* Object storage for recordings and attachments
+
+---
+
+# 24. Development Strategy
+
+Build the application in modules instead of trying to generate the entire system at once.
+
+### Phase 1
+
+Authentication + onboarding
+
+### Phase 2
+
+Notes + editor
+
+### Phase 3
+
+AI context extraction
+
+### Phase 4
+
+Tasks + lists
+
+### Phase 5
+
+AI search + Ask Your Notes
+
+### Phase 6
+
+Projects
+
+### Phase 7
+
+Voice capture
+
+### Phase 8
+
+Subscriptions + Pro
+
+### Phase 9
+
+Advertising
+
+### Phase 10
+
+Meeting Mode
+
+### Phase 11
+
+Knowledge connections
+
+### Phase 12
+
+Daily AI briefing + advanced intelligence
+
+Every module should include:
+
+* Database schema
+* API endpoints
+* Validation
+* Error handling
+* Security
+* Tests
+* Mobile UI
+* Loading states
+* Empty states
+* Offline/error states
+
+---
+
+# 25. Final Product Identity
+
+The application should feel like:
+
+**Notes + AI + Tasks + Memory + Personal Knowledge**
+
+rather than:
+
+**Notes + Chatbot**
+
+The most important experience is:
+
+> **The user thinks naturally. The app understands naturally.**
+
+The user should never feel like they are doing administrative work just to keep their notes organized.
+
+---
+
+# Monetization Summary
+
+| Feature               |     Free |             Pro |
+| --------------------- | -------: | --------------: |
+| Basic Notes           |        ✓ |               ✓ |
+| AI Summaries          |        ✓ |               ✓ |
+| Context Extraction    |        ✓ |        Advanced |
+| AI Lists              |        ✓ |               ✓ |
+| Task Extraction       |        ✓ |        Advanced |
+| AI Search             |        ✓ |               ✓ |
+| Ask Your Notes        |  Limited |               ✓ |
+| Voice-to-Text         |  Limited |               ✓ |
+| Projects              |        ✓ |               ✓ |
+| Smart Reminders       |  Limited |               ✓ |
+| Daily AI Briefing     |        — |               ✓ |
+| Meeting Mode          |        — |               ✓ |
+| Knowledge Connections |        — |               ✓ |
+| Advanced AI Models    |        — |               ✓ |
+| Higher AI Limits      |        — |               ✓ |
+| Priority Processing   |        — |               ✓ |
+| Ads                   |      Yes |          **No** |
+| Price                 | **Free** | **$4.99/month** |
+
+## Tagline
+= Important note
+## Powerful admin panel we need this 
+tech Stack
+fluuter 
+Dart
+postgresql
+nodejs
+nextjs 
+typescript
