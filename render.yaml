@@ -24,6 +24,19 @@ services:
       - key: OPENAI_MODEL
         value: gpt-4o-mini
 
+  - type: web
+    name: mindora-admin
+    env: node
+    plan: free
+    rootDir: apps/admin
+    buildCommand: npm install && npm run build
+    startCommand: npm run start:render
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        value: https://mindora-backend-jbxx.onrender.com
+
 databases:
   - name: mindora-postgres
     plan: free
