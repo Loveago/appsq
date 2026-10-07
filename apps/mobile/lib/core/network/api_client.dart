@@ -3,7 +3,7 @@ import 'package:dio/dio.dart';
 import '../models/note_model.dart';
 
 class ApiClient {
-  static const String defaultBaseUrl = String.fromEnvironment('API_URL', defaultValue: 'http://127.0.0.1:4000');
+  static const String defaultBaseUrl = String.fromEnvironment('API_URL', defaultValue: 'https://mindora-backend-jbxx.onrender.com');
   late final Dio _dio;
   String _authToken = '';
   String _currentBaseUrl = defaultBaseUrl;

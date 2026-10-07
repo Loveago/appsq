@@ -466,6 +466,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     GestureDetector(
                       onTap: () => _showServerSettingsModal(isDark),
                       child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
@@ -474,12 +475,16 @@ class _AuthScreenState extends State<AuthScreen> {
                             color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
                           ),
                           const SizedBox(width: 6),
-                          Text(
-                            'Backend Server: ${_serverUrlController.text.replaceFirst('https://', '').replaceFirst('http://', '')}',
-                            style: TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 10.5,
-                              color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                          Flexible(
+                            child: Text(
+                              'Server: ${_serverUrlController.text.replaceFirst('https://', '').replaceFirst('http://', '')}',
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 10.5,
+                                color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 4),
