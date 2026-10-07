@@ -27,15 +27,19 @@ export class AdminService {
     ipAddress?: string;
   }) {
     try {
+      const isUserTarget = params.targetType === 'USER';
       await this.prisma.auditLog.create({
         data: {
           adminId: params.adminId,
           adminEmail: params.adminEmail,
           action: params.action,
           targetType: params.targetType,
-          targetId: params.targetId,
+          targetId: isUserTarget ? params.targetId : null,
           targetEmail: params.targetEmail,
-          details: params.details || {},
+          details: {
+            ...params.details,
+            ifNonUserId: !isUserTarget ? params.targetId : undefined,
+          },
           ipAddress: params.ipAddress,
         },
       });
