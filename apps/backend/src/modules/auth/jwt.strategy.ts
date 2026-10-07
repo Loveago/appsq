@@ -25,8 +25,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       if (!user) {
         throw new UnauthorizedException('User not found');
       }
+      if (user.isSuspended) {
+        throw new UnauthorizedException('Account suspended: ' + (user.suspendedReason || 'Contact support.'));
+      }
+      // Update last active asynchronously
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: { lastActiveAt: new Date() },
+      }).catch(() => {});
       return user;
-    } catch {
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
       // In offline / mock dev mode, return fallback mock user
       return {
         id: payload.sub,

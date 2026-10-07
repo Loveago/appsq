@@ -60,6 +60,15 @@ export class AuthService {
         throw new UnauthorizedException('Invalid email or password');
       }
 
+      if (user.isSuspended) {
+        throw new UnauthorizedException('Account suspended: ' + (user.suspendedReason || 'Contact support.'));
+      }
+
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { lastActiveAt: new Date() },
+      }).catch(() => {});
+
       const tokens = this.generateTokens(user.id, user.email, user.role);
       return { user, ...tokens };
     } catch (err) {

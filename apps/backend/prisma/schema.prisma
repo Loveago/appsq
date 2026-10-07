@@ -42,23 +42,27 @@ enum MeetingStatus {
 }
 
 model User {
-  id               String           @id @default(uuid())
-  email            String           @unique
-  passwordHash     String?
-  fullName         String?
-  avatarUrl        String?
-  role             Role             @default(USER)
-  subscriptionTier SubscriptionTier @default(FREE)
-  revenueCatAppUserId String?       @unique
-  stripeCustomerId String?
+  id                    String           @id @default(uuid())
+  email                 String           @unique
+  passwordHash          String?
+  fullName              String?
+  avatarUrl             String?
+  role                  Role             @default(USER)
+  subscriptionTier      SubscriptionTier @default(FREE)
+  revenueCatAppUserId   String?          @unique
+  stripeCustomerId      String?
   subscriptionExpiresAt DateTime?
 
-  // Monthly AI Quota tracking
-  monthlyAiTokensUsed Int           @default(0)
-  aiQuotaResetAt   DateTime         @default(now())
+  isSuspended           Boolean          @default(false)
+  suspendedReason       String?
+  lastActiveAt          DateTime         @default(now())
 
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  // Monthly AI Quota tracking
+  monthlyAiTokensUsed Int      @default(0)
+  aiQuotaResetAt      DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   notes            Note[]
   tasks            Task[]
@@ -69,51 +73,53 @@ model User {
   dailyBriefings   DailyBriefing[]
   aiConversations  AiConversation[]
   nodeConnections  KnowledgeConnection[]
+  adminAuditLogs   AuditLog[]       @relation("AdminAuditLogs")
+  targetAuditLogs  AuditLog[]       @relation("TargetAuditLogs")
 
   @@index([email])
   @@index([subscriptionTier])
 }
 
 model Project {
-  id          String    @id @default(uuid())
+  id          String   @id @default(uuid())
   userId      String
   name        String
   description String?
-  colorHex    String?   @default("#6366F1")
-  icon        String?   @default("folder")
-  aiSummary   String?   @db.Text
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  colorHex    String?  @default("#6366F1")
+  icon        String?  @default("folder")
+  aiSummary   String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  notes       Note[]
-  tasks       Task[]
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notes Note[]
+  tasks Task[]
 
   @@index([userId])
 }
 
 model Note {
-  id             String    @id @default(uuid())
-  userId         String
-  projectId      String?
-  title          String    @default("Untitled Note")
-  content        String    @db.Text
-  summary        String?   @db.Text
-  isPinned       Boolean   @default(false)
-  isArchived     Boolean   @default(false)
-  extractedEntities Json?  // { people: [], dates: [], topics: [], companies: [] }
-  
+  id                String  @id @default(uuid())
+  userId            String
+  projectId         String?
+  title             String  @default("Untitled Note")
+  content           String  @db.Text
+  summary           String? @db.Text
+  isPinned          Boolean @default(false)
+  isArchived        Boolean @default(false)
+  extractedEntities Json? // { people: [], dates: [], topics: [], companies: [] }
+
   // 1536-dimensional vector embedding (for OpenAI text-embedding-3-small)
-  embedding      Unsupported("vector(1536)")?
+  embedding Unsupported("vector(1536)")?
 
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project        Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  tasks          Task[]
-  lists          SmartList[]
-  reminders      Reminder[]
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project         Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  tasks           Task[]
+  lists           SmartList[]
+  reminders       Reminder[]
   connectionsFrom KnowledgeConnection[] @relation("ConnectionFrom")
   connectionsTo   KnowledgeConnection[] @relation("ConnectionTo")
 
@@ -123,44 +129,44 @@ model Note {
 }
 
 model KnowledgeConnection {
-  id             String    @id @default(uuid())
-  userId         String
-  fromNoteId     String
-  toNoteId       String
-  relationType   String    // e.g. "depends_on", "same_entity", "project_reference", "topic_similarity"
-  strength       Float     @default(0.5) // 0.0 to 1.0 confidence score
-  contextNote    String?
+  id           String  @id @default(uuid())
+  userId       String
+  fromNoteId   String
+  toNoteId     String
+  relationType String // e.g. "depends_on", "same_entity", "project_reference", "topic_similarity"
+  strength     Float   @default(0.5) // 0.0 to 1.0 confidence score
+  contextNote  String?
 
-  createdAt      DateTime  @default(now())
+  createdAt DateTime @default(now())
 
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  fromNote       Note      @relation("ConnectionFrom", fields: [fromNoteId], references: [id], onDelete: Cascade)
-  toNote         Note      @relation("ConnectionTo", fields: [toNoteId], references: [id], onDelete: Cascade)
+  user     User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fromNote Note @relation("ConnectionFrom", fields: [fromNoteId], references: [id], onDelete: Cascade)
+  toNote   Note @relation("ConnectionTo", fields: [toNoteId], references: [id], onDelete: Cascade)
 
   @@unique([fromNoteId, toNoteId, relationType])
   @@index([userId])
 }
 
 model Task {
-  id          String       @id @default(uuid())
-  userId      String
-  noteId      String?
-  projectId   String?
-  title       String
-  description String?
-  status      TaskStatus   @default(PENDING)
-  priority    TaskPriority @default(MEDIUM)
-  dueDate     DateTime?
-  dueTimeStr  String?      // e.g. "Tomorrow afternoon"
-  isAiExtracted Boolean    @default(false)
+  id            String       @id @default(uuid())
+  userId        String
+  noteId        String?
+  projectId     String?
+  title         String
+  description   String?
+  status        TaskStatus   @default(PENDING)
+  priority      TaskPriority @default(MEDIUM)
+  dueDate       DateTime?
+  dueTimeStr    String? // e.g. "Tomorrow afternoon"
+  isAiExtracted Boolean      @default(false)
 
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  note        Note?        @relation(fields: [noteId], references: [id], onDelete: SetNull)
-  project     Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  reminders   Reminder[]
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  note      Note?      @relation(fields: [noteId], references: [id], onDelete: SetNull)
+  project   Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  reminders Reminder[]
 
   @@index([userId])
   @@index([status])
@@ -168,124 +174,206 @@ model Task {
 }
 
 model SmartList {
-  id          String          @id @default(uuid())
-  userId      String
-  noteId      String?
-  title       String
-  isAiGenerated Boolean       @default(false)
-  items       SmartListItem[]
+  id            String          @id @default(uuid())
+  userId        String
+  noteId        String?
+  title         String
+  isAiGenerated Boolean         @default(false)
+  items         SmartListItem[]
 
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  note        Note?           @relation(fields: [noteId], references: [id], onDelete: SetNull)
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  note Note? @relation(fields: [noteId], references: [id], onDelete: SetNull)
 
   @@index([userId])
 }
 
 model SmartListItem {
-  id          String     @id @default(uuid())
+  id          String  @id @default(uuid())
   listId      String
   content     String
-  isCompleted Boolean    @default(false)
-  position    Int        @default(0)
+  isCompleted Boolean @default(false)
+  position    Int     @default(0)
 
-  smartList   SmartList  @relation(fields: [listId], references: [id], onDelete: Cascade)
+  smartList SmartList @relation(fields: [listId], references: [id], onDelete: Cascade)
 
   @@index([listId])
 }
 
 model Meeting {
-  id           String        @id @default(uuid())
-  userId       String
-  title        String        @default("Recorded Meeting")
-  audioUrl     String?
-  durationSec  Int           @default(0)
-  status       MeetingStatus @default(RECORDING)
-  transcript   String?       @db.Text
-  summary      String?       @db.Text
-  decisions    Json?         // Array of strings
-  actionItems  Json?         // Array of { assignee: string, task: string, deadline: string }
-  
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id          String        @id @default(uuid())
+  userId      String
+  title       String        @default("Recorded Meeting")
+  audioUrl    String?
+  durationSec Int           @default(0)
+  status      MeetingStatus @default(RECORDING)
+  transcript  String?       @db.Text
+  summary     String?       @db.Text
+  decisions   Json? // Array of strings
+  actionItems Json? // Array of { assignee: string, task: string, deadline: string }
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
 
 model Reminder {
-  id          String    @id @default(uuid())
+  id          String   @id @default(uuid())
   userId      String
   noteId      String?
   taskId      String?
   title       String
   remindAt    DateTime
-  isCompleted Boolean   @default(false)
+  isCompleted Boolean  @default(false)
 
-  createdAt   DateTime  @default(now())
+  createdAt DateTime @default(now())
 
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  note        Note?     @relation(fields: [noteId], references: [id], onDelete: SetNull)
-  task        Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  note Note? @relation(fields: [noteId], references: [id], onDelete: SetNull)
+  task Task? @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([remindAt])
 }
 
 model DailyBriefing {
-  id          String    @id @default(uuid())
-  userId      String
-  date        DateTime  @db.Date
-  headline    String
-  tasksJson   Json      // Top 3 priority items
-  meetingsJson Json     // Upcoming events
-  contextInsight String @db.Text
-  deliveredAt DateTime?
+  id             String    @id @default(uuid())
+  userId         String
+  date           DateTime  @db.Date
+  headline       String
+  tasksJson      Json // Top 3 priority items
+  meetingsJson   Json // Upcoming events
+  contextInsight String    @db.Text
+  deliveredAt    DateTime?
 
-  createdAt   DateTime  @default(now())
+  createdAt DateTime @default(now())
 
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, date])
   @@index([userId])
 }
 
 model AiConversation {
-  id          String        @id @default(uuid())
-  userId      String
-  title       String        @default("Second Brain Inquiry")
-  messages    AiMessage[]
+  id       String      @id @default(uuid())
+  userId   String
+  title    String      @default("Second Brain Inquiry")
+  messages AiMessage[]
 
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
 
 model AiMessage {
-  id             String         @id @default(uuid())
+  id             String   @id @default(uuid())
   conversationId String
-  role           String         // "user" | "assistant" | "system"
-  content        String         @db.Text
-  citedNoteIds   Json?          // Array of note IDs referenced in response
-  toolCalls      Json?          // Array of executed tool actions and results
-  metadata       Json?          // Additional context, audio flag, accuracy
-  createdAt      DateTime       @default(now())
+  role           String // "user" | "assistant" | "system"
+  content        String   @db.Text
+  citedNoteIds   Json? // Array of note IDs referenced in response
+  toolCalls      Json? // Array of executed tool actions and results
+  metadata       Json? // Additional context, audio flag, accuracy
+  createdAt      DateTime @default(now())
 
-  conversation   AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId])
 }
 
 model SystemSetting {
-  id          String    @id @default(uuid())
-  key         String    @unique
+  id          String   @id @default(uuid())
+  key         String   @unique
   value       Json
   description String?
-  updatedAt   DateTime  @updatedAt
+  updatedAt   DateTime @updatedAt
 }
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  adminId     String
+  adminEmail  String
+  action      String   // e.g. "GRANT_PRO", "SUSPEND_USER", "UPDATE_AI_PROVIDER", "TOGGLE_FEATURE"
+  targetType  String   // e.g. "USER", "AI_PROVIDER", "FEATURE_FLAG", "SETTING"
+  targetId    String?
+  targetEmail String?
+  details     Json?    // Context payload
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  admin       User     @relation("AdminAuditLogs", fields: [adminId], references: [id], onDelete: Cascade)
+  targetUser  User?    @relation("TargetAuditLogs", fields: [targetId], references: [id], onDelete: SetNull)
+
+  @@index([adminId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model AiProviderConfig {
+  id                 String   @id @default(uuid())
+  name               String   @unique // e.g. "ModelFlare", "OpenAI", "Groq"
+  providerType       String   @default("OPENAI_COMPATIBLE") // "OPENAI_COMPATIBLE" | "ANTHROPIC" | "CUSTOM"
+  baseUrl            String
+  apiKeyEncrypted    String   // Encrypted or obfuscated API key
+  chatModel          String   @default("gpt-4o-mini")
+  reasoningModel     String?  @default("gpt-4o")
+  transcriptionModel String?  @default("whisper-1")
+  embeddingModel     String?  @default("text-embedding-3-small")
+  priority           Int      @default(1)
+  isEnabled          Boolean  @default(true)
+  isFallback         Boolean  @default(true)
+  lastTestedAt       DateTime?
+  lastLatencyMs      Int?
+  lastStatus         String?  @default("UNTESTED") // "OPERATIONAL" | "DEGRADED" | "FAILED" | "UNTESTED"
+  errorMessage       String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model FeatureFlag {
+  id          String   @id @default(uuid())
+  key         String   @unique // e.g. "ai_chat", "voice_notes", "meeting_mode", "daily_briefing", "ads_enabled"
+  name        String
+  description String?
+  isEnabled   Boolean  @default(true)
+  isProOnly   Boolean  @default(false)
+  rolloutPct  Int      @default(100) // 0-100%
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Announcement {
+  id          String   @id @default(uuid())
+  title       String
+  message     String   @db.Text
+  targetTier  String   @default("ALL") // "ALL" | "FREE" | "PRO"
+  actionUrl   String?
+  actionLabel String?
+  isActive    Boolean  @default(true)
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SystemErrorLog {
+  id          String   @id @default(uuid())
+  type        String   // "AI_TIMEOUT", "AUTH_FAILURE", "JOB_FAILURE", "PAYMENT_WEBHOOK_ERROR"
+  severity    String   @default("WARN") // "INFO" | "WARN" | "ERROR" | "CRITICAL"
+  message     String
+  endpoint    String?
+  userId      String?
+  provider    String?
+  details     Json?
+  createdAt   DateTime @default(now())
+
+  @@index([type])
+  @@index([createdAt])
+}
+

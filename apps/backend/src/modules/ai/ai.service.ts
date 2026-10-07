@@ -56,6 +56,35 @@ export class AiService {
     }
   }
 
+  async getAiClient(): Promise<{ client: OpenAI | null; model: string; providerName: string }> {
+    try {
+      const activeProvider = await this.prisma.aiProviderConfig.findFirst({
+        where: { isEnabled: true },
+        orderBy: { priority: 'asc' },
+      });
+
+      if (activeProvider && activeProvider.apiKeyEncrypted && activeProvider.baseUrl) {
+        const client = new OpenAI({
+          apiKey: activeProvider.apiKeyEncrypted,
+          baseURL: activeProvider.baseUrl,
+        });
+        return {
+          client,
+          model: activeProvider.chatModel || this.defaultModel,
+          providerName: activeProvider.name,
+        };
+      }
+    } catch {
+      // DB lookup error, continue with default env client
+    }
+
+    return {
+      client: this.openaiClient,
+      model: this.defaultModel,
+      providerName: 'Default / Environment',
+    };
+  }
+
   async checkAndTrackQuota(userId: string, tokensEstimate: number): Promise<void> {
     try {
       const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -93,7 +122,8 @@ export class AiService {
       await this.checkAndTrackQuota(userId, 800);
     }
 
-    if (this.openaiClient) {
+    const { client, model, providerName } = await this.getAiClient();
+    if (client) {
       try {
         const prompt = `You are Mindora AI, an executive context extraction system.
 Analyze the following user input and return a pure JSON object adhering strictly to this schema:
@@ -117,8 +147,8 @@ User input:
 
 Return ONLY valid JSON without markdown formatting or codeblocks.`;
 
-        const completion = await this.openaiClient.chat.completions.create({
-          model: this.defaultModel,
+        const completion = await client.chat.completions.create({
+          model,
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.3,
           max_tokens: 800,
@@ -130,8 +160,8 @@ Return ONLY valid JSON without markdown formatting or codeblocks.`;
           const parsed = JSON.parse(cleaned);
           return ExtractedContextSchema.parse(parsed) as unknown as ExtractedContextResult;
         }
-      } catch (err) {
-        console.warn('LLM extractContext failed, falling back to heuristic parsing:', err);
+      } catch (err: any) {
+        console.warn(`LLM extractContext failed with provider ${providerName}, falling back to heuristic parsing:`, err);
       }
     }
 
@@ -829,15 +859,16 @@ If no action is required, do NOT include the <<<ACTIONS>>> block.`;
       }
     }
 
-    if (this.openaiClient) {
+    const { client, model, providerName } = await this.getAiClient();
+    if (client) {
       try {
         const historyMessages = (conv.messages || []).slice(-6).reverse().map((m) => ({
           role: (m.role === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user',
           content: m.content,
         }));
 
-        const completion = await this.openaiClient.chat.completions.create({
-          model: this.defaultModel,
+        const completion = await client.chat.completions.create({
+          model,
           messages: [
             { role: 'system', content: systemPrompt },
             {
