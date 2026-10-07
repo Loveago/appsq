@@ -19,6 +19,7 @@ import '../../projects/presentation/project_detail_screen.dart';
 import '../../graph/presentation/knowledge_graph_screen.dart';
 import '../../briefing/presentation/daily_briefing_dialog.dart';
 import '../../voice/presentation/voice_capture_sheet.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../ads/presentation/native_ad_card.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -558,7 +559,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  void _handleCaptureMode(BuildContext context, String mode) {
+  Future<void> _handleCaptureMode(BuildContext context, String mode) async {
     if (mode == 'write') {
       Navigator.push(
         context,
@@ -586,16 +587,61 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     } else if (mode == 'list') {
       _onSelectTab(2);
+    } else if (mode == 'photo') {
+      try {
+        final picker = ImagePicker();
+        final pickedFile = await picker.pickImage(
+          source: ImageSource.camera,
+          imageQuality: 85,
+        );
+        if (pickedFile != null && context.mounted) {
+          final now = DateTime.now();
+          final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (context) => AiExtractSheet(
+              imagePath: pickedFile.path,
+              rawThought: 'Photo captured at $timeStr. Image saved to device.',
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Camera access notice: $e')),
+          );
+        }
+      }
     } else {
-      // scan or photo
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (context) => const AiExtractSheet(
-          rawThought: 'Scanned document: Invoice #4029 from Stripe for \$4,200. Due Sep 30.',
-        ),
-      );
+      // scan document from gallery or camera
+      try {
+        final picker = ImagePicker();
+        final pickedFile = await picker.pickImage(
+          source: ImageSource.gallery,
+          imageQuality: 85,
+        );
+        if (pickedFile != null && context.mounted) {
+          final now = DateTime.now();
+          final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (context) => AiExtractSheet(
+              imagePath: pickedFile.path,
+              rawThought: 'Document scanned at $timeStr. Ready for neural analysis.',
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Document scanner notice: $e')),
+          );
+        }
+      }
     }
   }
 

@@ -1,23 +1,141 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/fade_slide_in.dart';
+import '../../../../core/models/note_model.dart';
+import '../../../../core/providers/app_state_providers.dart';
+import '../../../../core/network/api_client.dart';
 
-class AiExtractSheet extends StatefulWidget {
+class AiExtractSheet extends ConsumerStatefulWidget {
   final String rawThought;
+  final String? imagePath;
   final VoidCallback? onApply;
 
   const AiExtractSheet({
     super.key,
-    this.rawThought = 'Met John today about the website. He wants it live before September. Need to finish payment integration and he will send the new logo tomorrow.',
+    this.rawThought = 'Meeting discussion and deliverables note.',
+    this.imagePath,
     this.onApply,
   });
 
   @override
-  State<AiExtractSheet> createState() => _AiExtractSheetState();
+  ConsumerState<AiExtractSheet> createState() => _AiExtractSheetState();
 }
 
-class _AiExtractSheetState extends State<AiExtractSheet> {
-  final List<bool> _checkedTasks = [true, false];
+class _AiExtractSheetState extends ConsumerState<AiExtractSheet> {
+  bool _isLoading = true;
+  String _stakeholder = 'Self';
+  String _target = 'General';
+  String _targetDate = 'Today';
+  String _suggestedTitle = 'Quick Capture';
+  List<String> _detectedTasks = [];
+  List<bool> _checkedTasks = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _performExtraction();
+  }
+
+  Future<void> _performExtraction() async {
+    final text = widget.rawThought.trim();
+    if (text.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
+    try {
+      final res = await ApiClient.instance.extractContext(text);
+      if (mounted) {
+        final people = (res['people'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+        final projects = (res['projects'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+        final deadlines = (res['deadlines'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+        final tasksRaw = (res['tasks'] as List<dynamic>?) ?? [];
+
+        final tasksList = <String>[];
+        for (final t in tasksRaw) {
+          if (t is Map && t['title'] != null) {
+            tasksList.add(t['title'].toString());
+          } else if (t is String) {
+            tasksList.add(t);
+          }
+        }
+
+        setState(() {
+          _stakeholder = people.isNotEmpty ? people.first : 'Self';
+          _target = projects.isNotEmpty ? projects.first : 'General';
+          _targetDate = deadlines.isNotEmpty ? deadlines.first : 'Today';
+          _suggestedTitle = res['suggestedTitle']?.toString() ?? (_stakeholder != 'Self' ? 'Sync: $_stakeholder' : 'Thought Note');
+          _detectedTasks = tasksList.isNotEmpty ? tasksList : ['Follow up on extracted thought'];
+          _checkedTasks = List.filled(_detectedTasks.length, true);
+          _isLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _detectedTasks = ['Review captured note'];
+          _checkedTasks = [true];
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _saveEntities() {
+    final selectedTasks = <String>[];
+    for (int i = 0; i < _detectedTasks.length; i++) {
+      if (i < _checkedTasks.length && _checkedTasks[i]) {
+        selectedTasks.add(_detectedTasks[i]);
+      }
+    }
+
+    // 1. Add note to notesProvider
+    try {
+      final note = NoteModel(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        title: _suggestedTitle,
+        content: widget.rawThought,
+        snippet: selectedTasks.isNotEmpty
+            ? '${selectedTasks.length} action item(s) extracted: ${selectedTasks.first}'
+            : widget.rawThought,
+        date: 'Just now',
+        category: 'Ideas',
+        tag: widget.imagePath != null ? 'SCAN' : 'NOTE',
+        tagColor: widget.imagePath != null ? AppColors.matrixEmerald : AppColors.primary,
+        icon: widget.imagePath != null ? Icons.document_scanner_rounded : Icons.auto_awesome_rounded,
+        extractedTasks: selectedTasks,
+      );
+      ref.read(notesProvider.notifier).addNote(note);
+
+      // 2. Add tasks to tasksProvider
+      if (selectedTasks.isNotEmpty) {
+        ref.read(tasksProvider.notifier).addExtractedTasks(
+          selectedTasks,
+          project: _target,
+          sourceNote: _suggestedTitle,
+        );
+      }
+    } catch (_) {}
+
+    if (widget.onApply != null) {
+      widget.onApply!();
+    } else {
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Saved to Second Brain! ${selectedTasks.length} task(s) created.'),
+          duration: const Duration(milliseconds: 1800),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -111,133 +229,128 @@ class _AiExtractSheetState extends State<AiExtractSheet> {
 
               const SizedBox(height: 18),
 
-              // Synthesized Entities
-              Text(
-                'STRUCTURED GRAPH ENTITIES',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.2,
-                  color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildEntityPill(
-                      label: 'Stakeholder',
-                      value: 'John Doe',
-                      icon: Icons.person_outline_rounded,
-                      accentColor: AppColors.primary,
-                      isDark: isDark,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildEntityPill(
-                      label: 'Target',
-                      value: 'Website',
-                      icon: Icons.folder_outlined,
-                      accentColor: AppColors.electricViolet,
-                      isDark: isDark,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildEntityPill(
-                      label: 'Target Date',
-                      value: 'Sep 01',
-                      icon: Icons.event_outlined,
-                      accentColor: AppColors.amber,
-                      isDark: isDark,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 14),
-
-              // Extracted Action Items
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: isDark ? AppColors.darkSurfaceSubtle : AppColors.surfaceSubtle,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
-                    width: 0.8,
+              if (_isLoading) ...[
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: CircularProgressIndicator(color: AppColors.primary),
                   ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              ] else ...[
+                // Synthesized Entities
+                Text(
+                  'STRUCTURED GRAPH ENTITIES',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                    color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.checklist_rounded, size: 16, color: AppColors.emerald),
-                        const SizedBox(width: 8),
-                        Text(
-                          'ACTION ITEMS (2 DETECTED)',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.0,
-                            color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                          ),
-                        ),
-                      ],
+                    Expanded(
+                      child: _buildEntityPill(
+                        label: 'Stakeholder',
+                        value: _stakeholder,
+                        icon: Icons.person_outline_rounded,
+                        accentColor: AppColors.primary,
+                        isDark: isDark,
+                      ),
                     ),
-                    const SizedBox(height: 12),
-                    _buildTaskItem(
-                      index: 0,
-                      title: 'Finish payment integration before staging sync',
-                      isDark: isDark,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildEntityPill(
+                        label: 'Target',
+                        value: _target,
+                        icon: Icons.folder_outlined,
+                        accentColor: AppColors.electricViolet,
+                        isDark: isDark,
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    _buildTaskItem(
-                      index: 1,
-                      title: 'Follow up with John regarding new brand logo assets',
-                      isDark: isDark,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildEntityPill(
+                        label: 'Target Date',
+                        value: _targetDate,
+                        icon: Icons.event_outlined,
+                        accentColor: AppColors.amber,
+                        isDark: isDark,
+                      ),
                     ),
                   ],
                 ),
-              ),
 
-              const SizedBox(height: 24),
+                const SizedBox(height: 14),
 
-              // Action Buttons
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    if (widget.onApply != null) {
-                      widget.onApply!();
-                    } else {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Entities & tasks committed to your neural graph.'),
-                          duration: Duration(milliseconds: 1400),
-                        ),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                // Extracted Action Items
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.darkSurfaceSubtle : AppColors.surfaceSubtle,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                      width: 0.8,
                     ),
                   ),
-                  child: const Text(
-                    'Sync & Commit to Neural Brain',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.checklist_rounded, size: 16, color: AppColors.emerald),
+                          const SizedBox(width: 8),
+                          Text(
+                            'ACTION ITEMS (${_detectedTasks.length} DETECTED)',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.0,
+                              color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      for (int i = 0; i < _detectedTasks.length; i++)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _buildTaskItem(
+                            index: i,
+                            title: _detectedTasks[i],
+                            isDark: isDark,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-              ),
+
+                const SizedBox(height: 24),
+
+                // Action Buttons
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _saveEntities,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: const Text(
+                      'Sync & Commit to Neural Brain',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

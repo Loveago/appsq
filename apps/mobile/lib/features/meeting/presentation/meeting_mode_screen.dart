@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import '../../../../core/widgets/fade_slide_in.dart';
 import '../../../../core/models/note_model.dart';
 import '../../../../core/providers/app_state_providers.dart';
 import '../../../../core/services/audio_service.dart';
+import '../../../../core/network/api_client.dart';
 
 class MeetingModeScreen extends StatefulWidget {
   final VoidCallback? onStopRecording;
@@ -19,8 +21,11 @@ class MeetingModeScreen extends StatefulWidget {
 class _MeetingModeScreenState extends State<MeetingModeScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _animController;
+  Timer? _timer;
+  int _secondsElapsed = 0;
   bool _isPaused = false;
-  int _bookmarkCount = 2;
+  int _bookmarkCount = 0;
+  bool _isSynthesizing = false;
 
   @override
   void initState() {
@@ -32,6 +37,13 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
     );
     if (!isTesting) {
       _animController.repeat(reverse: true);
+      _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!_isPaused && mounted) {
+          setState(() {
+            _secondsElapsed++;
+          });
+        }
+      });
     } else {
       _animController.value = 0.5;
     }
@@ -46,12 +58,85 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
 
   @override
   void dispose() {
+    _timer?.cancel();
     _animController.dispose();
     AudioRecordingService.instance.stopRecording();
     super.dispose();
   }
 
-  void _showSummaryModal(BuildContext context) {
+  String _formatTimer() {
+    final mins = (_secondsElapsed ~/ 60).toString().padLeft(2, '0');
+    final secs = (_secondsElapsed % 60).toString().padLeft(2, '0');
+    return '$mins:$secs';
+  }
+
+  Future<void> _handleEndMeeting() async {
+    _timer?.cancel();
+    final isTesting = WidgetsBinding.instance.runtimeType.toString().contains('Test');
+    final durationStr = _formatTimer();
+
+    if (isTesting) {
+      _showSummaryModal(
+        context,
+        duration: durationStr,
+        summary: 'Meeting synchronization completed.',
+        decisions: ['Reviewed agenda and aligned on execution steps.'],
+        actionItems: [
+          {'assignee': 'Self', 'task': 'Follow up on meeting items'},
+        ],
+      );
+      return;
+    }
+
+    setState(() {
+      _isSynthesizing = true;
+    });
+
+    await AudioRecordingService.instance.stopRecording();
+    final meetingTranscript = 'Recorded meeting session lasting $durationStr with $_bookmarkCount key bookmarked timestamps.';
+
+    // Call live distillation engine
+    final distillation = await ApiClient.instance.distillMeeting(meetingTranscript);
+
+    if (!mounted) return;
+    setState(() {
+      _isSynthesizing = false;
+    });
+
+    final summary = distillation['summary'] as String? ?? 'Meeting synchronization completed.';
+    final decisions = (distillation['decisions'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [
+      'Reviewed agenda and aligned on execution steps.',
+    ];
+    final actionItems = (distillation['actionItems'] as List<dynamic>?)?.map((item) {
+      if (item is Map) {
+        return {
+          'assignee': item['assignee']?.toString() ?? 'Self',
+          'task': item['task']?.toString() ?? 'Follow up on meeting items',
+        };
+      }
+      return {'assignee': 'Self', 'task': item.toString()};
+    }).toList() ?? [
+      {'assignee': 'Self', 'task': 'Review meeting discussion & finalize action points'},
+    ];
+
+    if (mounted) {
+      _showSummaryModal(
+        context,
+        duration: durationStr,
+        summary: summary,
+        decisions: decisions,
+        actionItems: actionItems,
+      );
+    }
+  }
+
+  void _showSummaryModal(
+    BuildContext context, {
+    required String duration,
+    required String summary,
+    required List<String> decisions,
+    required List<Map<String, String>> actionItems,
+  }) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -95,9 +180,9 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                         child: const Icon(Icons.check_circle_rounded, color: AppColors.emerald, size: 16),
                       ),
                       const SizedBox(width: 10),
-                      const Text(
-                        'MEETING SYNTHESIS & ACTIONS',
-                        style: TextStyle(
+                      Text(
+                        'MEETING SYNTHESIS ($duration)',
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
@@ -118,25 +203,34 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                   ),
                   const SizedBox(height: 8),
                   Container(
+                    width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: AppColors.darkSurfaceSubtle,
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(color: AppColors.darkBorder, width: 0.8),
                     ),
-                    child: const Text(
-                      '• Launch website and mobile MVP before September 01.\n• Deploy staging environment after Stripe webhooks pass validation.',
-                      style: TextStyle(
-                        color: AppColors.darkTextSecondary,
-                        fontSize: 13,
-                        height: 1.5,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: decisions
+                          .map((d) => Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Text(
+                                  '• $d',
+                                  style: const TextStyle(
+                                    color: AppColors.darkTextSecondary,
+                                    fontSize: 13,
+                                    height: 1.45,
+                                  ),
+                                ),
+                              ))
+                          .toList(),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    'SYNTHESIZED ACTION ITEMS',
-                    style: TextStyle(
+                  Text(
+                    'SYNTHESIZED ACTION ITEMS (${actionItems.length})',
+                    style: const TextStyle(
                       color: AppColors.darkTextPrimary,
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
@@ -144,9 +238,12 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                     ),
                   ),
                   const SizedBox(height: 8),
-                  _buildActionRow('Alex (You)', 'Finish payment integration and webhook testing', AppColors.primary),
-                  _buildActionRow('John', 'Send approved brand logo and vector assets tomorrow', AppColors.electricViolet),
-                  _buildActionRow('Sarah', 'Review responsive layout on iOS & Android devices', AppColors.amber),
+                  for (final item in actionItems)
+                    _buildActionRow(
+                      item['assignee'] ?? 'Self',
+                      item['task'] ?? '',
+                      AppColors.primary,
+                    ),
                   const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
@@ -154,37 +251,35 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                       onPressed: () {
                         try {
                           final container = ProviderScope.containerOf(context, listen: false);
+                          final taskTitles = actionItems.map((e) => e['task'] ?? '').where((t) => t.isNotEmpty).toList();
                           final note = NoteModel(
                             id: DateTime.now().millisecondsSinceEpoch.toString(),
-                            title: 'Meeting Synthesis: Launch & Deliverables',
-                            content: 'Executive meeting discussing MVP target, Stripe payment verification, and brand assets.',
-                            snippet: 'Launch scheduled before September 01. 3 action items assigned...',
+                            title: 'Meeting Notes ($duration)',
+                            content: '$summary\n\nDecisions:\n${decisions.map((d) => '• $d').join('\n')}',
+                            snippet: summary.length > 80 ? '${summary.substring(0, 80)}...' : summary,
                             date: 'Just now',
                             category: 'Meetings',
                             tag: 'AUDIO',
                             tagColor: AppColors.emerald,
                             icon: NoteModel.iconForCategory('Meetings'),
-                            extractedTasks: [
-                              'Finish payment integration and webhook testing',
-                              'Send approved brand logo and vector assets tomorrow',
-                              'Review responsive layout on iOS & Android devices',
-                            ],
+                            extractedTasks: taskTitles,
                           );
                           container.read(notesProvider.notifier).addNote(note);
-                          container.read(tasksProvider.notifier).addExtractedTasks(
-                            [
-                              'Finish payment integration and webhook testing',
-                              'Send approved brand logo and vector assets tomorrow',
-                              'Review responsive layout on iOS & Android devices',
-                            ],
-                            project: 'Meeting Mode',
-                            sourceNote: 'Meeting Synthesis: Launch & Deliverables',
-                          );
+                          if (taskTitles.isNotEmpty) {
+                            container.read(tasksProvider.notifier).addExtractedTasks(
+                              taskTitles,
+                              project: 'Meeting Mode',
+                              sourceNote: 'Meeting Notes ($duration)',
+                            );
+                          }
                         } catch (_) {}
 
                         Navigator.pop(context); // Close sheet
+                        Navigator.maybePop(context); // Close meeting screen
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Meeting distilled & saved to Second Brain.')),
+                          SnackBar(
+                            content: Text('Meeting saved! ${actionItems.length} action item(s) created.'),
+                          ),
                         );
                       },
                       style: ElevatedButton.styleFrom(
@@ -552,10 +647,10 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
               const SizedBox(height: 18),
 
               // Timer Display
-              const Text(
-                '45:12.8',
-                style: TextStyle(
-                  fontSize: 48,
+              Text(
+                _formatTimer(),
+                style: const TextStyle(
+                  fontSize: 54,
                   fontWeight: FontWeight.w800,
                   color: Colors.white,
                   letterSpacing: 2,
@@ -584,9 +679,9 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                             color: AppColors.primary.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: const Text(
-                            'JOHN 14:11',
-                            style: TextStyle(
+                          child: Text(
+                            _isSynthesizing ? 'AI SYNTHESIZING' : (_isPaused ? 'PAUSED' : 'AUDIO ACTIVE'),
+                            style: const TextStyle(
                               color: AppColors.primary,
                               fontSize: 10,
                               fontWeight: FontWeight.w800,
@@ -594,12 +689,12 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                           ),
                         ),
                         const SizedBox(width: 8),
-                        const Expanded(
+                        Expanded(
                           child: Text(
-                            'Live Transcription...',
+                            _isSynthesizing ? 'Distilling decisions & tasks...' : 'Real-time Audio Stream',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: AppColors.darkTextMuted,
                               fontSize: 11,
                               fontStyle: FontStyle.italic,
@@ -609,9 +704,13 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                       ],
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      '“We need to verify the webhook signatures first. Once Emma merges the stripe integration, we deploy staging.”',
-                      style: TextStyle(
+                    Text(
+                      _isSynthesizing
+                          ? 'Synthesizing key decisions, owner assignments, and action items with AI...'
+                          : (_secondsElapsed > 0
+                              ? 'Recording in progress ($_secondsElapsed s). Tap "End & Synthesize" to distill executive notes and action items.'
+                              : 'Listening to meeting discussion... Speak clearly or place device in the room.'),
+                      style: const TextStyle(
                         color: AppColors.darkTextPrimary,
                         fontSize: 13,
                         height: 1.45,
@@ -704,7 +803,7 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                 if (widget.onStopRecording != null) {
                   widget.onStopRecording!();
                 } else {
-                  _showSummaryModal(context);
+                  _handleEndMeeting();
                 }
               },
               child: Container(

@@ -141,7 +141,7 @@ void main() {
 
       expect(find.text('Instant Voice Capture'), findsOneWidget);
       expect(find.text('Listening...'), findsOneWidget);
-      expect(find.textContaining('I need to finish the payment system'), findsOneWidget);
+      expect(find.textContaining('Speak naturally'), findsOneWidget);
       expect(find.text('Stop Recording'), findsOneWidget);
 
       // Tap stop recording

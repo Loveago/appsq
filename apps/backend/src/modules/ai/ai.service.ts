@@ -91,16 +91,62 @@ export class AiService {
       await this.checkAndTrackQuota(userId, 800);
     }
 
-    // Extraction heuristics & fallback engine
+    if (this.openaiClient) {
+      try {
+        const prompt = `You are Mindora AI, an executive context extraction system.
+Analyze the following user input and return a pure JSON object adhering strictly to this schema:
+{
+  "people": ["Name1", "Name2"],
+  "projects": ["Project Name"],
+  "deadlines": ["Due Date/Time or Tomorrow"],
+  "tasks": [
+    {
+      "title": "Clear action verb task description",
+      "priority": "LOW" | "MEDIUM" | "HIGH" | "URGENT",
+      "dueDate": "YYYY-MM-DD or readable deadline or null"
+    }
+  ],
+  "relatedTopics": ["Topic1", "Topic2"],
+  "suggestedTitle": "Short punchy executive title"
+}
+
+User input:
+"""${content}"""
+
+Return ONLY valid JSON without markdown formatting or codeblocks.`;
+
+        const completion = await this.openaiClient.chat.completions.create({
+          model: this.defaultModel,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 800,
+        });
+
+        const raw = completion.choices[0]?.message?.content?.trim();
+        if (raw) {
+          const cleaned = raw.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+          const parsed = JSON.parse(cleaned);
+          return ExtractedContextSchema.parse(parsed) as unknown as ExtractedContextResult;
+        }
+      } catch (err) {
+        console.warn('LLM extractContext failed, falling back to heuristic parsing:', err);
+      }
+    }
+
+    // Dynamic heuristic parser based on user's actual text
     const words = content.toLowerCase();
     const people: string[] = [];
     const tasks: Array<{ title: string; priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'; dueDate: string | null }> = [];
     const projects: string[] = [];
     const deadlines: string[] = [];
 
-    if (words.includes('john')) people.push('John');
-    if (words.includes('sarah')) people.push('Sarah');
-    if (words.includes('michael')) people.push('Michael');
+    // Extract dynamic capitalised names if present
+    const nameMatches = content.match(/\b([A-Z][a-z]{2,})\b/g) || [];
+    for (const name of nameMatches) {
+      if (!['The', 'This', 'That', 'With', 'From', 'Need', 'Have', 'Will', 'Must', 'Tomorrow', 'Today'].includes(name) && !people.includes(name)) {
+        people.push(name);
+      }
+    }
 
     if (words.includes('website') || words.includes('web')) projects.push('Website Project');
     if (words.includes('delivery')) projects.push('Delivery App');
@@ -112,37 +158,46 @@ export class AiService {
     // Detect tasks from lines or keywords
     const lines = content.split('\n');
     for (const line of lines) {
-      const trimmed = line.trim().replace(/^[-*•]\s*/, '');
+      const trimmed = line.trim().replace(/^[-*•\d.]\s*/, '');
       if (
         trimmed.toLowerCase().includes('need to') ||
         trimmed.toLowerCase().includes('finish') ||
         trimmed.toLowerCase().includes('call') ||
         trimmed.toLowerCase().includes('review') ||
-        trimmed.toLowerCase().includes('verify')
+        trimmed.toLowerCase().includes('send') ||
+        trimmed.toLowerCase().includes('create') ||
+        trimmed.toLowerCase().includes('do')
       ) {
         tasks.push({
-          title: trimmed.replace(/^(i need to|we need to)\s+/i, '').trim(),
+          title: trimmed.replace(/^(i need to|we need to|please|todo:)\s+/i, '').trim(),
           priority: isPro ? 'HIGH' : 'MEDIUM',
-          dueDate: words.includes('tomorrow') ? 'Tomorrow' : null,
+          dueDate: words.includes('tomorrow') ? 'Tomorrow' : words.includes('today') ? 'Today' : null,
         });
       }
     }
 
-    if (tasks.length === 0) {
+    if (tasks.length === 0 && lines.length > 0 && lines[0].trim().length > 3) {
       tasks.push({
-        title: 'Review action points from note',
+        title: lines[0].trim().slice(0, 80),
         priority: 'MEDIUM',
         dueDate: null,
       });
     }
+
+    const firstLine = lines[0]?.trim() || '';
+    const suggestedTitle = firstLine.length > 5 && firstLine.length < 50
+      ? firstLine
+      : people.length > 0
+      ? `Notes with ${people.slice(0, 2).join(' & ')}`
+      : 'Quick Capture';
 
     const rawResult = {
       people,
       projects: projects.length > 0 ? projects : ['General'],
       deadlines: deadlines.length > 0 ? deadlines : ['No fixed deadline'],
       tasks,
-      relatedTopics: ['Architecture', 'Milestones'],
-      suggestedTitle: people.length > 0 ? `Sync regarding ${projects[0] || 'Deliverables'}` : 'Strategic Thought Note',
+      relatedTopics: ['Productivity', 'Action Items'],
+      suggestedTitle,
     };
 
     return ExtractedContextSchema.parse(rawResult) as unknown as ExtractedContextResult;
@@ -151,6 +206,31 @@ export class AiService {
   async summarizeNote(content: string, userId?: string): Promise<string> {
     if (userId) {
       await this.checkAndTrackQuota(userId, 400);
+    }
+
+    if (this.openaiClient) {
+      try {
+        const completion = await this.openaiClient.chat.completions.create({
+          model: this.defaultModel,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are Mindora AI. Provide a concise, clear 1-2 sentence TL;DR summary of the note.',
+            },
+            {
+              role: 'user',
+              content,
+            },
+          ],
+          temperature: 0.3,
+          max_tokens: 150,
+        });
+
+        const sum = completion.choices[0]?.message?.content?.trim();
+        if (sum) return sum;
+      } catch (err) {
+        console.warn('LLM summarize failed, falling back:', err);
+      }
     }
 
     const sentences = content
@@ -162,12 +242,52 @@ export class AiService {
       return `TL;DR: ${content.trim()}`;
     }
 
-    return `TL;DR: ${sentences.slice(0, 2).join('. ')}. Key decisions highlighted for tracking.`;
+    return `TL;DR: ${sentences.slice(0, 2).join('. ')}.`;
   }
 
   async distillMeeting(transcript: string, userId?: string): Promise<MeetingDistillationResult> {
     if (userId) {
       await this.checkAndTrackQuota(userId, 1500);
+    }
+
+    if (this.openaiClient) {
+      try {
+        const prompt = `You are Mindora AI, an executive meeting intelligence system.
+Analyze the following meeting transcript and return a pure JSON object adhering strictly to this schema:
+{
+  "summary": "Executive summary of what was discussed",
+  "decisions": ["Clear key decision 1", "Key decision 2"],
+  "actionItems": [
+    {
+      "assignee": "Name or Self",
+      "task": "Specific actionable task",
+      "deadline": "Deadline or Upcoming"
+    }
+  ],
+  "sentiment": "Productive / Strategic / Urgent / etc."
+}
+
+Transcript:
+"""${transcript}"""
+
+Return ONLY valid JSON without markdown formatting or codeblocks.`;
+
+        const completion = await this.openaiClient.chat.completions.create({
+          model: this.defaultModel,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 900,
+        });
+
+        const raw = completion.choices[0]?.message?.content?.trim();
+        if (raw) {
+          const cleaned = raw.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+          const parsed = JSON.parse(cleaned);
+          return MeetingDistillationSchema.parse(parsed) as unknown as MeetingDistillationResult;
+        }
+      } catch (err) {
+        console.warn('LLM distillMeeting failed, falling back to heuristic parsing:', err);
+      }
     }
 
     const sentences = transcript.split(/[.!?\n]/).map((s) => s.trim()).filter((s) => s.length > 5);
@@ -176,7 +296,7 @@ export class AiService {
       : 'Executive meeting notes and discussion.';
 
     let actionItems = sentences
-      .filter((s) => s.toLowerCase().includes('need to') || s.toLowerCase().includes('todo') || s.toLowerCase().includes('action') || s.toLowerCase().includes('checks') || s.toLowerCase().includes('review'))
+      .filter((s) => s.toLowerCase().includes('need to') || s.toLowerCase().includes('todo') || s.toLowerCase().includes('action') || s.toLowerCase().includes('checks') || s.toLowerCase().includes('review') || s.toLowerCase().includes('finish') || s.toLowerCase().includes('send'))
       .map((t) => ({
         assignee: 'Self',
         task: t,
@@ -193,16 +313,16 @@ export class AiService {
       ];
     }
 
+    const decisions = sentences
+      .filter((s) => s.toLowerCase().includes('decid') || s.toLowerCase().includes('will') || s.toLowerCase().includes('agreed') || s.toLowerCase().includes('roadmap') || s.toLowerCase().includes('plan'))
+      .slice(0, 3);
+
     const result = {
       summary,
-      decisions: sentences.filter((s) => s.toLowerCase().includes('decid') || s.toLowerCase().includes('will') || s.toLowerCase().includes('agreed') || s.toLowerCase().includes('roadmap')).slice(0, 3),
+      decisions: decisions.length > 0 ? decisions : ['Key topics reviewed and noted for execution.'],
       actionItems,
       sentiment: 'Productive and actionable',
     };
-
-    if (result.decisions.length === 0) {
-      result.decisions.push('Meeting discussion noted for future reference.');
-    }
 
     return MeetingDistillationSchema.parse(result) as unknown as MeetingDistillationResult;
   }
@@ -239,7 +359,7 @@ export class AiService {
     query: string,
     notes?: Array<{ id: string; title: string; content: string }>,
     userId?: string,
-  ): Promise<{ answer: string; citedNoteIds: string[] }> {
+  ): Promise<{ answer: string; citedNoteIds: string[]; action?: any }> {
     if (userId) {
       await this.checkAndTrackQuota(userId, 1000);
     }
@@ -265,9 +385,30 @@ export class AiService {
     if (this.openaiClient) {
       try {
         const hasNotes = matchingNotes.length > 0;
-        const systemPrompt = hasNotes
-          ? 'You are Mindora, an intelligent executive AI Second Brain. Answer the user query using the provided indexed notes when relevant. Be concise, executive, and cite note titles when stating facts.'
-          : 'You are Mindora, an intelligent executive AI Second Brain. Answer the user query helpfully, professionally, and concisely. If the user asks about specific saved notes they have not created yet, explain that they can capture thoughts or notes anytime.';
+        const systemPrompt = `You are Mindora, an ultra-smart executive AI Second Brain assistant.
+You can converse naturally, brainstorm, give strategic advice, and help organize thoughts.
+${hasNotes ? 'You have access to the user\'s indexed notes context below. Cite note titles accurately when answering.' : 'The user does not have specific saved notes for this query yet.'}
+
+IMPORTANT CAPABILITIES:
+If the user asks you to create, save, or write a note or task (e.g. "Create a note about...", "Save a task to...", "Remind me to..."), you MUST fulfill the request and also output a special JSON action block at the VERY END of your response inside <<<ACTION>>> and <<</ACTION>>> tags, like:
+<<<ACTION>>>
+{
+  "createNote": {
+    "title": "Title of the note",
+    "content": "Content or details of the note",
+    "category": "Ideas" | "Meetings" | "Daily" | "Work",
+    "tag": "NOTE" | "ACTION" | "PROJECT"
+  },
+  "createTasks": [
+    {
+      "title": "Task title",
+      "priority": "high" | "medium" | "low",
+      "dueTime": "Tomorrow" or "Today" or readable date
+    }
+  ]
+}
+<<</ACTION>>>
+If the user is chatting, asking questions, or brainstorming, provide a brilliant, clear, concise response without the action block. Always be proactive and helpful.`;
 
         const contextStr = hasNotes
           ? matchingNotes.map((n, i) => `[Source ${i + 1}: ${n.title}]\n${n.content}`).join('\n\n')
@@ -286,12 +427,58 @@ export class AiService {
             },
           ],
           temperature: 0.5,
-          max_tokens: 600,
+          max_tokens: 800,
         });
 
         const answer = completion.choices[0]?.message?.content?.trim();
         if (answer) {
-          return { answer, citedNoteIds };
+          // If action tag exists, extract and potentially create note/task in db if userId exists
+          const actionMatch = answer.match(/<<<ACTION>>>([\s\S]*?)<<<\/ACTION>>>/);
+          let cleanedAnswer = answer.replace(/<<<ACTION>>>[\s\S]*?<<<\/ACTION>>>/, '').trim();
+          let createdNoteData: any = null;
+          let createdTasksData: any[] = [];
+
+          if (actionMatch && actionMatch[1]) {
+            try {
+              const actionJson = JSON.parse(actionMatch[1].trim());
+              if (actionJson.createNote) {
+                createdNoteData = actionJson.createNote;
+                if (userId) {
+                  await this.prisma.note.create({
+                    data: {
+                      userId,
+                      title: createdNoteData.title || 'AI Note',
+                      content: createdNoteData.content || '',
+                      summary: createdNoteData.content?.slice(0, 80) || '',
+                    },
+                  });
+                }
+              }
+              if (actionJson.createTasks && Array.isArray(actionJson.createTasks)) {
+                createdTasksData = actionJson.createTasks;
+                if (userId) {
+                  for (const t of createdTasksData) {
+                    await this.prisma.task.create({
+                      data: {
+                        userId,
+                        title: t.title,
+                        priority: t.priority?.toUpperCase() === 'HIGH' ? 'HIGH' : 'MEDIUM',
+                        isAiExtracted: true,
+                      },
+                    });
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn('Failed to parse AI action block:', err);
+            }
+          }
+
+          return {
+            answer: cleanedAnswer,
+            citedNoteIds,
+            action: createdNoteData || createdTasksData.length > 0 ? { note: createdNoteData, tasks: createdTasksData } : null,
+          };
         }
       } catch (err) {
         console.warn('AI LLM request failed, using local synthesizer fallback:', err);
@@ -348,12 +535,15 @@ export class AiService {
     if (userId) {
       await this.checkAndTrackQuota(userId, 500);
     }
-    const text = transcript || 'I need to finish the payment system tomorrow and call John about the logo.';
+    const text = transcript && transcript.trim().length > 0
+      ? transcript.trim()
+      : 'Voice memo recording captured.';
     const context = await this.extractContext(text, userId);
     return {
       transcript: text,
       detectedTasks: context.tasks.map((t) => t.title),
       detectedDue: context.deadlines[0] || 'Tomorrow',
+      suggestedTitle: context.suggestedTitle,
     };
   }
 

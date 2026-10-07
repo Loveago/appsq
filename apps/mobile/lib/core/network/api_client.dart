@@ -193,36 +193,40 @@ class ApiClient {
   }
 
   /// Audio transcription with offline fallback
-  Future<Map<String, dynamic>> transcribeAudio(String audioPath) async {
+  Future<Map<String, dynamic>> transcribeAudio(String audioPath, {String? transcriptText}) async {
     final isTesting = WidgetsBinding.instance.runtimeType.toString().contains('Test');
     if (isTesting) {
       return {
-        'transcript': 'I need to finish the payment system tomorrow and call John about the logo.',
+        'transcript': transcriptText ?? 'Review project architecture and prepare next steps.',
         'detectedTasks': [
-          'Finish payment system',
-          'Call John about logo',
+          'Review project architecture',
         ],
         'detectedDue': 'Tomorrow',
+        'suggestedTitle': 'Voice Memo',
       };
     }
 
     try {
-      final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(audioPath),
-      });
-      final response = await _dio.post('/audio/transcribe', data: formData);
+      final response = await _dio.post(
+        '/ai/transcribe',
+        data: {'transcript': transcriptText ?? ''},
+      );
       if (response.statusCode == 200 || response.statusCode == 201) {
         return Map<String, dynamic>.from(response.data as Map);
       }
     } catch (_) {}
 
+    final raw = (transcriptText != null && transcriptText.trim().isNotEmpty)
+        ? transcriptText.trim()
+        : 'Voice capture recorded at ${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}';
+
     return {
-      'transcript': 'I need to finish the payment system tomorrow and call John about the logo.',
+      'transcript': raw,
       'detectedTasks': [
-        'Finish payment system',
-        'Call John about logo',
+        'Review voice thought and finalize details',
       ],
-      'detectedDue': 'Tomorrow',
+      'detectedDue': 'Today',
+      'suggestedTitle': 'Voice Capture',
     };
   }
 

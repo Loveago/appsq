@@ -5,6 +5,8 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/fade_slide_in.dart';
 import '../../../../core/providers/app_state_providers.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/services/audio_service.dart';
+import '../../../../core/models/note_model.dart';
 import '../../notes/presentation/note_editor_screen.dart';
 
 class AskNotesScreen extends StatelessWidget {
@@ -73,11 +75,12 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _isSynthesizing = false;
+  bool _isRecordingVoice = false;
 
   final List<({String category, String prompt, Color color})> _suggestedPrompts = const [
     (category: 'SUMMARY', prompt: 'Summarize my recent thoughts', color: AppColors.primary),
-    (category: 'TASKS', prompt: 'What tasks do I have pending?', color: AppColors.emerald),
-    (category: 'ASSISTANT', prompt: 'How can you help organize my work?', color: AppColors.amber),
+    (category: 'CREATE', prompt: 'Create a note for my project planning', color: AppColors.emerald),
+    (category: 'TASKS', prompt: 'What tasks do I have pending?', color: AppColors.amber),
   ];
 
   final List<_ChatMessage> _messages = [];
@@ -86,7 +89,41 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
   void dispose() {
     _textController.dispose();
     _scrollController.dispose();
+    if (_isRecordingVoice) {
+      AudioRecordingService.instance.stopRecording();
+    }
     super.dispose();
+  }
+
+  Future<void> _toggleVoiceRecording() async {
+    if (_isRecordingVoice) {
+      setState(() {
+        _isRecordingVoice = false;
+        _isSynthesizing = true;
+      });
+      final audioPath = await AudioRecordingService.instance.stopRecording();
+      final res = await ApiClient.instance.transcribeAudio(audioPath ?? '');
+      final transcript = res['transcript'] as String? ?? '';
+      if (transcript.isNotEmpty && mounted) {
+        _sendMessage(transcript);
+      } else if (mounted) {
+        setState(() {
+          _isSynthesizing = false;
+        });
+      }
+    } else {
+      await AudioRecordingService.instance.startRecording();
+      if (!mounted) return;
+      setState(() {
+        _isRecordingVoice = true;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Listening... Speak to the AI and tap mic when done.'),
+          duration: Duration(milliseconds: 1500),
+        ),
+      );
+    }
   }
 
   Future<void> _sendMessage(String query) async {
@@ -105,8 +142,70 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
     final response = await ApiClient.instance.askNotes(userText, notes);
     if (!mounted) return;
 
-    final answer = response['answer'] as String? ?? 'No response generated.';
+    final answer = response['answer'] as String? ?? 'I am ready to help organize your notes and thoughts.';
     final citedIds = (response['citedNoteIds'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+
+    // Check if AI triggered an action or user instructed note/task creation
+    if (response['action'] != null && response['action'] is Map) {
+      final act = response['action'] as Map;
+      if (act['note'] != null && act['note'] is Map) {
+        final n = act['note'] as Map;
+        final noteContent = n['content']?.toString() ?? userText;
+        final noteSnippet = noteContent.length > 80 ? '${noteContent.substring(0, 80)}...' : noteContent;
+        final newNote = NoteModel(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          title: n['title']?.toString() ?? 'AI Note',
+          content: noteContent,
+          snippet: noteSnippet,
+          date: 'Just now',
+          category: n['category']?.toString() ?? 'Ideas',
+          tag: n['tag']?.toString() ?? 'NOTE',
+          tagColor: AppColors.electricViolet,
+          icon: Icons.auto_awesome_rounded,
+        );
+        ref.read(notesProvider.notifier).addNote(newNote);
+      }
+      if (act['tasks'] != null && act['tasks'] is List) {
+        final tList = (act['tasks'] as List).map((t) => t['title']?.toString() ?? '').where((s) => s.isNotEmpty).toList();
+        if (tList.isNotEmpty) {
+          ref.read(tasksProvider.notifier).addExtractedTasks(
+            tList,
+            project: 'AI Assistant',
+            sourceNote: 'Smart Assistant',
+          );
+        }
+      }
+    } else {
+      // Local intent detection if user explicitly asks: "create a note...", "save note...", "add task..."
+      final lower = userText.toLowerCase();
+      if (lower.startsWith('create a note') || lower.startsWith('create note') || lower.startsWith('save note')) {
+        final cleanContent = userText.replaceFirst(RegExp(r'^(create a note|create note|save note)\s*(about|for|:)?\s*', caseSensitive: false), '');
+        final words = cleanContent.split(' ');
+        final title = words.length > 5 ? '${words.take(5).join(' ')}...' : cleanContent;
+        final snippet = cleanContent.length > 80 ? '${cleanContent.substring(0, 80)}...' : cleanContent;
+        final newNote = NoteModel(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          title: title.isNotEmpty ? title : 'Quick Note',
+          content: cleanContent.isNotEmpty ? cleanContent : userText,
+          snippet: snippet,
+          date: 'Just now',
+          category: 'Ideas',
+          tag: 'NOTE',
+          tagColor: AppColors.primary,
+          icon: Icons.sticky_note_2_rounded,
+        );
+        ref.read(notesProvider.notifier).addNote(newNote);
+      } else if (lower.startsWith('add a task') || lower.startsWith('add task') || lower.startsWith('create task') || lower.startsWith('remind me to')) {
+        final cleanTask = userText.replaceFirst(RegExp(r'^(add a task|add task|create task|remind me to)\s*(to|:)?\s*', caseSensitive: false), '');
+        if (cleanTask.isNotEmpty) {
+          ref.read(tasksProvider.notifier).addExtractedTasks(
+            [cleanTask],
+            project: 'AI Tasks',
+            sourceNote: 'Assistant Voice/Chat',
+          );
+        }
+      }
+    }
 
     final sources = <({String title, String tag, String? noteId})>[];
     for (final id in citedIds) {
@@ -115,9 +214,6 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
         sources.add((title: match.title, tag: match.tag, noteId: match.id));
       }
     }
-    if (sources.isEmpty && notes.isNotEmpty) {
-      sources.add((title: notes.first.title, tag: notes.first.tag, noteId: notes.first.id));
-    }
 
     setState(() {
       _isSynthesizing = false;
@@ -125,7 +221,7 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
         _ChatMessage(
           text: answer,
           isUser: false,
-          groundedAccuracy: sources.isNotEmpty ? '97.8% GROUNDED' : 'UNGROUNDED',
+          groundedAccuracy: sources.isNotEmpty ? '97.8% GROUNDED' : 'CONVERSATIONAL AI',
           sources: sources,
         ),
       );
@@ -405,12 +501,14 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.mic_rounded, size: 18, color: AppColors.primary),
+                            icon: Icon(
+                              _isRecordingVoice ? Icons.stop_circle_rounded : Icons.mic_rounded,
+                              size: 20,
+                              color: _isRecordingVoice ? const Color(0xFFEF4444) : AppColors.primary,
+                            ),
                             visualDensity: VisualDensity.compact,
-                            onPressed: () {
-                              _textController.text = 'What are the next deliverables discussed with John?';
-                            },
-                            tooltip: 'Voice memo query',
+                            onPressed: _toggleVoiceRecording,
+                            tooltip: _isRecordingVoice ? 'Stop recording & send' : 'Speak to AI',
                           ),
                         ],
                       ),

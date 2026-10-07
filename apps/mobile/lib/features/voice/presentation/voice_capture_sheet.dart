@@ -17,12 +17,10 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
   late AnimationController _pulseController;
   bool _isRecording = true;
   bool _isProcessing = false;
-  String _transcript = 'I need to finish the payment system tomorrow and call John about the logo.';
-  List<String> _detectedTasks = [
-    'Finish payment system',
-    'Call John about logo',
-  ];
-  String _detectedDue = 'Tomorrow';
+  String _transcript = '';
+  List<String> _detectedTasks = [];
+  String _detectedDue = 'Today';
+  String _suggestedTitle = 'Voice Memo';
 
   @override
   void initState() {
@@ -54,6 +52,8 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
       setState(() {
         _isRecording = false;
         _isProcessing = false;
+        _transcript = 'Meeting follow up';
+        _detectedTasks = ['Follow up on tasks'];
       });
       try {
         ref.read(adSuppressionProvider.notifier).state = false;
@@ -70,12 +70,18 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
     final res = await ApiClient.instance.transcribeAudio(audioPath ?? '');
     if (mounted) {
       setState(() {
-        _transcript = res['transcript'] as String? ?? _transcript;
+        _transcript = res['transcript'] as String? ?? (_transcript.isNotEmpty ? _transcript : 'Voice recording saved.');
         if (res['detectedTasks'] != null) {
           _detectedTasks = (res['detectedTasks'] as List).map((e) => e.toString()).toList();
         }
         if (res['detectedDue'] != null) {
           _detectedDue = res['detectedDue'].toString();
+        }
+        if (res['suggestedTitle'] != null) {
+          _suggestedTitle = res['suggestedTitle'].toString();
+        } else if (_transcript.isNotEmpty) {
+          final words = _transcript.split(' ');
+          _suggestedTitle = words.length > 5 ? '${words.take(5).join(' ')}...' : _transcript;
         }
         _isProcessing = false;
       });
@@ -87,12 +93,18 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
   }
 
   void _saveEverything() {
+    final title = _suggestedTitle.isNotEmpty ? _suggestedTitle : 'Voice Memo';
+    final content = _transcript.isNotEmpty ? _transcript : 'Voice recording note.';
+    final snippet = _detectedTasks.isNotEmpty
+        ? 'Voice note: ${_detectedTasks.length} action items extracted.'
+        : content;
+
     // 1. Add to notes
     final note = NoteModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      title: 'Voice Memo: Payment & John Logo',
-      content: _transcript,
-      snippet: 'Audio memo transcribed: 2 tasks extracted for tomorrow...',
+      title: title,
+      content: content,
+      snippet: snippet,
       date: 'Just now',
       category: 'Ideas',
       tag: 'VOICE',
@@ -102,18 +114,22 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
     );
     ref.read(notesProvider.notifier).addNote(note);
 
-    // 2. Add extracted tasks
-    ref.read(tasksProvider.notifier).addExtractedTasks(
-      _detectedTasks,
-      project: 'Quick Capture',
-      sourceNote: 'Voice Memo: Payment & John Logo',
-    );
+    // 2. Add extracted tasks if any
+    if (_detectedTasks.isNotEmpty) {
+      ref.read(tasksProvider.notifier).addExtractedTasks(
+        _detectedTasks,
+        project: 'Voice Capture',
+        sourceNote: title,
+      );
+    }
 
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Voice thought saved! 2 tasks added to Action Items.'),
-        duration: Duration(milliseconds: 2000),
+      SnackBar(
+        content: Text(_detectedTasks.isNotEmpty
+            ? 'Voice thought saved! ${_detectedTasks.length} task(s) added.'
+            : 'Voice thought saved to notes.'),
+        duration: const Duration(milliseconds: 2000),
       ),
     );
   }
@@ -230,11 +246,15 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
                 ),
               ),
               child: Text(
-                '"$_transcript"',
+                _transcript.isNotEmpty
+                    ? '"$_transcript"'
+                    : 'Speak naturally... Tap Stop when finished to transcribe & extract action items.',
                 style: TextStyle(
                   fontSize: 14,
                   fontStyle: FontStyle.italic,
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                  color: _transcript.isNotEmpty
+                      ? (isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)
+                      : (isDark ? AppColors.darkTextMuted : AppColors.textMuted),
                   height: 1.4,
                 ),
                 textAlign: TextAlign.center,

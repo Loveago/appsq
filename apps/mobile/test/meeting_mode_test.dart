@@ -33,9 +33,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify synthesis modal appears with decisions and action items
-    expect(find.text('MEETING SYNTHESIS & ACTIONS'), findsOneWidget);
+    expect(find.textContaining('MEETING SYNTHESIS'), findsOneWidget);
     expect(find.text('EXECUTIVE DECISIONS'), findsOneWidget);
-    expect(find.text('SYNTHESIZED ACTION ITEMS'), findsOneWidget);
+    expect(find.textContaining('SYNTHESIZED ACTION ITEMS'), findsOneWidget);
     expect(find.text('Sync with Neural Brain'), findsOneWidget);
 
     // Tap Sync button
@@ -43,7 +43,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Modal dismissed
-    expect(find.text('MEETING SYNTHESIS & ACTIONS'), findsNothing);
+    expect(find.textContaining('MEETING SYNTHESIS'), findsNothing);
   });
 
   testWidgets('MeetingModeScreen handles mobile screen bounds without overflow', (WidgetTester tester) async {
