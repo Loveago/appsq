@@ -76,4 +76,44 @@ describe('AiService', () => {
     const embedding = await service.generateEmbedding('Architecture and pgvector similarity');
     expect(embedding.length).toBe(1536);
   });
+
+  it('should execute chatWithTools with general and personal queries gracefully', async () => {
+    // Mock prisma for conversations and notes
+    (mockPrismaService as any).aiConversation = {
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({ id: 'conv-1', title: 'What is Tokyo', messages: [] }),
+      update: jest.fn().mockResolvedValue({}),
+      findMany: jest.fn().mockResolvedValue([{ id: 'conv-1', title: 'Tokyo', messages: [] }]),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+    };
+    (mockPrismaService as any).aiMessage = {
+      create: jest.fn().mockResolvedValue({ id: 'msg-1' }),
+    };
+    (mockPrismaService as any).note = {
+      findMany: jest.fn().mockResolvedValue([]),
+      create: jest.fn().mockResolvedValue({ id: 'note-1', title: 'Delivery App Ideas' }),
+    };
+    (mockPrismaService as any).task = {
+      findMany: jest.fn().mockResolvedValue([]),
+      create: jest.fn().mockResolvedValue({ id: 'task-1', title: 'Review Stripe Webhook' }),
+    };
+    (mockPrismaService as any).project = {
+      findMany: jest.fn().mockResolvedValue([]),
+      create: jest.fn().mockResolvedValue({ id: 'proj-1', name: 'Delivery App' }),
+    };
+    (mockPrismaService as any).meeting = {
+      findMany: jest.fn().mockResolvedValue([]),
+    };
+    (mockPrismaService as any).smartList = {
+      create: jest.fn().mockResolvedValue({ id: 'list-1', title: 'Launch List' }),
+    };
+
+    const chatRes = await service.chatWithTools('user-1', 'What is the capital of Japan?');
+    expect(chatRes.conversationId).toBe('conv-1');
+    expect(chatRes.answer).toBeDefined();
+
+    const noteCreationRes = await service.chatWithTools('user-1', 'Create a note about delivery app ideas');
+    expect(noteCreationRes.actionsExecuted.length).toBeGreaterThan(0);
+    expect(noteCreationRes.actionsExecuted[0].tool).toBe('create_note');
+  });
 });

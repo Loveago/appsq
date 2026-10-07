@@ -5,6 +5,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/fade_slide_in.dart';
 import '../../../../core/providers/app_state_providers.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/storage/local_storage_service.dart';
 import '../../../../core/services/audio_service.dart';
 import '../../../../core/models/note_model.dart';
 import '../../notes/presentation/note_editor_screen.dart';
@@ -47,12 +48,16 @@ class _ChatMessage {
   final bool isUser;
   final String? groundedAccuracy;
   final List<({String title, String tag, String? noteId})>? sources;
+  final List<Map<String, dynamic>>? toolCalls;
+  final String? createdNoteId;
 
   _ChatMessage({
     required this.text,
     required this.isUser,
     this.groundedAccuracy,
     this.sources,
+    this.toolCalls,
+    this.createdNoteId,
   });
 }
 
@@ -84,6 +89,181 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
   ];
 
   final List<_ChatMessage> _messages = [];
+  String? _currentConversationId;
+  String _currentConversationTitle = 'Neural Assistant';
+  List<Map<String, dynamic>> _savedConversations = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadConversations();
+  }
+
+  Future<void> _loadConversations() async {
+    final cached = await LocalStorageService.instance.loadAiConversations();
+    if (cached != null && cached.isNotEmpty && mounted) {
+      setState(() {
+        _savedConversations = cached;
+      });
+    }
+
+    final remote = await ApiClient.instance.getConversations();
+    if (remote.isNotEmpty && mounted) {
+      setState(() {
+        _savedConversations = remote;
+      });
+      LocalStorageService.instance.saveAiConversations(remote);
+    }
+  }
+
+  void _startNewConversation() {
+    setState(() {
+      _currentConversationId = null;
+      _currentConversationTitle = 'Neural Assistant';
+      _messages.clear();
+    });
+  }
+
+  void _openConversationHistorySheet(bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkSurface : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border.all(
+              color: isDark ? AppColors.darkBorderHighlight : AppColors.surfaceBorder,
+              width: 0.8,
+            ),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 38,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkBorderHighlight : AppColors.surfaceBorder,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'CONVERSATIONS',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.1,
+                        color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _startNewConversation();
+                      },
+                      icon: const Icon(Icons.add_rounded, size: 16),
+                      label: const Text('New Chat', style: TextStyle(fontSize: 12)),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (_savedConversations.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text(
+                        'No previous conversations yet.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 380),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _savedConversations.length,
+                      separatorBuilder: (context, _) => Divider(
+                        color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                        height: 1,
+                      ),
+                      itemBuilder: (context, index) {
+                        final conv = _savedConversations[index];
+                        final id = conv['id']?.toString() ?? '';
+                        final title = conv['title']?.toString() ?? 'Conversation';
+                        final isSelected = id == _currentConversationId;
+
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          leading: Icon(
+                            isSelected ? Icons.chat_bubble_rounded : Icons.chat_bubble_outline_rounded,
+                            size: 18,
+                            color: isSelected ? AppColors.primary : (isDark ? AppColors.darkTextMuted : AppColors.textMuted),
+                          ),
+                          title: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                              color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                            ),
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                            color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                            onPressed: () async {
+                              final navigator = Navigator.of(context);
+                              await ApiClient.instance.deleteConversation(id);
+                              if (!mounted) return;
+                              setState(() {
+                                _savedConversations.removeWhere((c) => c['id'] == id);
+                                if (_currentConversationId == id) {
+                                  _startNewConversation();
+                                }
+                              });
+                              LocalStorageService.instance.saveAiConversations(_savedConversations);
+                              navigator.pop();
+                            },
+                          ),
+                          onTap: () {
+                            setState(() {
+                              _currentConversationId = id;
+                              _currentConversationTitle = title;
+                            });
+                            Navigator.pop(context);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   void dispose() {
@@ -139,73 +319,71 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
     _scrollToBottom();
 
     final notes = ref.read(notesProvider);
-    final response = await ApiClient.instance.askNotes(userText, notes);
+    final response = await ApiClient.instance.chatWithAssistant(
+      message: userText,
+      conversationId: _currentConversationId,
+      localNotes: notes,
+    );
     if (!mounted) return;
 
     final answer = response['answer'] as String? ?? 'I am ready to help organize your notes and thoughts.';
-    final citedIds = (response['citedNoteIds'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+    final convId = response['conversationId']?.toString();
+    if (convId != null && convId.isNotEmpty) {
+      _currentConversationId = convId;
+    }
 
-    // Check if AI triggered an action or user instructed note/task creation
-    if (response['action'] != null && response['action'] is Map) {
-      final act = response['action'] as Map;
-      if (act['note'] != null && act['note'] is Map) {
-        final n = act['note'] as Map;
-        final noteContent = n['content']?.toString() ?? userText;
-        final noteSnippet = noteContent.length > 80 ? '${noteContent.substring(0, 80)}...' : noteContent;
+    final citedIds = (response['citedNoteIds'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+    final actionsExecuted = (response['actionsExecuted'] as List<dynamic>?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList() ??
+        [];
+
+    String? createdNoteId;
+
+    // Apply executed actions to local Riverpod providers so the UI is immediately in sync
+    for (final act in actionsExecuted) {
+      final tool = act['tool']?.toString();
+      final params = act['parameters'] is Map ? act['parameters'] as Map : {};
+      final res = act['result'] is Map ? act['result'] as Map : {};
+
+      if (tool == 'create_note') {
+        final title = params['title']?.toString() ?? 'AI Note';
+        final content = params['content']?.toString() ?? userText;
+        final snippet = content.length > 80 ? '${content.substring(0, 80)}...' : content;
+        createdNoteId = res['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
+
         final newNote = NoteModel(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          title: n['title']?.toString() ?? 'AI Note',
-          content: noteContent,
-          snippet: noteSnippet,
-          date: 'Just now',
-          category: n['category']?.toString() ?? 'Ideas',
-          tag: n['tag']?.toString() ?? 'NOTE',
-          tagColor: AppColors.electricViolet,
-          icon: Icons.auto_awesome_rounded,
-        );
-        ref.read(notesProvider.notifier).addNote(newNote);
-      }
-      if (act['tasks'] != null && act['tasks'] is List) {
-        final tList = (act['tasks'] as List).map((t) => t['title']?.toString() ?? '').where((s) => s.isNotEmpty).toList();
-        if (tList.isNotEmpty) {
-          ref.read(tasksProvider.notifier).addExtractedTasks(
-            tList,
-            project: 'AI Assistant',
-            sourceNote: 'Smart Assistant',
-          );
-        }
-      }
-    } else {
-      // Local intent detection if user explicitly asks: "create a note...", "save note...", "add task..."
-      final lower = userText.toLowerCase();
-      if (lower.startsWith('create a note') || lower.startsWith('create note') || lower.startsWith('save note')) {
-        final cleanContent = userText.replaceFirst(RegExp(r'^(create a note|create note|save note)\s*(about|for|:)?\s*', caseSensitive: false), '');
-        final words = cleanContent.split(' ');
-        final title = words.length > 5 ? '${words.take(5).join(' ')}...' : cleanContent;
-        final snippet = cleanContent.length > 80 ? '${cleanContent.substring(0, 80)}...' : cleanContent;
-        final newNote = NoteModel(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          title: title.isNotEmpty ? title : 'Quick Note',
-          content: cleanContent.isNotEmpty ? cleanContent : userText,
+          id: createdNoteId,
+          title: title,
+          content: content,
           snippet: snippet,
           date: 'Just now',
           category: 'Ideas',
           tag: 'NOTE',
-          tagColor: AppColors.primary,
-          icon: Icons.sticky_note_2_rounded,
+          tagColor: AppColors.electricViolet,
+          icon: Icons.auto_awesome_rounded,
         );
         ref.read(notesProvider.notifier).addNote(newNote);
-      } else if (lower.startsWith('add a task') || lower.startsWith('add task') || lower.startsWith('create task') || lower.startsWith('remind me to')) {
-        final cleanTask = userText.replaceFirst(RegExp(r'^(add a task|add task|create task|remind me to)\s*(to|:)?\s*', caseSensitive: false), '');
-        if (cleanTask.isNotEmpty) {
-          ref.read(tasksProvider.notifier).addExtractedTasks(
-            [cleanTask],
-            project: 'AI Tasks',
-            sourceNote: 'Assistant Voice/Chat',
-          );
+      } else if (tool == 'create_task') {
+        final title = params['title']?.toString() ?? 'New Task';
+        ref.read(tasksProvider.notifier).addExtractedTasks(
+          [title],
+          project: 'AI Assistant',
+          sourceNote: 'Smart Assistant',
+        );
+      } else if (tool == 'create_list') {
+        final title = params['title']?.toString() ?? 'Checklist';
+        final items = params['items'] is List
+            ? (params['items'] as List).map((i) => i.toString()).toList()
+            : <String>[];
+        if (items.isNotEmpty) {
+          ref.read(smartListsProvider.notifier).generateAiList(title, items);
         }
       }
     }
+
+    // Refresh conversation history in background
+    _loadConversations();
 
     final sources = <({String title, String tag, String? noteId})>[];
     for (final id in citedIds) {
@@ -221,8 +399,10 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
         _ChatMessage(
           text: answer,
           isUser: false,
-          groundedAccuracy: sources.isNotEmpty ? '97.8% GROUNDED' : 'CONVERSATIONAL AI',
+          groundedAccuracy: sources.isNotEmpty ? '97.8% GROUNDED' : 'AI ASSISTANT',
           sources: sources,
+          toolCalls: actionsExecuted.isNotEmpty ? actionsExecuted : null,
+          createdNoteId: createdNoteId,
         ),
       );
     });
@@ -295,16 +475,18 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Neural Query',
+                  _currentConversationTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 14.5,
                     fontWeight: FontWeight.w700,
                     letterSpacing: -0.2,
                     color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
                   ),
                 ),
                 Text(
-                  '$notesCount indexed ${notesCount == 1 ? 'source' : 'sources'} • RAG Active',
+                  '$notesCount indexed sources • Neural Brain Active',
                   style: TextStyle(
                     fontSize: 10,
                     color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
@@ -317,17 +499,22 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
         centerTitle: false,
         actions: [
           IconButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Vector index synchronized with $notesCount notes.')),
-              );
-            },
+            onPressed: () => _openConversationHistorySheet(isDark),
             icon: Icon(
-              Icons.sync_rounded,
+              Icons.history_rounded,
               color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
               size: 20,
             ),
-            tooltip: 'Sync vector store',
+            tooltip: 'Conversation history',
+          ),
+          IconButton(
+            onPressed: _startNewConversation,
+            icon: Icon(
+              Icons.edit_note_rounded,
+              color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+              size: 21,
+            ),
+            tooltip: 'New conversation',
           ),
         ],
       ),
@@ -409,6 +596,25 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                           child: const Icon(Icons.chat_bubble_outline_rounded, color: AppColors.primary, size: 28),
                         ),
                         const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppColors.electricViolet.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(100),
+                            border: Border.all(color: AppColors.electricViolet.withValues(alpha: 0.25), width: 0.8),
+                          ),
+                          child: const Text(
+                            'Neural Query',
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.8,
+                              color: AppColors.electricViolet,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
                         Text(
                           'Ask Mindora Anything',
                           style: TextStyle(
@@ -724,6 +930,13 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                 color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
               ),
             ),
+            if (message.toolCalls != null && message.toolCalls!.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              for (final tool in message.toolCalls!)
+                _buildExecutedActionCard(tool, message.createdNoteId, isDark),
+            ],
+            const SizedBox(height: 12),
+            _buildResponseActionRow(message.text, isDark),
             if (message.sources != null && message.sources!.isNotEmpty) ...[
               const SizedBox(height: 16),
               Text(
@@ -782,6 +995,211 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
     ),
   );
 }
+
+  Widget _buildExecutedActionCard(Map<String, dynamic> tool, String? createdNoteId, bool isDark) {
+    final toolName = tool['tool']?.toString() ?? 'action';
+    final message = tool['message']?.toString() ?? 'Action executed';
+    final params = tool['parameters'] is Map ? tool['parameters'] as Map : {};
+    final title = params['title']?.toString() ?? params['name']?.toString() ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurfaceSubtle : const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark ? AppColors.darkBorderHighlight : const Color(0xFFBBF7D0),
+          width: 0.8,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: AppColors.emerald.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.check_rounded, size: 14, color: AppColors.emerald),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  message,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? AppColors.darkTextPrimary : const Color(0xFF166534),
+                  ),
+                ),
+                if (title.isNotEmpty)
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? AppColors.darkTextMuted : const Color(0xFF15803D),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (toolName == 'create_note')
+            TextButton(
+              onPressed: () {
+                final notes = ref.read(notesProvider);
+                final match = createdNoteId != null
+                    ? notes.where((n) => n.id == createdNoteId).firstOrNull
+                    : notes.firstOrNull;
+                if (match != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => NoteEditorScreen(
+                        noteId: match.id,
+                        initialTitle: match.title,
+                        initialContent: match.content,
+                        tag: match.tag,
+                        tagColor: match.tagColor,
+                      ),
+                    ),
+                  );
+                } else {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const NoteEditorScreen(),
+                    ),
+                  );
+                }
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+              ),
+              child: const Text('Open Note', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResponseActionRow(String text, bool isDark) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _buildActionPill(
+            icon: Icons.note_add_outlined,
+            label: 'Save as Note',
+            isDark: isDark,
+            onTap: () {
+              final words = text.split(' ');
+              final title = words.length > 5 ? '${words.take(5).join(' ')}...' : 'AI Generated Note';
+              final note = NoteModel(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                title: title,
+                content: text,
+                snippet: text.length > 80 ? '${text.substring(0, 80)}...' : text,
+                date: 'Just now',
+                category: 'Ideas',
+                tag: 'NOTE',
+                tagColor: AppColors.primary,
+                icon: Icons.sticky_note_2_rounded,
+              );
+              ref.read(notesProvider.notifier).addNote(note);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Saved response as a new note!')),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+          _buildActionPill(
+            icon: Icons.checklist_rounded,
+            label: 'Extract Tasks',
+            isDark: isDark,
+            onTap: () {
+              final lines = text
+                  .split('\n')
+                  .map((l) => l.replaceAll(RegExp(r'^[-*•\d.]\s*'), '').trim())
+                  .where((l) => l.length > 5)
+                  .take(4)
+                  .toList();
+              if (lines.isNotEmpty) {
+                ref.read(tasksProvider.notifier).addExtractedTasks(
+                  lines,
+                  project: 'AI Assistant',
+                  sourceNote: 'AI Chat Actions',
+                );
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Created ${lines.length} task(s)!')),
+                );
+              }
+            },
+          ),
+          const SizedBox(width: 8),
+          _buildActionPill(
+            icon: Icons.copy_rounded,
+            label: 'Copy',
+            isDark: isDark,
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: text));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Copied to clipboard')),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionPill({
+    required IconData icon,
+    required String label,
+    required bool isDark,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkSurfaceSubtle : AppColors.surfaceSubtle,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+              width: 0.6,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 13, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildSourcePill({
     required String title,

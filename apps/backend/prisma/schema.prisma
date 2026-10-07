@@ -273,6 +273,8 @@ model AiMessage {
   role           String         // "user" | "assistant" | "system"
   content        String         @db.Text
   citedNoteIds   Json?          // Array of note IDs referenced in response
+  toolCalls      Json?          // Array of executed tool actions and results
+  metadata       Json?          // Additional context, audio flag, accuracy
   createdAt      DateTime       @default(now())
 
   conversation   AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

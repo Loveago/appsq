@@ -166,6 +166,27 @@ class LocalStorageService {
     }
   }
 
+  static const String _keyConversations = 'mindora_offline_conversations';
+
+  Future<void> saveAiConversations(List<Map<String, dynamic>> conversations) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyConversations, jsonEncode(conversations));
+    } catch (_) {}
+  }
+
+  Future<List<Map<String, dynamic>>?> loadAiConversations() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final str = prefs.getString(_keyConversations);
+      if (str == null || str.isEmpty) return null;
+      final decoded = jsonDecode(str) as List<dynamic>;
+      return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> clearAll() async {
     try {
       final prefs = await SharedPreferences.getInstance();

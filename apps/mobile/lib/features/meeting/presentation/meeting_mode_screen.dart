@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/fade_slide_in.dart';
@@ -263,7 +264,58 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                       item['task'] ?? '',
                       AppColors.primary,
                     ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
+                  // Meeting Post-Actions Matrix
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ActionChip(
+                        avatar: const Icon(Icons.email_outlined, size: 14, color: AppColors.primary),
+                        label: const Text('Follow-up Email', style: TextStyle(fontSize: 11)),
+                        backgroundColor: AppColors.darkSurfaceSubtle,
+                        side: const BorderSide(color: AppColors.darkBorder, width: 0.8),
+                        onPressed: () {
+                          final emailDraft = StringBuffer();
+                          emailDraft.writeln('Subject: Meeting Follow-up & Next Steps ($duration)\n');
+                          emailDraft.writeln('Hi Team,\n');
+                          emailDraft.writeln('Thanks for the productive sync today. Here is the executive overview:\n');
+                          emailDraft.writeln('$summary\n');
+                          if (decisions.isNotEmpty) {
+                            emailDraft.writeln('Key Decisions:');
+                            for (final d in decisions) {
+                              emailDraft.writeln('• $d');
+                            }
+                            emailDraft.writeln();
+                          }
+                          if (actionItems.isNotEmpty) {
+                            emailDraft.writeln('Action Items:');
+                            for (final item in actionItems) {
+                              emailDraft.writeln('• [${item['assignee'] ?? 'Self'}] ${item['task']}');
+                            }
+                            emailDraft.writeln();
+                          }
+                          emailDraft.writeln('Best regards,\nExecutive Team');
+
+                          Clipboard.setData(ClipboardData(text: emailDraft.toString()));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Follow-up email copied to clipboard!')),
+                          );
+                        },
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.psychology_outlined, size: 14, color: AppColors.emerald),
+                        label: const Text('Ask AI about Meeting', style: TextStyle(fontSize: 11)),
+                        backgroundColor: AppColors.darkSurfaceSubtle,
+                        side: const BorderSide(color: AppColors.darkBorder, width: 0.8),
+                        onPressed: () {
+                          Navigator.pop(context); // Close summary sheet
+                          Navigator.maybePop(context); // Close meeting screen
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(

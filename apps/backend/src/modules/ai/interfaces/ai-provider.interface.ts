@@ -38,6 +38,22 @@ export interface DailyBriefingResult {
   contextualInsight: string;
 }
 
+export interface ExecutedToolAction {
+  tool: string;
+  parameters: any;
+  result: any;
+  success: boolean;
+  message?: string;
+}
+
+export interface AiChatResult {
+  answer: string;
+  conversationId: string;
+  citedNoteIds: string[];
+  actionsExecuted: ExecutedToolAction[];
+  suggestedTitle?: string;
+}
+
 export interface IAiProvider {
   generateText(options: AiCompletionOptions): Promise<string>;
   generateStructuredJson<T>(options: AiCompletionOptions, schema: any): Promise<T>;

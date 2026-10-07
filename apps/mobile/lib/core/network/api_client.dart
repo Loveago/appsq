@@ -178,6 +178,50 @@ class ApiClient {
     return 'Structured Overview:\n\n$content';
   }
 
+  /// General AI Assistant & Second Brain Chat with Tool Actions
+  Future<Map<String, dynamic>> chatWithAssistant({
+    required String message,
+    String? conversationId,
+    List<NoteModel>? localNotes,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/ai/chat',
+        data: {
+          'message': message,
+          if (conversationId != null) 'conversationId': conversationId,
+        },
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } catch (_) {}
+
+    // Fallback to offline intelligent assistant with natural action detection
+    return _fallbackChatWithAssistant(message, conversationId, localNotes ?? []);
+  }
+
+  /// Get saved chat conversations
+  Future<List<Map<String, dynamic>>> getConversations() async {
+    try {
+      final response = await _dio.get('/ai/conversations');
+      if (response.statusCode == 200 && response.data is List) {
+        return (response.data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Delete a conversation
+  Future<bool> deleteConversation(String id) async {
+    try {
+      final response = await _dio.post('/ai/conversations/$id/delete');
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (_) {
+      return true;
+    }
+  }
+
   /// Ask Your Notes (RAG) with grounded fallback
   Future<Map<String, dynamic>> askNotes(String query, List<NoteModel> notes) async {
     try {
@@ -365,6 +409,99 @@ class ApiClient {
     return {
       'answer': buffer.toString().trim(),
       'citedNoteIds': citedIds,
+    };
+  }
+
+  Map<String, dynamic> _fallbackChatWithAssistant(
+    String query,
+    String? conversationId,
+    List<NoteModel> notes,
+  ) {
+    final lower = query.toLowerCase();
+    final convId = conversationId ?? DateTime.now().millisecondsSinceEpoch.toString();
+
+    // 1. Natural Language Note Creation
+    if (lower.startsWith('create a note') ||
+        lower.startsWith('create note') ||
+        lower.startsWith('save this as a note') ||
+        lower.startsWith('save note') ||
+        lower.startsWith('make a note') ||
+        lower.startsWith('remember this') ||
+        lower.startsWith('keep this idea')) {
+      final cleanContent = query
+          .replaceFirst(RegExp(r'^(create a note|create note|save this as a note|save note|make a note of that|make a note|remember this|keep this idea)\s*(about|for|:)?\s*', caseSensitive: false), '')
+          .trim();
+      final words = cleanContent.split(' ');
+      final title = words.length > 5 ? '${words.take(5).join(' ')}...' : (cleanContent.isNotEmpty ? cleanContent : 'Quick Note');
+
+      return {
+        'answer': 'Done! I created the note **$title** with your instructions.',
+        'conversationId': convId,
+        'citedNoteIds': <String>[],
+        'actionsExecuted': [
+          {
+            'tool': 'create_note',
+            'parameters': {'title': title, 'content': cleanContent.isNotEmpty ? cleanContent : query},
+            'result': {'title': title, 'content': cleanContent},
+            'success': true,
+            'message': 'Created note: "$title"',
+          }
+        ],
+      };
+    }
+
+    // 2. Natural Language Task Creation
+    if (lower.startsWith('add a task') ||
+        lower.startsWith('add task') ||
+        lower.startsWith('create a task') ||
+        lower.startsWith('create task') ||
+        lower.startsWith('remind me to')) {
+      final cleanTask = query
+          .replaceFirst(RegExp(r'^(add a task|add task|create a task|create task|remind me to)\s*(to|:)?\s*', caseSensitive: false), '')
+          .trim();
+
+      return {
+        'answer': 'Done! I added the task **$cleanTask** to your commitments.',
+        'conversationId': convId,
+        'citedNoteIds': <String>[],
+        'actionsExecuted': [
+          {
+            'tool': 'create_task',
+            'parameters': {'title': cleanTask, 'dueTimeStr': 'Tomorrow'},
+            'result': {'title': cleanTask},
+            'success': true,
+            'message': 'Created task: "$cleanTask"',
+          }
+        ],
+      };
+    }
+
+    // 3. Second brain note search
+    final matching = notes.where((n) {
+      final text = '${n.title} ${n.content}'.toLowerCase();
+      return text.contains(lower) || lower.split(' ').where((w) => w.length > 3).any((w) => text.contains(w));
+    }).toList();
+
+    if (matching.isNotEmpty) {
+      final buffer = StringBuffer('Based on your Second Brain:\n\n');
+      for (final n in matching.take(2)) {
+        buffer.writeln('• In **${n.title}**: ${n.content.length > 100 ? '${n.content.substring(0, 100)}...' : n.content}\n');
+      }
+      return {
+        'answer': buffer.toString().trim(),
+        'conversationId': convId,
+        'citedNoteIds': matching.map((n) => n.id).toList(),
+        'actionsExecuted': <dynamic>[],
+      };
+    }
+
+    // 4. General conversational response
+    return {
+      'answer':
+          'I am Mindora, your AI Second Brain. I can answer general knowledge questions, write plans, strategize, or take action to create notes and tasks directly whenever you need.',
+      'conversationId': convId,
+      'citedNoteIds': <String>[],
+      'actionsExecuted': <dynamic>[],
     };
   }
 }

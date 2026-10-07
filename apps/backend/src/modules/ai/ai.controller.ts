@@ -78,4 +78,42 @@ export class AiController {
   ) {
     return this.aiService.transcribeAudio(transcript, userId);
   }
+
+  // ==========================================
+  // AI CHAT & TOOL EXECUTION CONVERSATIONS
+  // ==========================================
+
+  @UseGuards(JwtAuthGuard)
+  @Post('chat')
+  async chatWithAssistant(
+    @Body('message') message: string,
+    @Body('conversationId') conversationId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.aiService.chatWithTools(userId, message, conversationId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('conversations')
+  async getConversations(@CurrentUser('id') userId: string) {
+    return this.aiService.getConversations(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('conversations/:id')
+  async getConversation(
+    @Query('id') queryId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.aiService.getConversation(queryId, userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('conversations/:id/delete')
+  async deleteConversation(
+    @Query('id') queryId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.aiService.deleteConversation(queryId, userId);
+  }
 }

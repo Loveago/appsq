@@ -6,6 +6,8 @@ import {
   ExtractedContextResult,
   MeetingDistillationResult,
   DailyBriefingResult,
+  AiChatResult,
+  ExecutedToolAction,
 } from './interfaces/ai-provider.interface';
 import {
   ExtractedContextSchema,
@@ -606,5 +608,529 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
       vector[i] = (text.charCodeAt(i) % 100) / 100;
     }
     return vector;
+  }
+
+  // ==========================================
+  // CONVERSATION HISTORY & RETRIEVAL METHODS
+  // ==========================================
+
+  async getConversations(userId: string) {
+    try {
+      return await this.prisma.aiConversation.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          messages: {
+            take: 1,
+            orderBy: { createdAt: 'desc' },
+            select: { content: true, createdAt: true, role: true },
+          },
+        },
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  async getConversation(id: string, userId: string) {
+    try {
+      const conv = await this.prisma.aiConversation.findFirst({
+        where: { id, userId },
+        include: {
+          messages: {
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      });
+      if (!conv) {
+        throw new BadRequestException('Conversation not found');
+      }
+      return conv;
+    } catch (e) {
+      if (e instanceof BadRequestException) throw e;
+      return null;
+    }
+  }
+
+  async deleteConversation(id: string, userId: string) {
+    try {
+      await this.prisma.aiConversation.deleteMany({
+        where: { id, userId },
+      });
+      return { success: true };
+    } catch {
+      return { success: true };
+    }
+  }
+
+  // ==========================================
+  // GENERAL AI + SECOND BRAIN TOOL EXECUTION
+  // ==========================================
+
+  async chatWithTools(
+    userId: string,
+    query: string,
+    conversationId?: string,
+  ): Promise<AiChatResult> {
+    if (!query || query.trim().length === 0) {
+      throw new BadRequestException('Message cannot be empty');
+    }
+
+    await this.checkAndTrackQuota(userId, 1000);
+
+    // 1. Resolve or create persistent conversation
+    let conv = conversationId
+      ? await this.prisma.aiConversation.findFirst({
+          where: { id: conversationId, userId },
+          include: {
+            messages: {
+              take: 8,
+              orderBy: { createdAt: 'desc' },
+            },
+          },
+        })
+      : null;
+
+    if (!conv) {
+      const cleanTitle = query.length > 32 ? `${query.slice(0, 32)}...` : query;
+      conv = await this.prisma.aiConversation.create({
+        data: {
+          userId,
+          title: cleanTitle,
+        },
+        include: { messages: true },
+      });
+    }
+
+    // Record the incoming user message
+    await this.prisma.aiMessage.create({
+      data: {
+        conversationId: conv.id,
+        role: 'user',
+        content: query,
+      },
+    });
+
+    // 2. Retrieve user context from database: Notes, Tasks, Projects, Meetings
+    const [notes, tasks, projects, meetings] = await Promise.all([
+      this.prisma.note.findMany({
+        where: { userId, isArchived: false },
+        take: 12,
+        orderBy: [{ isPinned: 'desc' }, { updatedAt: 'desc' }],
+        select: { id: true, title: true, content: true, summary: true, createdAt: true },
+      }),
+      this.prisma.task.findMany({
+        where: { userId, status: 'PENDING' },
+        take: 12,
+        orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }],
+        select: { id: true, title: true, priority: true, dueDate: true, dueTimeStr: true },
+      }),
+      this.prisma.project.findMany({
+        where: { userId },
+        take: 6,
+        select: { id: true, name: true, description: true, aiSummary: true },
+      }),
+      this.prisma.meeting.findMany({
+        where: { userId },
+        take: 4,
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, title: true, summary: true, decisions: true, actionItems: true },
+      }),
+    ]);
+
+    // Build context summary for second brain
+    const notesContext = notes.length > 0
+      ? notes.map((n) => `[Note ID: "${n.id}" | Title: "${n.title}"]\n${n.content}`).join('\n\n')
+      : 'No stored notes yet.';
+
+    const tasksContext = tasks.length > 0
+      ? tasks.map((t) => `• [Task ID: "${t.id}"] ${t.title} (Priority: ${t.priority}${t.dueTimeStr ? `, Due: ${t.dueTimeStr}` : ''})`).join('\n')
+      : 'No active pending tasks.';
+
+    const projectsContext = projects.length > 0
+      ? projects.map((p) => `• [Project ID: "${p.id}"] ${p.name}: ${p.description || 'No description'}`).join('\n')
+      : 'No active projects.';
+
+    const meetingsContext = meetings.length > 0
+      ? meetings.map((m) => `• [Meeting: "${m.title}"] Summary: ${m.summary || 'Recorded'}`).join('\n')
+      : 'No recorded meetings yet.';
+
+    // 3. Assemble LLM prompt
+    const systemPrompt = `You are Mindora, a premier Executive AI Personal Assistant and Second Brain.
+You can converse naturally, answer general knowledge, write code, strategize, brainstorm, and manage the user's life and work.
+
+PHILOSOPHY:
+- Answer general questions directly and brilliantly using your broad intelligence (science, history, coding, creative, advice, etc.).
+- When the user asks about their personal data, projects, delivery app, meetings, notes, or tasks, intelligently use their Second Brain Context below.
+- Combine both general knowledge and personal context seamlessly when requested.
+- CITE note titles when referring to private notes.
+
+ACTION SYSTEM CAPABILITIES:
+You can execute actions directly on the user's second brain.
+When the user asks you to:
+- create a note ("create a note", "save this as a note", "make a note of that", "turn this into a note", "remember this", "keep this idea")
+- create or complete a task ("add a task", "remind me to...", "create task", "finish task")
+- create a list ("create a checklist for...")
+- create a project ("create a project called...")
+- ask questions about a meeting or update information
+
+You MUST return an action block at the VERY END of your response inside <<<ACTIONS>>> and <<<END_ACTIONS>>> containing a JSON array of commands.
+
+SUPPORTED ACTIONS SCHEMA:
+<<<ACTIONS>>>
+[
+  {
+    "tool": "create_note",
+    "parameters": {
+      "title": "Title of Note",
+      "content": "Rich markdown content of the note",
+      "projectId": "optional-project-id"
+    }
+  },
+  {
+    "tool": "create_task",
+    "parameters": {
+      "title": "Task title",
+      "priority": "LOW" | "MEDIUM" | "HIGH" | "URGENT",
+      "dueTimeStr": "Tomorrow" | "Friday" | "Today" | null,
+      "projectId": "optional-project-id"
+    }
+  },
+  {
+    "tool": "create_list",
+    "parameters": {
+      "title": "Checklist Title",
+      "items": ["Item 1", "Item 2", "Item 3"]
+    }
+  },
+  {
+    "tool": "create_project",
+    "parameters": {
+      "name": "Project Name",
+      "description": "Project description"
+    }
+  }
+]
+<<<END_ACTIONS>>>
+
+CRITICAL RULE:
+If you return an action in <<<ACTIONS>>>, do not say "You can create a note..." Say "Done, I've created the note..." because the backend executes the tools immediately before displaying the result to the user!
+If no action is required, do NOT include the <<<ACTIONS>>> block.`;
+
+    let assistantAnswer = '';
+    const executedActions: ExecutedToolAction[] = [];
+    const citedNoteIds: string[] = [];
+
+    // Filter cited notes based on query match
+    const qLower = query.toLowerCase();
+    for (const n of notes) {
+      if (qLower.includes(n.title.toLowerCase()) || n.content.toLowerCase().includes(qLower)) {
+        citedNoteIds.push(n.id);
+      }
+    }
+
+    if (this.openaiClient) {
+      try {
+        const historyMessages = (conv.messages || []).slice(-6).reverse().map((m) => ({
+          role: (m.role === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user',
+          content: m.content,
+        }));
+
+        const completion = await this.openaiClient.chat.completions.create({
+          model: this.defaultModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            {
+              role: 'system',
+              content: `--- USER SECOND BRAIN CONTEXT ---
+NOTES:
+${notesContext}
+
+TASKS:
+${tasksContext}
+
+PROJECTS:
+${projectsContext}
+
+MEETINGS:
+${meetingsContext}
+---------------------------------`,
+            },
+            ...historyMessages,
+            { role: 'user', content: query },
+          ],
+          temperature: 0.6,
+          max_tokens: 1200,
+        });
+
+        const rawContent = completion.choices[0]?.message?.content?.trim() || '';
+        const actionMatch = rawContent.match(/<<<ACTIONS>>>([\s\S]*?)<<<END_ACTIONS>>>/);
+        assistantAnswer = rawContent.replace(/<<<ACTIONS>>>[\s\S]*?<<<END_ACTIONS>>>/, '').trim();
+
+        if (actionMatch && actionMatch[1]) {
+          try {
+            const parsedActions = JSON.parse(actionMatch[1].trim());
+            if (Array.isArray(parsedActions)) {
+              for (const act of parsedActions) {
+                const executed = await this.executeToolAction(userId, act.tool, act.parameters);
+                executedActions.push(executed);
+              }
+            }
+          } catch (actionErr) {
+            console.warn('Failed to parse and execute LLM actions:', actionErr);
+          }
+        }
+      } catch (llmErr) {
+        console.warn('LLM chat failed, using local fallback:', llmErr);
+      }
+    }
+
+    // Offline / Fallback handling if LLM was unavailable or produced empty answer
+    if (!assistantAnswer) {
+      const fallback = await this.handleFallbackChatAndActions(userId, query, notes, tasks);
+      assistantAnswer = fallback.answer;
+      if (fallback.action) {
+        executedActions.push(fallback.action);
+      }
+    }
+
+    // Save assistant message to conversation history
+    await this.prisma.aiMessage.create({
+      data: {
+        conversationId: conv.id,
+        role: 'assistant',
+        content: assistantAnswer,
+        citedNoteIds: citedNoteIds.length > 0 ? (citedNoteIds as any) : undefined,
+        toolCalls: executedActions.length > 0 ? (executedActions as any) : undefined,
+      },
+    });
+
+    // Touch conversation updated timestamp
+    await this.prisma.aiConversation.update({
+      where: { id: conv.id },
+      data: { updatedAt: new Date() },
+    });
+
+    return {
+      answer: assistantAnswer,
+      conversationId: conv.id,
+      citedNoteIds,
+      actionsExecuted: executedActions,
+      suggestedTitle: conv.title,
+    };
+  }
+
+  // ==========================================
+  // TOOL EXECUTION ENGINE
+  // ==========================================
+
+  private async executeToolAction(
+    userId: string,
+    toolName: string,
+    params: any,
+  ): Promise<ExecutedToolAction> {
+    try {
+      switch (toolName) {
+        case 'create_note': {
+          const title = params.title || 'AI Note';
+          const content = params.content || '';
+          const summary = content.length > 80 ? `${content.slice(0, 80)}...` : content;
+          const note = await this.prisma.note.create({
+            data: {
+              userId,
+              title,
+              content,
+              summary,
+              projectId: params.projectId || null,
+            },
+          });
+          return {
+            tool: 'create_note',
+            parameters: params,
+            result: note,
+            success: true,
+            message: `Created note: "${title}"`,
+          };
+        }
+
+        case 'create_task': {
+          const title = params.title || 'New Task';
+          const task = await this.prisma.task.create({
+            data: {
+              userId,
+              title,
+              priority: (params.priority as any) || 'MEDIUM',
+              dueTimeStr: params.dueTimeStr || 'Upcoming',
+              projectId: params.projectId || null,
+              isAiExtracted: true,
+            },
+          });
+          return {
+            tool: 'create_task',
+            parameters: params,
+            result: task,
+            success: true,
+            message: `Created task: "${title}"`,
+          };
+        }
+
+        case 'create_list': {
+          const title = params.title || 'Checklist';
+          const items = Array.isArray(params.items) ? params.items : [];
+          const list = await this.prisma.smartList.create({
+            data: {
+              userId,
+              title,
+              isAiGenerated: true,
+              items: {
+                create: items.map((content: string, index: number) => ({
+                  content,
+                  position: index,
+                })),
+              },
+            },
+            include: { items: true },
+          });
+          return {
+            tool: 'create_list',
+            parameters: params,
+            result: list,
+            success: true,
+            message: `Created list: "${title}" with ${items.length} items`,
+          };
+        }
+
+        case 'create_project': {
+          const name = params.name || 'New Project';
+          const project = await this.prisma.project.create({
+            data: {
+              userId,
+              name,
+              description: params.description || '',
+              aiSummary: `Initialized project for ${name}.`,
+            },
+          });
+          return {
+            tool: 'create_project',
+            parameters: params,
+            result: project,
+            success: true,
+            message: `Created project: "${name}"`,
+          };
+        }
+
+        case 'complete_task': {
+          if (params.id) {
+            await this.prisma.task.update({
+              where: { id: params.id },
+              data: { status: 'COMPLETED' },
+            });
+            return {
+              tool: 'complete_task',
+              parameters: params,
+              result: { id: params.id, status: 'COMPLETED' },
+              success: true,
+              message: `Completed task.`,
+            };
+          }
+          return {
+            tool: 'complete_task',
+            parameters: params,
+            result: null,
+            success: false,
+            message: 'Task ID not provided.',
+          };
+        }
+
+        default:
+          return {
+            tool: toolName,
+            parameters: params,
+            result: null,
+            success: false,
+            message: `Unknown tool: ${toolName}`,
+          };
+      }
+    } catch (err: any) {
+      return {
+        tool: toolName,
+        parameters: params,
+        result: null,
+        success: false,
+        message: err.message || 'Tool execution failed',
+      };
+    }
+  }
+
+  private async handleFallbackChatAndActions(
+    userId: string,
+    query: string,
+    notes: any[],
+    tasks: any[],
+  ): Promise<{ answer: string; action?: ExecutedToolAction }> {
+    const lower = query.toLowerCase();
+
+    // 1. Natural Language Note Creation
+    if (
+      lower.startsWith('create a note') ||
+      lower.startsWith('create note') ||
+      lower.startsWith('save this as a note') ||
+      lower.startsWith('save note') ||
+      lower.startsWith('make a note') ||
+      lower.startsWith('remember this')
+    ) {
+      const cleanContent = query
+        .replace(/^(create a note|create note|save this as a note|save note|make a note of that|make a note|remember this|keep this idea)\s*(about|for|:)?\s*/i, '')
+        .trim();
+      const titleWords = cleanContent.split(' ');
+      const title = titleWords.length > 5 ? `${titleWords.slice(0, 5).join(' ')}...` : cleanContent || 'Quick Note';
+      const executed = await this.executeToolAction(userId, 'create_note', {
+        title,
+        content: cleanContent || query,
+      });
+      return {
+        answer: `I've created a note titled "${title}" with your instructions.`,
+        action: executed,
+      };
+    }
+
+    // 2. Natural Language Task Creation
+    if (
+      lower.startsWith('add a task') ||
+      lower.startsWith('add task') ||
+      lower.startsWith('create a task') ||
+      lower.startsWith('create task') ||
+      lower.startsWith('remind me to')
+    ) {
+      const cleanTask = query
+        .replace(/^(add a task|add task|create a task|create task|remind me to)\s*(to|:)?\s*/i, '')
+        .trim();
+      const executed = await this.executeToolAction(userId, 'create_task', {
+        title: cleanTask || 'New Task',
+        priority: 'MEDIUM',
+        dueTimeStr: 'Tomorrow',
+      });
+      return {
+        answer: `I've added the task "${cleanTask}" to your commitments.`,
+        action: executed,
+      };
+    }
+
+    // 3. Second Brain Query Search
+    const matching = notes.filter((n) =>
+      query.toLowerCase().includes(n.title.toLowerCase()) || n.content.toLowerCase().includes(query.toLowerCase())
+    );
+
+    if (matching.length > 0) {
+      return {
+        answer: `Here is what I found in your Second Brain:\n\n` +
+          matching.map((n) => `• **${n.title}**: ${n.content.slice(0, 150)}...`).join('\n\n'),
+      };
+    }
+
+    // 4. General AI response fallback
+    return {
+      answer: `I'm Mindora, your AI Second Brain. You asked: "${query}". I'm ready to organize your ideas, draft plans, manage your projects, or create notes and tasks directly whenever you need.`,
+    };
   }
 }
