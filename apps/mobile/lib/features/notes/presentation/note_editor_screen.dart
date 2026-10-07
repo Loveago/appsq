@@ -906,7 +906,10 @@ class _NoteVoiceRecorderSheetState extends State<_NoteVoiceRecorderSheet> with S
 
     if (audioPath != null && audioPath.isNotEmpty) {
       try {
-        final res = await ApiClient.instance.transcribeAudio(audioPath);
+        final res = await ApiClient.instance.transcribeAudio(
+          audioPath,
+          transcriptText: _liveText.isNotEmpty ? _liveText : null,
+        );
         if (res['transcript'] != null && res['transcript'].toString().isNotEmpty) {
           finalTranscript = res['transcript'].toString();
         }

@@ -1023,9 +1023,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   subtitle: 'Transcribed in real-time with AI summaries',
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const MeetingModeScreen()),
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (context) => const VoiceCaptureSheet(),
                     );
                   },
                   isDark: isDark,

@@ -275,10 +275,11 @@ Return ONLY valid JSON without markdown formatting or codeblocks.`;
       await this.checkAndTrackQuota(userId, 400);
     }
 
-    if (this.openaiClient) {
+    const { client, model } = await this.getAiClient();
+    if (client) {
       try {
-        const completion = await this.openaiClient.chat.completions.create({
-          model: this.defaultModel,
+        const completion = await client.chat.completions.create({
+          model,
           messages: [
             {
               role: 'system',
@@ -317,7 +318,8 @@ Return ONLY valid JSON without markdown formatting or codeblocks.`;
       await this.checkAndTrackQuota(userId, 400);
     }
 
-    if (this.openaiClient) {
+    const { client, model } = await this.getAiClient();
+    if (client) {
       try {
         let styleInstruction = 'Rewrite the following text with improved clarity, structure, and professional tone.';
         if (style === 'concise') {
@@ -330,8 +332,8 @@ Return ONLY valid JSON without markdown formatting or codeblocks.`;
           styleInstruction = 'Elevate the following note into high-level executive communication with clear strategic implications.';
         }
 
-        const completion = await this.openaiClient.chat.completions.create({
-          model: this.defaultModel,
+        const completion = await client.chat.completions.create({
+          model,
           messages: [
             {
               role: 'system',
@@ -369,7 +371,8 @@ Return ONLY valid JSON without markdown formatting or codeblocks.`;
       await this.checkAndTrackQuota(userId, 1500);
     }
 
-    if (this.openaiClient) {
+    const { client, model } = await this.getAiClient();
+    if (client) {
       try {
         const prompt = `You are Mindora AI, an executive meeting intelligence system.
 Analyze the following meeting transcript and return a pure JSON object adhering strictly to this schema:
@@ -391,8 +394,8 @@ Transcript:
 
 Return ONLY valid JSON without markdown formatting or codeblocks.`;
 
-        const completion = await this.openaiClient.chat.completions.create({
-          model: this.defaultModel,
+        const completion = await client.chat.completions.create({
+          model,
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.3,
           max_tokens: 900,
@@ -501,7 +504,8 @@ Return ONLY valid JSON without markdown formatting or codeblocks.`;
 
     const citedNoteIds = matchingNotes.map((n) => n.id);
 
-    if (this.openaiClient) {
+    const { client, model } = await this.getAiClient();
+    if (client) {
       try {
         const hasNotes = matchingNotes.length > 0;
         const systemPrompt = `You are Mindora, an ultra-smart executive AI Second Brain assistant.
@@ -533,8 +537,8 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
           ? matchingNotes.map((n, i) => `[Source ${i + 1}: ${n.title}]\n${n.content}`).join('\n\n')
           : 'No specific notes saved yet.';
 
-        const completion = await this.openaiClient.chat.completions.create({
-          model: this.defaultModel,
+        const completion = await client.chat.completions.create({
+          model,
           messages: [
             {
               role: 'system',

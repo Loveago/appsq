@@ -78,7 +78,10 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
 
     final audioPath = await AudioRecordingService.instance.stopRecording();
     _audioPath = audioPath;
-    final res = await ApiClient.instance.transcribeAudio(audioPath ?? '');
+    final res = await ApiClient.instance.transcribeAudio(
+      audioPath ?? '',
+      transcriptText: _transcript.isNotEmpty ? _transcript : null,
+    );
     if (mounted) {
       setState(() {
         _transcript = res['transcript'] as String? ?? (_transcript.isNotEmpty ? _transcript : 'Voice recording saved.');
@@ -293,7 +296,7 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
             const CircularProgressIndicator(color: AppColors.primary),
             const SizedBox(height: 14),
             Text(
-              'AI is extracting commitments & deadlines...',
+              'Transcribing audio & extracting intelligence...',
               style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextMuted : AppColors.textMuted),
             ),
           ] else ...[
@@ -305,72 +308,120 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
               ),
               const SizedBox(height: 14),
             ],
-            // Extracted Results Card
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.darkSurface : Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: AppColors.emerald.withValues(alpha: 0.4),
-                  width: 1,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.auto_awesome_rounded, size: 14, color: AppColors.emerald),
-                      const SizedBox(width: 6),
-                      Text(
-                        'AI DETECTED ACTION ITEMS',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.8,
-                          color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                        ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.amber.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          'Due: $_detectedDue',
-                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.amber),
-                        ),
-                      ),
-                    ],
+            // Transcription View Card
+            if (_transcript.isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.darkSurfaceSubtle : AppColors.surfaceSubtle,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                    width: 0.8,
                   ),
-                  const SizedBox(height: 12),
-                  for (final task in _detectedTasks)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.check_circle_outline_rounded, size: 16, color: AppColors.emerald),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              task,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                              ),
-                            ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.notes_rounded, size: 14, color: AppColors.primary),
+                        const SizedBox(width: 6),
+                        Text(
+                          'TRANSCRIPTION',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                            color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
                           ),
-                        ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _transcript,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.45,
+                        color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
                       ),
                     ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
+              const SizedBox(height: 14),
+            ],
+            // Extracted Results Card
+            if (_detectedTasks.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.darkSurface : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppColors.emerald.withValues(alpha: 0.4),
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.auto_awesome_rounded, size: 14, color: AppColors.emerald),
+                        const SizedBox(width: 6),
+                        Text(
+                          'AI DETECTED ACTION ITEMS',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                            color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                          ),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.amber.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Due: $_detectedDue',
+                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.amber),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    for (final task in _detectedTasks)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle_outline_rounded, size: 16, color: AppColors.emerald),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                task,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            if (_detectedTasks.isNotEmpty)
+              const SizedBox(height: 14),
+            const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
