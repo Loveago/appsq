@@ -6,6 +6,7 @@ import '../../../../core/network/api_client.dart';
 import '../../../../core/storage/local_storage_service.dart';
 import '../../../../main.dart';
 import '../../paywall/presentation/paywall_screen.dart';
+import 'account_profile_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   final VoidCallback? onBack;
@@ -86,90 +87,103 @@ class SettingsScreen extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 110),
         physics: const BouncingScrollPhysics(),
         children: [
-          // User Profile Card
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: isDark ? AppColors.darkSurface : Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
-                width: 0.8,
+          // User Profile Card (Clickable to open AccountProfileScreen)
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (ctx) => const AccountProfileScreen()),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkSurface : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                  width: 0.8,
+                ),
               ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+              child: Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      profile.fullName.isNotEmpty ? profile.fullName[0] : 'U',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    profile.fullName.isNotEmpty ? profile.fullName[0] : 'U',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              profile.fullName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          if (profile.isPro)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
-                                ),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: const Text(
-                                '✦ PRO',
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                profile.fullName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
                                 ),
                               ),
                             ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        profile.email,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                            const SizedBox(width: 6),
+                            if (profile.isPro)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                                  ),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  '✦ PRO',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 2),
+                        Text(
+                          profile.email,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 20,
+                    color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                  ),
+                ],
+              ),
             ),
           ),
 

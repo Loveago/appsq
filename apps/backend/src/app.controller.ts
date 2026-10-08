@@ -27,17 +27,23 @@ export class AppController {
     const hasDbUrl = Boolean(rawUrl);
     const masked = rawUrl.replace(/:([^:@]+)@/, ':***@');
     try {
-      const ping = await Promise.race([
-        this.prisma.$queryRaw`SELECT 1 as connected`,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Database query timed out after 4 seconds')), 4000),
-        ),
-      ]);
+      const tables: any = await this.prisma.$queryRaw`
+        SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'
+      `;
+      let userCount = -1;
+      let userError: string | null = null;
+      try {
+        userCount = await this.prisma.user.count();
+      } catch (e: any) {
+        userError = e.message || String(e);
+      }
       return {
         status: 'CONNECTED',
         hasDbUrl,
         dbUrl: masked,
-        ping,
+        tables,
+        userCount,
+        userError,
       };
     } catch (err: any) {
       return {

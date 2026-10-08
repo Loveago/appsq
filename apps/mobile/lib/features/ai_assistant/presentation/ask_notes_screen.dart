@@ -182,6 +182,29 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.shield_outlined, size: 13, color: AppColors.primary),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Conversations are private & automatically retained for 30 days.',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 12),
                 if (_savedConversations.isEmpty)
                   Padding(
@@ -635,6 +658,32 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                               color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
                               height: 1.4,
                             ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isDark ? AppColors.darkSurface : Colors.black.withValues(alpha: 0.04),
+                            borderRadius: BorderRadius.circular(100),
+                            border: Border.all(
+                              color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                              width: 0.8,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.lock_clock_outlined, size: 12, color: isDark ? AppColors.darkTextMuted : AppColors.textMuted),
+                              const SizedBox(width: 5),
+                              Text(
+                                '30-day auto retention • Private & isolated',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],

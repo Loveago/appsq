@@ -22,6 +22,7 @@ import '../../voice/presentation/voice_capture_sheet.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../ads/presentation/native_ad_card.dart';
 import '../../../../core/services/ocr_service.dart';
+import '../../../../core/network/api_client.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final VoidCallback? onOpenSearch;
@@ -613,7 +614,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
           String extractedText = '';
           try {
-            extractedText = await OcrService.instance.extractTextFromImage(pickedFile.path);
+            final scanResult = await OcrService.instance.extractStructuredFromImage(pickedFile.path);
+            extractedText = scanResult.rawText;
+
+            // Authoritative server persistence & quota tracking
+            ApiClient.instance.saveScannedDocument(
+              extractedText: scanResult.rawText,
+              imageUrl: pickedFile.path,
+              structuredData: scanResult.toJson(),
+              confidenceScore: scanResult.confidenceScore,
+              documentType: scanResult.documentType,
+            ).catchError((_) => <String, dynamic>{});
           } catch (e) {
             extractedText = '';
           }
@@ -669,7 +680,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
           String extractedText = '';
           try {
-            extractedText = await OcrService.instance.extractTextFromImage(pickedFile.path);
+            final scanResult = await OcrService.instance.extractStructuredFromImage(pickedFile.path);
+            extractedText = scanResult.rawText;
+
+            // Authoritative server persistence & quota tracking
+            ApiClient.instance.saveScannedDocument(
+              extractedText: scanResult.rawText,
+              imageUrl: pickedFile.path,
+              structuredData: scanResult.toJson(),
+              confidenceScore: scanResult.confidenceScore,
+              documentType: scanResult.documentType,
+            ).catchError((_) => <String, dynamic>{});
           } catch (e) {
             extractedText = '';
           }

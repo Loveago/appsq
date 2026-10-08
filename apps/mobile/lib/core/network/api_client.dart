@@ -145,6 +145,139 @@ class ApiClient {
     }
   }
 
+  /// Get Current User Profile
+  Future<Map<String, dynamic>?> getProfile() async {
+    try {
+      final response = await _dio.get('/auth/me');
+      if (response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } catch (e) {
+      debugPrint('ApiClient getProfile error: $e');
+    }
+    return null;
+  }
+
+  /// Update Profile (Name & Avatar)
+  Future<Map<String, dynamic>> updateProfile({String? fullName, String? avatarUrl}) async {
+    final response = await _dio.put(
+      '/auth/me/profile',
+      data: {
+        if (fullName != null) 'fullName': fullName,
+        if (avatarUrl != null) 'avatarUrl': avatarUrl,
+      },
+    );
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Update Email
+  Future<Map<String, dynamic>> updateEmail({
+    required String newEmail,
+    required String password,
+  }) async {
+    final response = await _dio.put(
+      '/auth/me/email',
+      data: {
+        'newEmail': newEmail,
+        'password': password,
+      },
+    );
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Update Password
+  Future<Map<String, dynamic>> updatePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final response = await _dio.put(
+      '/auth/me/password',
+      data: {
+        'currentPassword': currentPassword,
+        'newPassword': newPassword,
+      },
+    );
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Delete Account
+  Future<bool> deleteAccount(String password) async {
+    final response = await _dio.delete(
+      '/auth/me',
+      data: {'password': password},
+    );
+    if (response.statusCode == 200) {
+      setAuthToken('');
+      return true;
+    }
+    return false;
+  }
+
+  /// Get Authoritative User Entitlements & Usage Quotas
+  Future<Map<String, dynamic>> getEntitlements() async {
+    try {
+      final response = await _dio.get('/billing/entitlements');
+      if (response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } catch (e) {
+      debugPrint('ApiClient getEntitlements error: $e');
+    }
+    return {
+      'plan': 'FREE',
+      'isPro': false,
+      'isTrialActive': false,
+      'trialDaysRemaining': 0,
+      'usage': {
+        'aiMessages': {'used': 0, 'limit': 50, 'remaining': 50},
+        'documentScans': {'used': 0, 'limit': 10, 'remaining': 10},
+        'audioMinutes': {'used': 0, 'limit': 15, 'remaining': 15},
+      },
+    };
+  }
+
+  /// Start 7-Day Free Trial
+  Future<Map<String, dynamic>> startFreeTrial() async {
+    final response = await _dio.post('/billing/trial');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Save Smart Scanned Document to Backend
+  Future<Map<String, dynamic>> saveScannedDocument({
+    required String extractedText,
+    String? title,
+    String? imageUrl,
+    Map<String, dynamic>? structuredData,
+    double? confidenceScore,
+    String? documentType,
+    bool createNote = false,
+  }) async {
+    final response = await _dio.post(
+      '/documents/scan',
+      data: {
+        'extractedText': extractedText,
+        if (title != null) 'title': title,
+        if (imageUrl != null) 'imageUrl': imageUrl,
+        if (structuredData != null) 'structuredData': structuredData,
+        if (confidenceScore != null) 'confidenceScore': confidenceScore,
+        if (documentType != null) 'documentType': documentType,
+        'createNote': createNote,
+      },
+    );
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// List Scanned Documents
+  Future<List<Map<String, dynamic>>> fetchScannedDocuments() async {
+    try {
+      final response = await _dio.get('/documents');
+      if (response.statusCode == 200 && response.data is List) {
+        return (response.data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
   /// Live Notes REST APIs
   Future<List<Map<String, dynamic>>> fetchNotes() async {
     try {

@@ -25,8 +25,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       if (!user) {
         throw new UnauthorizedException('User not found');
       }
-      if (user.isSuspended) {
+      if (user.isSuspended || user.accountStatus === 'SUSPENDED') {
         throw new UnauthorizedException('Account suspended: ' + (user.suspendedReason || 'Contact support.'));
+      }
+      if (user.accountStatus === 'DELETED') {
+        throw new UnauthorizedException('Account has been closed.');
       }
       // Update last active asynchronously
       this.prisma.user.update({
@@ -36,13 +39,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       return user;
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
-      const isAdmin = payload.email?.toLowerCase().includes('admin');
-      return {
-        id: payload.sub,
-        email: payload.email,
-        role: isAdmin ? 'ADMIN' : 'USER',
-        subscriptionTier: isAdmin ? 'PRO' : 'FREE',
-      };
+      throw new UnauthorizedException('Authentication failed: user record unavailable');
     }
   }
 }

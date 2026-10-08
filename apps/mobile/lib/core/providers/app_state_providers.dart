@@ -83,6 +83,16 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
     LocalStorageService.instance.saveUserProfile(state);
   }
 
+  void updateName(String name) {
+    state = state.copyWith(fullName: name);
+    LocalStorageService.instance.saveUserProfile(state);
+  }
+
+  void updateEmail(String email) {
+    state = state.copyWith(email: email);
+    LocalStorageService.instance.saveUserProfile(state);
+  }
+
   void resetProfile() {
     state = const UserProfileState();
     LocalStorageService.instance.saveUserProfile(state);

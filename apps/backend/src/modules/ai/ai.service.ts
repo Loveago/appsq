@@ -838,12 +838,18 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
 
   // ==========================================
   // CONVERSATION HISTORY & RETRIEVAL METHODS
+  // (Strict 30-Day Auto Retention & User Privacy)
   // ==========================================
 
   async getConversations(userId: string) {
     try {
+      const now = new Date();
       return await this.prisma.aiConversation.findMany({
-        where: { userId },
+        where: {
+          userId,
+          deletedAt: null,
+          expiresAt: { gt: now },
+        },
         orderBy: { updatedAt: 'desc' },
         include: {
           messages: {
@@ -860,8 +866,14 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
 
   async getConversation(id: string, userId: string) {
     try {
+      const now = new Date();
       const conv = await this.prisma.aiConversation.findFirst({
-        where: { id, userId },
+        where: {
+          id,
+          userId,
+          deletedAt: null,
+          expiresAt: { gt: now },
+        },
         include: {
           messages: {
             orderBy: { createdAt: 'asc' },
@@ -869,7 +881,7 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
         },
       });
       if (!conv) {
-        throw new BadRequestException('Conversation not found');
+        throw new BadRequestException('Conversation not found or expired');
       }
       return conv;
     } catch (e) {
@@ -880,12 +892,30 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
 
   async deleteConversation(id: string, userId: string) {
     try {
-      await this.prisma.aiConversation.deleteMany({
+      await this.prisma.aiConversation.updateMany({
         where: { id, userId },
+        data: { deletedAt: new Date() },
       });
       return { success: true };
     } catch {
       return { success: true };
+    }
+  }
+
+  async cleanupExpiredConversations(): Promise<{ deleted: number }> {
+    try {
+      const now = new Date();
+      const res = await this.prisma.aiConversation.deleteMany({
+        where: {
+          OR: [
+            { expiresAt: { lte: now } },
+            { deletedAt: { not: null } },
+          ],
+        },
+      });
+      return { deleted: res.count };
+    } catch {
+      return { deleted: 0 };
     }
   }
 
@@ -921,10 +951,12 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
 
       if (!conv) {
         const cleanTitle = query.length > 32 ? `${query.slice(0, 32)}...` : query;
+        const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         conv = await this.prisma.aiConversation.create({
           data: {
             userId,
             title: cleanTitle,
+            expiresAt: thirtyDaysFromNow,
           },
           include: { messages: true },
         });
@@ -1151,11 +1183,24 @@ ${meetingsContext}
           },
         });
 
-        // Touch conversation updated timestamp
+        // Touch conversation updated timestamp & reset 30-day retention countdown
         await this.prisma.aiConversation.update({
           where: { id: conv.id },
-          data: { updatedAt: new Date() },
+          data: {
+            updatedAt: new Date(),
+            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          },
         });
+
+        // Record usage for authoritative tracking
+        await this.prisma.usageRecord.create({
+          data: {
+            userId,
+            feature: 'AI_CHAT',
+            quantity: 1,
+            metadata: { conversationId: conv.id },
+          },
+        }).catch(() => null);
       }
     } catch {
       // In offline / guest mode, proceed safely without db error

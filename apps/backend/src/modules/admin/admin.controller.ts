@@ -30,7 +30,9 @@ export class AdminController {
   async listUsers(
     @Query('search') search?: string,
     @Query('tier') tier?: string,
+    @Query('plan') plan?: string,
     @Query('role') role?: string,
+    @Query('accountStatus') accountStatus?: string,
     @Query('isSuspended') isSuspended?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -38,7 +40,9 @@ export class AdminController {
     return this.adminService.listUsers({
       search,
       tier,
+      plan,
       role,
+      accountStatus,
       isSuspended: isSuspended !== undefined ? isSuspended === 'true' : undefined,
       page: page ? parseInt(page, 10) : 1,
       limit: limit ? parseInt(limit, 10) : 30,
@@ -48,6 +52,30 @@ export class AdminController {
   @Get('users/:id')
   async getUserDetails(@Param('id') userId: string) {
     return this.adminService.getUserDetails(userId);
+  }
+
+  @Get('users/:id/usage')
+  async getUserUsage(@Param('id') userId: string) {
+    return this.adminService.getUserUsage(userId);
+  }
+
+  @Put('users/:id/plan')
+  async overridePlan(
+    @Req() req: any,
+    @Param('id') userId: string,
+    @Body('plan') plan: 'FREE' | 'TRIAL' | 'PRO',
+    @Body('durationDays') durationDays?: number,
+  ) {
+    return this.adminService.overridePlan(req.user, userId, plan, durationDays);
+  }
+
+  @Post('users/:id/extend-trial')
+  async extendTrial(
+    @Req() req: any,
+    @Param('id') userId: string,
+    @Body('days') days: number,
+  ) {
+    return this.adminService.extendTrial(req.user, userId, Number(days) || 7);
   }
 
   @Put('users/:id/tier')

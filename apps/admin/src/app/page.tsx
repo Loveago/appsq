@@ -63,8 +63,15 @@ export default function AdminDashboard() {
   const [metrics, setMetrics] = useState<any>(null);
   const [usersList, setUsersList] = useState<any[]>([]);
   const [userSearch, setUserSearch] = useState('');
-  const [userTierFilter, setUserTierFilter] = useState('ALL');
+  const [userPlanFilter, setUserPlanFilter] = useState('ALL');
+  const [userStatusFilter, setUserStatusFilter] = useState('ALL');
+  const [userRoleFilter, setUserRoleFilter] = useState('ALL');
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const [selectedUserDetails, setSelectedUserDetails] = useState<any | null>(null);
+  const [selectedUserUsage, setSelectedUserUsage] = useState<any | null>(null);
+  const [isLoadingUserDetails, setIsLoadingUserDetails] = useState(false);
+  const [editPlan, setEditPlan] = useState<'FREE' | 'TRIAL' | 'PRO'>('PRO');
+  const [editDurationDays, setEditDurationDays] = useState(30);
 
   const [aiProviders, setAiProviders] = useState<any[]>([]);
   const [providerForm, setProviderForm] = useState<{
@@ -194,14 +201,18 @@ export default function AdminDashboard() {
   };
 
   // ==========================================
-  // USER ACTIONS
+  // USER ACTIONS & DRAWER MANAGEMENT
   // ==========================================
   const handleSearchUsers = async () => {
     setIsLoading(true);
     try {
-      const res = await adminFetch(
-        `/admin/users?search=${encodeURIComponent(userSearch)}&tier=${userTierFilter === 'ALL' ? '' : userTierFilter}`
-      );
+      const params = new URLSearchParams();
+      if (userSearch) params.append('search', userSearch);
+      if (userPlanFilter !== 'ALL') params.append('plan', userPlanFilter);
+      if (userStatusFilter !== 'ALL') params.append('accountStatus', userStatusFilter);
+      if (userRoleFilter !== 'ALL') params.append('role', userRoleFilter);
+
+      const res = await adminFetch(`/admin/users?${params.toString()}`);
       setUsersList(res.users || []);
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -210,12 +221,76 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleToggleTier = async (user: any) => {
-    const newTier = user.subscriptionTier === 'PRO' ? 'FREE' : 'PRO';
+  const handleOpenUserDrawer = async (user: any) => {
+    setSelectedUser(user);
+    setSelectedUserDetails(null);
+    setSelectedUserUsage(null);
+    setIsLoadingUserDetails(true);
+    setEditPlan((user.plan || user.subscriptionTier || 'PRO') as any);
+    setEditDurationDays(user.plan === 'TRIAL' ? 7 : 30);
+
     try {
-      await adminFetch(`/admin/users/${user.id}/tier`, {
-        method: 'Put',
-        body: JSON.stringify({ tier: newTier, durationDays: newTier === 'PRO' ? 30 : undefined }),
+      const [details, usage] = await Promise.all([
+        adminFetch(`/admin/users/${user.id}`).catch(() => null),
+        adminFetch(`/admin/users/${user.id}/usage`).catch(() => null),
+      ]);
+      if (details) setSelectedUserDetails(details);
+      if (usage) setSelectedUserUsage(usage);
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    } finally {
+      setIsLoadingUserDetails(false);
+    }
+  };
+
+  const handleApplyUserPlan = async () => {
+    if (!selectedUser) return;
+    try {
+      await adminFetch(`/admin/users/${selectedUser.id}/plan`, {
+        method: 'PUT',
+        body: JSON.stringify({ plan: editPlan, durationDays: editDurationDays }),
+      });
+      showToast(`User plan updated to ${editPlan}`);
+      await handleOpenUserDrawer(selectedUser);
+      refreshData();
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleExtendTrial = async (days: number = 7) => {
+    if (!selectedUser) return;
+    try {
+      await adminFetch(`/admin/users/${selectedUser.id}/extend-trial`, {
+        method: 'POST',
+        body: JSON.stringify({ days }),
+      });
+      showToast(`Trial extended by ${days} days`);
+      await handleOpenUserDrawer(selectedUser);
+      refreshData();
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Are you sure you want to permanently delete this user account? This cannot be undone.')) return;
+    try {
+      await adminFetch(`/admin/users/${userId}`, { method: 'DELETE' });
+      showToast('User account deleted');
+      setSelectedUser(null);
+      refreshData();
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleToggleTier = async (user: any) => {
+    const newTier = (user.plan || user.subscriptionTier) === 'PRO' ? 'FREE' : 'PRO';
+    try {
+      await adminFetch(`/admin/users/${user.id}/plan`, {
+        method: 'PUT',
+        body: JSON.stringify({ plan: newTier, durationDays: newTier === 'PRO' ? 30 : undefined }),
       });
       showToast(`User ${user.email} updated to ${newTier}`);
       refreshData();
@@ -226,17 +301,20 @@ export default function AdminDashboard() {
 
   const handleToggleSuspend = async (user: any) => {
     try {
-      if (user.isSuspended) {
+      if (user.isSuspended || user.accountStatus === 'SUSPENDED') {
         await adminFetch(`/admin/users/${user.id}/unsuspend`, { method: 'POST' });
         showToast(`User ${user.email} unsuspended`);
       } else {
-        const reason = prompt(`Enter reason to suspend ${user.email}:`, 'Violation of Terms');
+        const reason = prompt(`Enter reason to suspend ${user.email}:`, 'Administrative hold');
         if (!reason) return;
         await adminFetch(`/admin/users/${user.id}/suspend`, {
           method: 'POST',
           body: JSON.stringify({ reason }),
         });
         showToast(`User ${user.email} suspended`);
+      }
+      if (selectedUser?.id === user.id) {
+        handleOpenUserDrawer(user);
       }
       refreshData();
     } catch (err: any) {
@@ -248,6 +326,9 @@ export default function AdminDashboard() {
     try {
       await adminFetch(`/admin/users/${userId}/reset-quota`, { method: 'POST' });
       showToast('AI quota reset to 0');
+      if (selectedUser?.id === userId) {
+        handleOpenUserDrawer(selectedUser);
+      }
       refreshData();
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -795,37 +876,58 @@ export default function AdminDashboard() {
           {/* ========================================================= */}
           {activeTab === 'users' && (
             <div className="space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-white tracking-tight">User Directory & Quota Overrides</h2>
-                  <p className="text-xs text-slate-400">Manage customer subscriptions, grant Pro licenses, suspend accounts, and reset quotas</p>
+                  <h2 className="text-xl font-bold text-white tracking-tight">User Directory & Entitlements</h2>
+                  <p className="text-xs text-slate-400">Authoritative database control: manage subscriptions, monitor usage quotas, grant trials, and manage account statuses</p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <select
-                    value={userTierFilter}
-                    onChange={(e) => setUserTierFilter(e.target.value)}
-                    className="px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:outline-none"
+                    value={userPlanFilter}
+                    onChange={(e) => setUserPlanFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
                   >
                     <option value="ALL">All Plans</option>
                     <option value="PRO">Pro Subscribers</option>
+                    <option value="TRIAL">Active Trials</option>
                     <option value="FREE">Free Tier</option>
+                  </select>
+
+                  <select
+                    value={userStatusFilter}
+                    onChange={(e) => setUserStatusFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="ALL">All Statuses</option>
+                    <option value="ACTIVE">Active</option>
+                    <option value="SUSPENDED">Suspended</option>
+                  </select>
+
+                  <select
+                    value={userRoleFilter}
+                    onChange={(e) => setUserRoleFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="ALL">All Roles</option>
+                    <option value="USER">User</option>
+                    <option value="ADMIN">Admin</option>
                   </select>
 
                   <div className="relative">
                     <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-3" />
                     <input
                       type="text"
-                      placeholder="Search email or ID..."
+                      placeholder="Search name, email, or ID..."
                       value={userSearch}
                       onChange={(e) => setUserSearch(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleSearchUsers()}
-                      className="pl-8 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+                      className="pl-8 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 min-w-[200px]"
                     />
                   </div>
                   <button
                     onClick={handleSearchUsers}
-                    className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-600/20"
                   >
                     Filter
                   </button>
@@ -839,83 +941,101 @@ export default function AdminDashboard() {
                     <thead className="bg-slate-950 text-slate-400 font-semibold uppercase text-[10px] tracking-wider border-b border-slate-800">
                       <tr>
                         <th className="py-3 px-4">User</th>
-                        <th className="py-3 px-4">Plan</th>
-                        <th className="py-3 px-4">Monthly Tokens</th>
-                        <th className="py-3 px-4">Notes / Tasks</th>
+                        <th className="py-3 px-4">Role</th>
+                        <th className="py-3 px-4">Plan & Entitlement</th>
+                        <th className="py-3 px-4">Content / Second Brain</th>
                         <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4">Registered</th>
                         <th className="py-3 px-4 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/80">
                       {usersList.length > 0 ? (
-                        usersList.map((user) => (
-                          <tr key={user.id} className="hover:bg-slate-800/40 transition-colors">
-                            <td className="py-3.5 px-4">
-                              <div className="font-semibold text-white">{user.fullName || 'Mindora User'}</div>
-                              <div className="text-[11px] text-slate-500 font-mono">{user.email}</div>
-                            </td>
-                            <td className="py-3.5 px-4">
-                              <span
-                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                                  user.subscriptionTier === 'PRO'
-                                    ? 'bg-purple-950 text-purple-300 border border-purple-800'
-                                    : 'bg-slate-800 text-slate-400 border border-slate-700'
-                                }`}
-                              >
-                                {user.subscriptionTier}
-                              </span>
-                            </td>
-                            <td className="py-3.5 px-4 font-mono text-slate-300">
-                              {(user.monthlyAiTokensUsed || 0).toLocaleString()} tokens
-                            </td>
-                            <td className="py-3.5 px-4 text-slate-400">
-                              {user._count?.notes ?? 0} notes • {user._count?.tasks ?? 0} tasks
-                            </td>
-                            <td className="py-3.5 px-4">
-                              {user.isSuspended ? (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-950 text-red-300 border border-red-800">
-                                  SUSPENDED
+                        usersList.map((user) => {
+                          const plan = user.plan || user.subscriptionTier || 'FREE';
+                          const isPro = plan === 'PRO';
+                          const isTrial = plan === 'TRIAL';
+                          return (
+                            <tr key={user.id} className="hover:bg-slate-800/40 transition-colors">
+                              <td className="py-3.5 px-4">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-7 h-7 rounded-lg bg-indigo-950 border border-indigo-800 text-indigo-300 flex items-center justify-center font-bold text-xs uppercase shrink-0">
+                                    {(user.fullName || user.email || 'U')[0]}
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-white">{user.fullName || 'Mindora User'}</div>
+                                    <div className="text-[11px] text-slate-500 font-mono">{user.email}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-3.5 px-4">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${
+                                  user.role === 'ADMIN' || user.role === 'SUPERADMIN'
+                                    ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                                    : 'bg-slate-800 text-slate-400'
+                                }`}>
+                                  {user.role}
                                 </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">
-                                  ACTIVE
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-3.5 px-4 text-right space-x-2">
-                              <button
-                                onClick={() => handleToggleTier(user)}
-                                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
-                                  user.subscriptionTier === 'PRO'
-                                    ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                                    : 'bg-purple-900 hover:bg-purple-800 text-purple-200'
-                                }`}
-                              >
-                                {user.subscriptionTier === 'PRO' ? 'Revoke Pro' : 'Grant Pro'}
-                              </button>
-                              <button
-                                onClick={() => handleResetQuota(user.id)}
-                                className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all"
-                              >
-                                Reset Quota
-                              </button>
-                              <button
-                                onClick={() => handleToggleSuspend(user)}
-                                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
-                                  user.isSuspended
-                                    ? 'bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-800'
-                                    : 'bg-red-950 hover:bg-red-900 text-red-300 border border-red-800'
-                                }`}
-                              >
-                                {user.isSuspended ? 'Unsuspend' : 'Suspend'}
-                              </button>
-                            </td>
-                          </tr>
-                        ))
+                              </td>
+                              <td className="py-3.5 px-4">
+                                {isPro ? (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-950 text-purple-300 border border-purple-800 inline-flex items-center gap-1">
+                                    <Sparkles className="w-3 h-3 text-purple-400" />
+                                    PRO
+                                  </span>
+                                ) : isTrial ? (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-800 inline-flex items-center gap-1">
+                                    <Zap className="w-3 h-3 text-amber-400" />
+                                    TRIAL ({user.trialDaysRemaining ?? '—'}d left)
+                                  </span>
+                                ) : (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
+                                    FREE
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3.5 px-4 text-slate-400">
+                                {user._count?.notes ?? 0} notes • {user._count?.tasks ?? 0} tasks • {user._count?.scannedDocuments ?? 0} scans
+                              </td>
+                              <td className="py-3.5 px-4">
+                                {user.isSuspended || user.accountStatus === 'SUSPENDED' ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-950 text-red-300 border border-red-800">
+                                    SUSPENDED
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">
+                                    ACTIVE
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3.5 px-4 text-slate-500 font-mono text-[11px]">
+                                {new Date(user.createdAt).toLocaleDateString()}
+                              </td>
+                              <td className="py-3.5 px-4 text-right space-x-2">
+                                <button
+                                  onClick={() => handleOpenUserDrawer(user)}
+                                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[11px] font-semibold transition-all shadow-sm"
+                                >
+                                  Manage
+                                </button>
+                                <button
+                                  onClick={() => handleToggleSuspend(user)}
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                                    user.isSuspended || user.accountStatus === 'SUSPENDED'
+                                      ? 'bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-800'
+                                      : 'bg-red-950 hover:bg-red-900 text-red-300 border border-red-800'
+                                  }`}
+                                >
+                                  {user.isSuspended || user.accountStatus === 'SUSPENDED' ? 'Unsuspend' : 'Suspend'}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
                       ) : (
                         <tr>
-                          <td colSpan={6} className="py-12 text-center text-xs text-slate-500">
-                            No users found matching query.
+                          <td colSpan={7} className="py-16 text-center text-xs text-slate-500">
+                            No user accounts found in database.
                           </td>
                         </tr>
                       )}
@@ -923,6 +1043,159 @@ export default function AdminDashboard() {
                   </table>
                 </div>
               </div>
+
+              {/* Slide-over User Account Management Drawer / Modal */}
+              {selectedUser && (
+                <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/70 backdrop-blur-sm animate-in fade-in">
+                  <div className="w-full max-w-xl h-full bg-slate-950 border-l border-slate-800 p-6 md:p-8 overflow-y-auto space-y-6 flex flex-col shadow-2xl">
+                    {/* Header */}
+                    <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+                      <div>
+                        <div className="text-xs uppercase font-mono font-bold text-indigo-400">Account Control & Quotas</div>
+                        <h3 className="text-lg font-bold text-white tracking-tight">{selectedUser.fullName || selectedUser.email}</h3>
+                      </div>
+                      <button
+                        onClick={() => setSelectedUser(null)}
+                        className="p-2 text-slate-400 hover:text-white rounded-xl bg-slate-900 border border-slate-800"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {/* Identity & Status */}
+                    <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl space-y-2">
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <span className="text-slate-500 block">Email Address:</span>
+                          <span className="font-mono text-slate-200">{selectedUser.email}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">User ID:</span>
+                          <span className="font-mono text-slate-400 text-[11px] truncate block">{selectedUser.id}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">Registered:</span>
+                          <span className="text-slate-300">{new Date(selectedUser.createdAt).toLocaleString()}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">Account Status:</span>
+                          <span className={`font-semibold ${selectedUser.isSuspended ? 'text-red-400' : 'text-emerald-400'}`}>
+                            {selectedUser.isSuspended ? 'SUSPENDED' : 'ACTIVE'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Plan & Subscription Override Section */}
+                    <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Plan & Entitlement Controls</span>
+                        <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
+                          Current: {selectedUser.plan || selectedUser.subscriptionTier || 'FREE'}
+                        </span>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[11px] text-slate-400 block mb-1">Target Plan</label>
+                            <select
+                              value={editPlan}
+                              onChange={(e) => setEditPlan(e.target.value as any)}
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
+                            >
+                              <option value="PRO">PRO Subscription</option>
+                              <option value="TRIAL">7-Day Free Trial</option>
+                              <option value="FREE">Free Tier</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[11px] text-slate-400 block mb-1">Duration (Days)</label>
+                            <input
+                              type="number"
+                              value={editDurationDays}
+                              onChange={(e) => setEditDurationDays(Number(e.target.value))}
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleApplyUserPlan}
+                            className="flex-1 py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-600/20"
+                          >
+                            Apply Plan Override
+                          </button>
+                          <button
+                            onClick={() => handleExtendTrial(7)}
+                            className="py-2 px-3 bg-amber-950 hover:bg-amber-900 text-amber-200 border border-amber-800 rounded-xl text-xs font-semibold"
+                          >
+                            +7 Days Trial
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Authoritative Monthly Usage Breakdown */}
+                    <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Current Month Usage</span>
+                        <button
+                          onClick={() => handleResetQuota(selectedUser.id)}
+                          className="text-[11px] px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg"
+                        >
+                          Reset AI Quota
+                        </button>
+                      </div>
+
+                      {isLoadingUserDetails ? (
+                        <div className="py-4 text-center text-xs text-slate-500">Loading live usage breakdown...</div>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-3 text-center">
+                          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                            <div className="text-[10px] uppercase font-bold text-slate-500">AI Chats</div>
+                            <div className="text-lg font-bold text-white mt-1">
+                              {selectedUserUsage?.breakdown?.AI_CHAT ?? 0}
+                            </div>
+                          </div>
+                          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                            <div className="text-[10px] uppercase font-bold text-slate-500">Doc Scans</div>
+                            <div className="text-lg font-bold text-white mt-1">
+                              {selectedUserUsage?.breakdown?.DOCUMENT_SCAN ?? 0}
+                            </div>
+                          </div>
+                          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                            <div className="text-[10px] uppercase font-bold text-slate-500">Transcriptions</div>
+                            <div className="text-lg font-bold text-white mt-1">
+                              {selectedUserUsage?.breakdown?.TRANSCRIPTION ?? 0}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Danger Zone: Suspend & Delete */}
+                    <div className="border border-red-950/80 bg-red-950/20 p-4 rounded-2xl space-y-3">
+                      <div className="text-xs font-bold text-red-400 uppercase tracking-wider">Administrative Actions</div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleToggleSuspend(selectedUser)}
+                          className="flex-1 py-2 px-3 bg-red-950 hover:bg-red-900 text-red-200 border border-red-800 rounded-xl text-xs font-semibold"
+                        >
+                          {selectedUser.isSuspended ? 'Unsuspend Account' : 'Suspend Account'}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteUser(selectedUser.id)}
+                          className="py-2 px-3 bg-red-900 hover:bg-red-800 text-white rounded-xl text-xs font-semibold"
+                        >
+                          Delete Account
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

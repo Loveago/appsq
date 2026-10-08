@@ -19,6 +19,18 @@ export class BillingController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('entitlements')
+  async getEntitlements(@CurrentUser('id') userId: string) {
+    return this.billingService.getUserEntitlements(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('trial')
+  async startTrial(@CurrentUser('id') userId: string) {
+    return this.billingService.startFreeTrial(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('upgrade')
   async upgradeToPro(@CurrentUser('id') userId: string) {
     return this.billingService.setTier(userId, 'PRO');

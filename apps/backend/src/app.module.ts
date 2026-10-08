@@ -10,6 +10,7 @@ import { MeetingsModule } from './modules/meetings/meetings.module';
 import { BriefingsModule } from './modules/briefings/briefings.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { DocumentsModule } from './modules/documents/documents.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -25,6 +26,7 @@ import { AppController } from './app.controller';
     BriefingsModule,
     BillingModule,
     AdminModule,
+    DocumentsModule,
   ],
   controllers: [AppController],
 })

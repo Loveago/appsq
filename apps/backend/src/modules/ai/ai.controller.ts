@@ -2,6 +2,8 @@ import {
   Controller,
   Post,
   Get,
+  Delete,
+  Param,
   Body,
   Query,
   UseGuards,
@@ -125,18 +127,31 @@ export class AiController {
   @UseGuards(JwtAuthGuard)
   @Get('conversations/:id')
   async getConversation(
+    @Param('id') paramId: string,
     @Query('id') queryId: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.aiService.getConversation(queryId, userId);
+    const id = paramId || queryId;
+    return this.aiService.getConversation(id, userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('conversations/:id')
+  async deleteConversation(
+    @Param('id') paramId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.aiService.deleteConversation(paramId, userId);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('conversations/:id/delete')
-  async deleteConversation(
+  async deleteConversationLegacy(
+    @Param('id') paramId: string,
     @Query('id') queryId: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.aiService.deleteConversation(queryId, userId);
+    const id = paramId || queryId;
+    return this.aiService.deleteConversation(id, userId);
   }
 }

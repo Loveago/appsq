@@ -56,58 +56,60 @@ export class AdminService {
       const now = new Date();
       const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
       const [
         totalUsers,
         proUsers,
+        trialUsers,
+        freeUsers,
         activeToday,
         newUsersWeek,
         totalNotes,
         totalMeetings,
         totalTasks,
-        totalTokensAggregate,
+        totalScans,
+        totalAiUsageRecords,
         recentErrors,
         activeAiProviders,
         recentAudits,
       ] = await Promise.all([
-        this.prisma.user.count(),
-        this.prisma.user.count({ where: { subscriptionTier: 'PRO' } }),
-        this.prisma.user.count({ where: { lastActiveAt: { gte: oneDayAgo } } }),
-        this.prisma.user.count({ where: { createdAt: { gte: sevenDaysAgo } } }),
+        this.prisma.user.count({ where: { deletedAt: null } }),
+        this.prisma.user.count({ where: { plan: 'PRO', deletedAt: null } }),
+        this.prisma.user.count({ where: { plan: 'TRIAL', deletedAt: null } }),
+        this.prisma.user.count({ where: { plan: 'FREE', deletedAt: null } }),
+        this.prisma.user.count({ where: { lastActiveAt: { gte: oneDayAgo }, deletedAt: null } }),
+        this.prisma.user.count({ where: { createdAt: { gte: sevenDaysAgo }, deletedAt: null } }),
         this.prisma.note.count(),
         this.prisma.meeting.count(),
         this.prisma.task.count(),
-        this.prisma.user.aggregate({
-          _sum: { monthlyAiTokensUsed: true },
-        }),
+        this.prisma.scannedDocument.count().catch(() => 0),
+        this.prisma.usageRecord.count({ where: { createdAt: { gte: monthStart } } }).catch(() => 0),
         this.prisma.systemErrorLog.findMany({
           orderBy: { createdAt: 'desc' },
           take: 5,
-        }),
+        }).catch(() => []),
         this.prisma.aiProviderConfig.findMany({
           where: { isEnabled: true },
           orderBy: { priority: 'asc' },
-        }),
+        }).catch(() => []),
         this.prisma.auditLog.findMany({
           orderBy: { createdAt: 'desc' },
           take: 6,
-        }),
+        }).catch(() => []),
       ]);
 
-      const monthlyTokens = totalTokensAggregate._sum.monthlyAiTokensUsed || 0;
       const mrr = proUsers * 4.99;
       const arr = mrr * 12;
       const conversionRate = totalUsers > 0 ? ((proUsers / totalUsers) * 100).toFixed(1) + '%' : '0%';
-
-      // Estimated AI cost: ~$0.15 per 1M tokens on average gpt-4o-mini blended
-      const estimatedAiCost = Number(((monthlyTokens / 1_000_000) * 0.15).toFixed(2));
 
       return {
         users: {
           total: totalUsers,
           pro: proUsers,
-          free: totalUsers - proUsers,
-          activeToday: activeToday || Math.min(totalUsers, 1),
+          trial: trialUsers,
+          free: freeUsers,
+          activeToday,
           newThisWeek: newUsersWeek,
           conversionRate,
         },
@@ -118,8 +120,7 @@ export class AdminService {
           currency: 'USD',
         },
         ai: {
-          monthlyTokens,
-          estimatedAiCost,
+          monthlyUsageRecords: totalAiUsageRecords,
           activeProvidersCount: activeAiProviders.length,
           primaryProvider: activeAiProviders[0]?.name || 'OpenAI-Compatible Gateway',
         },
@@ -127,6 +128,7 @@ export class AdminService {
           notes: totalNotes,
           meetings: totalMeetings,
           tasks: totalTasks,
+          scannedDocuments: totalScans,
         },
         systemStatus: {
           api: 'OPERATIONAL',
@@ -141,11 +143,11 @@ export class AdminService {
     } catch (err: any) {
       this.logger.error(`Error calculating overview metrics: ${err.message}`);
       return {
-        users: { total: 1, pro: 1, free: 0, activeToday: 1, newThisWeek: 1, conversionRate: '100%' },
-        revenue: { mrr: 4.99, arr: 59.88, proPrice: 4.99, currency: 'USD' },
-        ai: { monthlyTokens: 12000, estimatedAiCost: 0.05, activeProvidersCount: 1, primaryProvider: 'OpenAI-Compatible' },
-        product: { notes: 12, meetings: 3, tasks: 8 },
-        systemStatus: { api: 'OPERATIONAL', database: 'DEGRADED', aiGateway: 'OPERATIONAL', backgroundJobs: 'OPERATIONAL', storage: 'OPERATIONAL' },
+        users: { total: 0, pro: 0, trial: 0, free: 0, activeToday: 0, newThisWeek: 0, conversionRate: '0%' },
+        revenue: { mrr: 0, arr: 0, proPrice: 4.99, currency: 'USD' },
+        ai: { monthlyUsageRecords: 0, activeProvidersCount: 0, primaryProvider: 'Unreachable' },
+        product: { notes: 0, meetings: 0, tasks: 0, scannedDocuments: 0 },
+        systemStatus: { api: 'OPERATIONAL', database: 'DEGRADED', aiGateway: 'ERROR', backgroundJobs: 'DEGRADED', storage: 'DEGRADED' },
         recentErrors: [],
         recentAudits: [],
       };
@@ -158,7 +160,9 @@ export class AdminService {
   async listUsers(query?: {
     search?: string;
     tier?: string;
+    plan?: string;
     role?: string;
+    accountStatus?: string;
     isSuspended?: boolean;
     page?: number;
     limit?: number;
@@ -175,11 +179,17 @@ export class AdminService {
         { id: { contains: query.search, mode: 'insensitive' } },
       ];
     }
-    if (query?.tier && ['FREE', 'PRO'].includes(query.tier)) {
-      where.subscriptionTier = query.tier;
+    const planFilter = query?.plan || query?.tier;
+    if (planFilter && ['FREE', 'TRIAL', 'PRO'].includes(planFilter.toUpperCase())) {
+      where.plan = planFilter.toUpperCase();
     }
-    if (query?.role && ['USER', 'ADMIN', 'SUPERADMIN'].includes(query.role)) {
-      where.role = query.role;
+    if (query?.role && ['USER', 'ADMIN', 'SUPERADMIN'].includes(query.role.toUpperCase())) {
+      where.role = query.role.toUpperCase();
+    }
+    if (query?.accountStatus && ['ACTIVE', 'SUSPENDED', 'DELETED'].includes(query.accountStatus.toUpperCase())) {
+      where.accountStatus = query.accountStatus.toUpperCase();
+    } else {
+      where.deletedAt = null;
     }
     if (typeof query?.isSuspended === 'boolean') {
       where.isSuspended = query.isSuspended;
@@ -194,12 +204,20 @@ export class AdminService {
             id: true,
             email: true,
             fullName: true,
+            avatarUrl: true,
             role: true,
+            plan: true,
             subscriptionTier: true,
+            accountStatus: true,
             isSuspended: true,
             suspendedReason: true,
+            trialStartedAt: true,
+            trialEndsAt: true,
+            subscriptionStartedAt: true,
+            subscriptionExpiresAt: true,
             monthlyAiTokensUsed: true,
             lastActiveAt: true,
+            lastLoginAt: true,
             createdAt: true,
             _count: {
               select: {
@@ -208,6 +226,7 @@ export class AdminService {
                 meetings: true,
                 projects: true,
                 aiConversations: true,
+                scannedDocuments: true,
               },
             },
           },
@@ -217,8 +236,21 @@ export class AdminService {
         }),
       ]);
 
+      const now = new Date();
+      const enrichedUsers = users.map((u) => {
+        let trialDaysRemaining: number | null = null;
+        if (u.plan === 'TRIAL' && u.trialEndsAt) {
+          const diffMs = u.trialEndsAt.getTime() - now.getTime();
+          trialDaysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+        }
+        return {
+          ...u,
+          trialDaysRemaining,
+        };
+      });
+
       return {
-        users,
+        users: enrichedUsers,
         pagination: {
           page,
           limit,
@@ -226,7 +258,8 @@ export class AdminService {
           totalPages: Math.ceil(total / limit),
         },
       };
-    } catch {
+    } catch (err: any) {
+      this.logger.error(`Error in listUsers: ${err.message}`);
       return {
         users: [],
         pagination: { page: 1, limit, total: 0, totalPages: 0 },
@@ -243,15 +276,21 @@ export class AdminService {
         fullName: true,
         avatarUrl: true,
         role: true,
+        plan: true,
         subscriptionTier: true,
+        accountStatus: true,
         isSuspended: true,
         suspendedReason: true,
+        trialStartedAt: true,
+        trialEndsAt: true,
+        subscriptionStartedAt: true,
+        subscriptionExpiresAt: true,
         monthlyAiTokensUsed: true,
         aiQuotaResetAt: true,
-        subscriptionExpiresAt: true,
         revenueCatAppUserId: true,
         stripeCustomerId: true,
         lastActiveAt: true,
+        lastLoginAt: true,
         createdAt: true,
         updatedAt: true,
         _count: {
@@ -263,6 +302,7 @@ export class AdminService {
             lists: true,
             reminders: true,
             aiConversations: true,
+            scannedDocuments: true,
           },
         },
       },
@@ -272,14 +312,28 @@ export class AdminService {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    const auditHistory = await this.prisma.auditLog.findMany({
-      where: { targetId: userId },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-    });
+    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const [usageStats, auditHistory] = await Promise.all([
+      this.prisma.usageRecord.groupBy({
+        by: ['feature'],
+        where: { userId, createdAt: { gte: startOfMonth } },
+        _sum: { quantity: true },
+      }).catch(() => []),
+      this.prisma.auditLog.findMany({
+        where: { targetId: userId },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }).catch(() => []),
+    ]);
+
+    const usageSummary: Record<string, number> = {};
+    for (const stat of usageStats) {
+      usageSummary[stat.feature] = stat._sum.quantity || 0;
+    }
 
     return {
       user,
+      usageSummary,
       auditHistory,
     };
   }
@@ -296,6 +350,7 @@ export class AdminService {
       where: { id: userId },
       data: {
         isSuspended: true,
+        accountStatus: 'SUSPENDED',
         suspendedReason: reason || 'Suspended by administrator',
       },
     });
@@ -321,6 +376,7 @@ export class AdminService {
       where: { id: userId },
       data: {
         isSuspended: false,
+        accountStatus: 'ACTIVE',
         suspendedReason: null,
       },
     });
@@ -337,39 +393,120 @@ export class AdminService {
     return updated;
   }
 
-  async overrideTier(
+  async overridePlan(
     admin: { id: string; email: string },
     userId: string,
-    tier: 'FREE' | 'PRO',
+    plan: 'FREE' | 'TRIAL' | 'PRO',
     durationDays?: number,
   ) {
     const target = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!target) throw new NotFoundException('User not found');
 
-    let expiresAt: Date | null = null;
-    if (tier === 'PRO' && durationDays) {
-      expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const updateData: any = {
+      plan,
+      subscriptionTier: plan === 'PRO' ? 'PRO' : 'FREE',
+    };
+
+    if (plan === 'PRO') {
+      updateData.subscriptionStartedAt = now;
+      updateData.subscriptionExpiresAt = durationDays
+        ? new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000)
+        : null;
+    } else if (plan === 'TRIAL') {
+      const trialDays = durationDays || 7;
+      updateData.trialStartedAt = now;
+      updateData.trialEndsAt = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
+      updateData.subscriptionExpiresAt = null;
+    } else {
+      updateData.subscriptionExpiresAt = null;
+      updateData.trialEndsAt = null;
     }
 
     const updated = await this.prisma.user.update({
       where: { id: userId },
+      data: updateData,
+    });
+
+    await this.logAdminAction({
+      adminId: admin.id,
+      adminEmail: admin.email,
+      action: 'OVERRIDE_USER_PLAN',
+      targetType: 'USER',
+      targetId: userId,
+      targetEmail: target.email,
+      details: { previousPlan: target.plan, newPlan: plan, durationDays },
+    });
+
+    return updated;
+  }
+
+  async extendTrial(
+    admin: { id: string; email: string },
+    userId: string,
+    additionalDays: number,
+  ) {
+    const target = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!target) throw new NotFoundException('User not found');
+
+    const now = new Date();
+    const currentEnd = target.trialEndsAt && target.trialEndsAt > now ? target.trialEndsAt : now;
+    const newEnd = new Date(currentEnd.getTime() + additionalDays * 24 * 60 * 60 * 1000);
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
       data: {
-        subscriptionTier: tier,
-        subscriptionExpiresAt: expiresAt,
+        plan: 'TRIAL',
+        trialEndsAt: newEnd,
       },
     });
 
     await this.logAdminAction({
       adminId: admin.id,
       adminEmail: admin.email,
-      action: tier === 'PRO' ? 'GRANT_PRO' : 'REVOKE_PRO',
+      action: 'EXTEND_TRIAL',
       targetType: 'USER',
       targetId: userId,
       targetEmail: target.email,
-      details: { previousTier: target.subscriptionTier, newTier: tier, durationDays },
+      details: { previousEnd: target.trialEndsAt, newEnd, additionalDays },
     });
 
     return updated;
+  }
+
+  async getUserUsage(userId: string) {
+    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const [stats, recentRecords] = await Promise.all([
+      this.prisma.usageRecord.groupBy({
+        by: ['feature'],
+        where: { userId, createdAt: { gte: startOfMonth } },
+        _sum: { quantity: true },
+      }),
+      this.prisma.usageRecord.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        take: 25,
+      }),
+    ]);
+
+    const breakdown: Record<string, number> = {};
+    for (const item of stats) {
+      breakdown[item.feature] = item._sum.quantity || 0;
+    }
+
+    return {
+      breakdown,
+      recentRecords,
+    };
+  }
+
+  async overrideTier(
+    admin: { id: string; email: string },
+    userId: string,
+    tier: 'FREE' | 'PRO',
+    durationDays?: number,
+  ) {
+    return this.overridePlan(admin, userId, tier === 'PRO' ? 'PRO' : 'FREE', durationDays);
   }
 
   async resetQuota(admin: { id: string; email: string }, userId: string) {
