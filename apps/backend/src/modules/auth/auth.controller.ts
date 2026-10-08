@@ -24,6 +24,11 @@ export class AuthController {
     return this.authService.login(email, password);
   }
 
+  @Post('guest')
+  async guestLogin(@Body('deviceId') deviceId?: string) {
+    return this.authService.guestLogin(deviceId);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('me')
   async getProfile(@CurrentUser() user: any) {

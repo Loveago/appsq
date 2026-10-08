@@ -11,99 +11,109 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AiService } from './ai.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('ai')
 export class AiController {
   constructor(private readonly aiService: AiService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Post('extract')
   async extractContext(
     @Body('content') content: string,
-    @CurrentUser('id') userId: string,
-    @CurrentUser('subscriptionTier') tier: string,
+    @CurrentUser('id') userId?: string,
+    @CurrentUser('subscriptionTier') tier?: string,
   ) {
-    return this.aiService.extractContext(content, userId, tier === 'PRO');
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.aiService.extractContext(content, effectiveUserId, tier === 'PRO');
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Post('summarize')
   async summarizeNote(
     @Body('content') content: string,
-    @CurrentUser('id') userId: string,
+    @CurrentUser('id') userId?: string,
   ) {
-    return { summary: await this.aiService.summarizeNote(content, userId) };
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return { summary: await this.aiService.summarizeNote(content, effectiveUserId) };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Post('rewrite')
   async rewriteNote(
     @Body('content') content: string,
     @Body('style') style: string,
-    @CurrentUser('id') userId: string,
+    @CurrentUser('id') userId?: string,
   ) {
-    return { result: await this.aiService.rewriteNote(content, style || 'professional', userId) };
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return { result: await this.aiService.rewriteNote(content, style || 'professional', effectiveUserId) };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Post('distill-meeting')
   async distillMeeting(
     @Body('transcript') transcript: string,
-    @CurrentUser('id') userId: string,
+    @CurrentUser('id') userId?: string,
   ) {
-    return this.aiService.distillMeeting(transcript, userId);
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.aiService.distillMeeting(transcript, effectiveUserId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Post('briefing')
-  async generateDailyBriefing(@CurrentUser('id') userId: string) {
-    return this.aiService.generateDailyBriefing(userId);
+  async generateDailyBriefing(@CurrentUser('id') userId?: string) {
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.aiService.generateDailyBriefing(effectiveUserId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Post('ask')
   async askNotes(
     @Body('query') query: string,
     @Body('notes') notes: Array<{ id: string; title: string; content: string }>,
-    @CurrentUser('id') userId: string,
+    @CurrentUser('id') userId?: string,
   ) {
-    return this.aiService.askNotes(query, notes, userId);
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.aiService.askNotes(query, notes, effectiveUserId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('search')
   async searchNotes(
     @Query('query') query: string,
-    @CurrentUser('id') userId: string,
+    @CurrentUser('id') userId?: string,
   ) {
-    return this.aiService.semanticSearch(query, userId);
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.aiService.semanticSearch(query, effectiveUserId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Post('transcribe')
   @UseInterceptors(FileInterceptor('file'))
   async transcribeAudio(
     @UploadedFile() file: Express.Multer.File,
     @Body('transcript') transcript: string,
     @Body('audioUrl') audioUrl: string,
-    @CurrentUser('id') userId: string,
+    @CurrentUser('id') userId?: string,
   ) {
-    return this.aiService.transcribeAudio(transcript, userId, file?.buffer, audioUrl);
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.aiService.transcribeAudio(transcript, effectiveUserId, file?.buffer, audioUrl);
   }
 
   // ==========================================
   // AI CHAT & TOOL EXECUTION CONVERSATIONS
   // ==========================================
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Post('chat')
   async chatWithAssistant(
     @Body('message') message: string,
     @Body('conversationId') conversationId: string,
-    @CurrentUser('id') userId: string,
+    @CurrentUser('id') userId?: string,
   ) {
-    return this.aiService.chatWithTools(userId, message, conversationId);
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.aiService.chatWithTools(effectiveUserId, message, conversationId);
   }
 
   @UseGuards(JwtAuthGuard)

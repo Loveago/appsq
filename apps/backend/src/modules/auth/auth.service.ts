@@ -121,13 +121,33 @@ export class AuthService implements OnModuleInit {
     }
   }
 
+  async guestLogin(deviceId?: string) {
+    const id = deviceId
+      ? `guest_${deviceId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32)}`
+      : `guest_${Date.now()}`;
+    const email = `${id}@guest.mindora.ai`;
+    let user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          email,
+          fullName: 'Guest Executive',
+          role: 'USER',
+          subscriptionTier: 'FREE',
+        },
+      });
+    }
+    const tokens = this.generateTokens(user.id, user.email, user.role);
+    return { user, ...tokens };
+  }
+
   generateTokens(userId: string, email: string, role: string) {
     const payload = { sub: userId, email, role };
     const accessToken = this.jwtService.sign(payload, {
-      expiresIn: this.configService.get('JWT_EXPIRATION') || '15m',
+      expiresIn: this.configService.get('JWT_EXPIRATION') || '30d',
     });
     const refreshToken = this.jwtService.sign(payload, {
-      expiresIn: this.configService.get('JWT_REFRESH_EXPIRATION') || '30d',
+      expiresIn: this.configService.get('JWT_REFRESH_EXPIRATION') || '90d',
     });
     return { accessToken, refreshToken };
   }

@@ -467,7 +467,14 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
                     // Quick Demo / Skip as Guest
                     TextButton(
-                      onPressed: widget.onAuthSuccess,
+                      onPressed: () async {
+                        try {
+                          await ApiClient.instance.loginAsGuest();
+                        } catch (_) {}
+                        if (context.mounted) {
+                          widget.onAuthSuccess();
+                        }
+                      },
                       child: Text(
                         'Continue as Guest / Offline Demo →',
                         style: TextStyle(

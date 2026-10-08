@@ -62,6 +62,27 @@ export class AiService {
     }
   }
 
+  async getOrCreateDefaultGuestId(): Promise<string> {
+    try {
+      let guest = await this.prisma.user.findFirst({
+        where: { email: 'guest@mindora.ai' },
+      });
+      if (!guest) {
+        guest = await this.prisma.user.create({
+          data: {
+            email: 'guest@mindora.ai',
+            fullName: 'Guest User',
+            role: 'USER',
+            subscriptionTier: 'FREE',
+          },
+        });
+      }
+      return guest.id;
+    } catch (_) {
+      return 'guest-user-default';
+    }
+  }
+
   async getAiClient(): Promise<{ client: OpenAI | null; model: string; providerName: string }> {
     try {
       const activeProvider = await this.prisma.aiProviderConfig.findFirst({

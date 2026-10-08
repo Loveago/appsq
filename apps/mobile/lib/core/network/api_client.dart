@@ -36,6 +36,22 @@ class ApiClient {
           }
           return handler.next(options);
         },
+        onError: (DioException error, handler) async {
+          if (error.response?.statusCode == 401) {
+            debugPrint('ApiClient 401 notice: auto-recovering session...');
+            try {
+              final guestRes = await _dio.post('/auth/guest');
+              if (guestRes.data is Map && guestRes.data['accessToken'] != null) {
+                final newToken = guestRes.data['accessToken'] as String;
+                setAuthToken(newToken);
+                error.requestOptions.headers['Authorization'] = 'Bearer $newToken';
+                final clonedResponse = await _dio.fetch(error.requestOptions);
+                return handler.resolve(clonedResponse);
+              }
+            } catch (_) {}
+          }
+          return handler.next(error);
+        },
       ),
     );
   }
@@ -56,6 +72,23 @@ class ApiClient {
     } else {
       LocalStorageService.instance.clearAuthToken();
     }
+  }
+
+  /// Guest Login (Anonymous Session)
+  Future<Map<String, dynamic>> loginAsGuest() async {
+    try {
+      final response = await _dio.post('/auth/guest');
+      if (response.data is Map) {
+        final data = Map<String, dynamic>.from(response.data as Map);
+        if (data['accessToken'] != null) {
+          setAuthToken(data['accessToken'] as String);
+        }
+        return data;
+      }
+    } catch (e) {
+      debugPrint('ApiClient guest login notice: $e');
+    }
+    return {};
   }
 
   /// User Registration
