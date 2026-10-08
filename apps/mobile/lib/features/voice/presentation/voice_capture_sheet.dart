@@ -70,6 +70,7 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
   }
 
   Future<void> _stopRecording() async {
+    if (_isProcessing || !_isRecording) return;
     _recordTimer?.cancel();
     final isTesting = WidgetsBinding.instance.runtimeType.toString().contains('Test');
     if (isTesting) {

@@ -74,4 +74,20 @@ void main() {
     expect(find.text('STUDIO RECORDING'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('MeetingModeScreen invokes onStopRecording callback when provided', (WidgetTester tester) async {
+    bool stopped = false;
+    await tester.pumpWidget(buildTestableWidget(MeetingModeScreen(
+      onStopRecording: () {
+        stopped = true;
+      },
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text('End & Synthesize'), findsOneWidget);
+    await tester.tap(find.text('End & Synthesize'));
+    await tester.pumpAndSettle();
+
+    expect(stopped, isTrue);
+  });
 }

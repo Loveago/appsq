@@ -79,6 +79,7 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
   }
 
   Future<void> _handleEndMeeting() async {
+    if (_isSynthesizing) return;
     _timer?.cancel();
     final isTesting = WidgetsBinding.instance.runtimeType.toString().contains('Test');
     final durationStr = _formatTimer();
@@ -102,56 +103,68 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
       _isSynthesizing = true;
     });
 
-    final RecordingResult? result = await AudioRecordingService.instance.stopRecording();
-    _recordedAudioPath = result?.filePath;
+    try {
+      final RecordingResult? result = await AudioRecordingService.instance.stopRecording();
+      _recordedAudioPath = result?.filePath;
 
-    // Transcribe finalized recording using AssemblyAI
-    String meetingTranscript = '';
-    if (_recordedAudioPath != null && File(_recordedAudioPath!).existsSync()) {
-      final transcribeRes = await ApiClient.instance.transcribeAudio(_recordedAudioPath!);
-      meetingTranscript = (transcribeRes['transcript'] as String?)?.trim() ?? '';
-    }
-
-    if (meetingTranscript.isEmpty) {
-      meetingTranscript = _liveTranscript.trim().isNotEmpty
-          ? _liveTranscript.trim()
-          : 'Recorded meeting session lasting $durationStr with $_bookmarkCount key bookmarked timestamps.';
-    }
-
-    // Call live distillation engine
-    final distillation = await ApiClient.instance.distillMeeting(meetingTranscript);
-
-    if (!mounted) return;
-    setState(() {
-      _isSynthesizing = false;
-    });
-
-    final summary = distillation['summary'] as String? ?? 'Meeting synchronization completed.';
-    final decisions = (distillation['decisions'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [
-      'Reviewed agenda and aligned on execution steps.',
-    ];
-    final actionItems = (distillation['actionItems'] as List<dynamic>?)?.map((item) {
-      if (item is Map) {
-        return {
-          'assignee': item['assignee']?.toString() ?? 'Self',
-          'task': item['task']?.toString() ?? 'Follow up on meeting items',
-        };
+      // Transcribe finalized recording using AssemblyAI
+      String meetingTranscript = '';
+      if (_recordedAudioPath != null && File(_recordedAudioPath!).existsSync()) {
+        final transcribeRes = await ApiClient.instance.transcribeAudio(_recordedAudioPath!);
+        meetingTranscript = (transcribeRes['transcript'] as String?)?.trim() ?? '';
       }
-      return {'assignee': 'Self', 'task': item.toString()};
-    }).toList() ?? [
-      {'assignee': 'Self', 'task': 'Review meeting discussion & finalize action points'},
-    ];
 
-    if (mounted) {
-      _showSummaryModal(
-        context,
-        duration: durationStr,
-        summary: summary,
-        decisions: decisions,
-        actionItems: actionItems,
-        transcript: meetingTranscript,
-        audioPath: _recordedAudioPath,
-      );
+      if (meetingTranscript.isEmpty) {
+        meetingTranscript = _liveTranscript.trim().isNotEmpty
+            ? _liveTranscript.trim()
+            : 'Recorded meeting session lasting $durationStr with $_bookmarkCount key bookmarked timestamps.';
+      }
+
+      // Call live distillation engine
+      final distillation = await ApiClient.instance.distillMeeting(meetingTranscript);
+
+      final summary = distillation['summary'] as String? ?? 'Meeting synchronization completed.';
+      final decisions = (distillation['decisions'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [
+        'Reviewed agenda and aligned on execution steps.',
+      ];
+      final actionItems = (distillation['actionItems'] as List<dynamic>?)?.map((item) {
+        if (item is Map) {
+          return {
+            'assignee': item['assignee']?.toString() ?? 'Self',
+            'task': item['task']?.toString() ?? 'Follow up on meeting items',
+          };
+        }
+        return {'assignee': 'Self', 'task': item.toString()};
+      }).toList() ?? [
+        {'assignee': 'Self', 'task': 'Review meeting discussion & finalize action points'},
+      ];
+
+      if (mounted) {
+        _showSummaryModal(
+          context,
+          duration: durationStr,
+          summary: summary,
+          decisions: decisions,
+          actionItems: actionItems,
+          transcript: meetingTranscript,
+          audioPath: _recordedAudioPath,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Synthesis failed: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSynthesizing = false;
+        });
+      }
     }
   }
 
@@ -519,9 +532,13 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppColors.darkBorder, width: 0.8),
             ),
-            child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 14),
+            child: Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: _isSynthesizing ? Colors.white38 : Colors.white,
+              size: 14,
+            ),
           ),
-          onPressed: () => Navigator.maybePop(context),
+          onPressed: _isSynthesizing ? null : () => Navigator.maybePop(context),
         ),
         title: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -849,92 +866,129 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
           // Pause/Resume Button
           Flexible(
             child: GestureDetector(
-              onTap: () {
-                setState(() => _isPaused = !_isPaused);
-                if (_isPaused) {
-                  AudioRecordingService.instance.pauseRecording();
-                } else {
-                  AudioRecordingService.instance.resumeRecording();
-                }
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.darkSurfaceSubtle,
-                  borderRadius: BorderRadius.circular(100),
-                  border: Border.all(color: AppColors.darkBorder, width: 0.8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        _isPaused ? 'Resume' : 'Pause',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
+              onTap: _isSynthesizing
+                  ? null
+                  : () {
+                      setState(() => _isPaused = !_isPaused);
+                      if (_isPaused) {
+                        AudioRecordingService.instance.pauseRecording();
+                      } else {
+                        AudioRecordingService.instance.resumeRecording();
+                      }
+                    },
+              child: Opacity(
+                opacity: _isSynthesizing ? 0.35 : 1.0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.darkSurfaceSubtle,
+                    borderRadius: BorderRadius.circular(100),
+                    border: Border.all(color: AppColors.darkBorder, width: 0.8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          _isPaused ? 'Resume' : 'Pause',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
           const SizedBox(width: 8),
 
-          // Stop & Synthesize (Glowing red pill)
+          // Stop & Synthesize (Transforms into locked waiting state during synthesis)
           Flexible(
             flex: 2,
             child: GestureDetector(
-              onTap: () {
-                if (widget.onStopRecording != null) {
-                  widget.onStopRecording!();
-                } else {
-                  _handleEndMeeting();
-                }
-              },
-              child: Container(
+              onTap: _isSynthesizing
+                  ? null
+                  : () {
+                      if (widget.onStopRecording != null) {
+                        widget.onStopRecording!();
+                      } else {
+                        _handleEndMeeting();
+                      }
+                    },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEF4444),
+                  color: _isSynthesizing
+                      ? const Color(0xFF6366F1)
+                      : const Color(0xFFEF4444),
                   borderRadius: BorderRadius.circular(100),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFFEF4444).withValues(alpha: 0.4),
+                      color: (_isSynthesizing
+                              ? const Color(0xFF6366F1)
+                              : const Color(0xFFEF4444))
+                          .withValues(alpha: 0.4),
                       blurRadius: 16,
                       offset: const Offset(0, 4),
                     ),
                   ],
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.stop_rounded, color: Colors.white, size: 18),
-                    SizedBox(width: 5),
-                    Flexible(
-                      child: Text(
-                        'End & Synthesize',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12.5,
+                    if (_isSynthesizing) ...[
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 6),
+                      const Flexible(
+                        child: Text(
+                          'Synthesizing...',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      const Icon(Icons.stop_rounded, color: Colors.white, size: 18),
+                      const SizedBox(width: 5),
+                      const Flexible(
+                        child: Text(
+                          'End & Synthesize',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -947,19 +1001,25 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
             visualDensity: VisualDensity.compact,
             padding: const EdgeInsets.all(4),
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            onPressed: () {
-              setState(() => _bookmarkCount++);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Timestamp bookmarked for AI synthesis'),
-                  duration: Duration(milliseconds: 1200),
-                ),
-              );
-            },
+            onPressed: _isSynthesizing
+                ? null
+                : () {
+                    setState(() => _bookmarkCount++);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Timestamp bookmarked for AI synthesis'),
+                        duration: Duration(milliseconds: 1200),
+                      ),
+                    );
+                  },
             icon: Stack(
               alignment: Alignment.center,
               children: [
-                const Icon(Icons.bookmark_border_rounded, color: Colors.white, size: 21),
+                Icon(
+                  Icons.bookmark_border_rounded,
+                  color: _isSynthesizing ? Colors.white38 : Colors.white,
+                  size: 21,
+                ),
                 Positioned(
                   top: 0,
                   right: 0,
