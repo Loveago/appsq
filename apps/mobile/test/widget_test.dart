@@ -13,5 +13,7 @@ import 'package:mindora_mobile/main.dart';
 void main() {
   testWidgets('App smoke test', (WidgetTester tester) async {
     await tester.pumpWidget(const ProviderScope(child: MindoraApp()));
+    await tester.pumpAndSettle();
+    expect(find.byType(MindoraApp), findsOneWidget);
   });
 }

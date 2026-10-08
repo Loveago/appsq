@@ -25,7 +25,7 @@ class UserProfileState {
     this.email = '',
     this.isPro = false,
     this.monthlyAiTokensUsed = 0,
-    this.monthlyAiTokensLimit = 50000,
+    this.monthlyAiTokensLimit = 100000,
     this.selectedAiModel = 'gpt-4o-mini',
     this.responseStyle = 'Concise',
     this.autoTaskDetection = true,
@@ -71,7 +71,7 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
     String? fullName,
     bool isPro = false,
     int monthlyAiTokensUsed = 0,
-    int monthlyAiTokensLimit = 50000,
+    int monthlyAiTokensLimit = 100000,
   }) {
     state = state.copyWith(
       email: email,
@@ -81,6 +81,48 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
       monthlyAiTokensLimit: monthlyAiTokensLimit,
     );
     LocalStorageService.instance.saveUserProfile(state);
+  }
+
+  void syncFromEntitlements(Map<String, dynamic> data) {
+    try {
+      final plan = data['plan']?.toString().toUpperCase() ?? '';
+      final isPro = plan == 'PRO' || plan == 'TRIAL';
+
+      final limits = data['limits'];
+      final usage = data['usage'];
+
+      int limitTokens = state.monthlyAiTokensLimit;
+      if (limits is Map && limits['aiTokens'] != null) {
+        limitTokens = (limits['aiTokens'] is num)
+            ? (limits['aiTokens'] as num).toInt()
+            : int.tryParse(limits['aiTokens'].toString()) ?? limitTokens;
+      }
+
+      int usedTokens = state.monthlyAiTokensUsed;
+      if (usage is Map && usage['aiTokens'] != null) {
+        usedTokens = (usage['aiTokens'] is num)
+            ? (usage['aiTokens'] as num).toInt()
+            : int.tryParse(usage['aiTokens'].toString()) ?? usedTokens;
+      }
+
+      final userObj = data['user'];
+      String? name;
+      String? email;
+      if (userObj is Map) {
+        name = userObj['fullName']?.toString();
+        email = userObj['email']?.toString();
+      }
+
+      state = state.copyWith(
+        isPro: isPro,
+        monthlyAiTokensLimit: limitTokens,
+        monthlyAiTokensUsed: usedTokens,
+        fullName: (name != null && name.isNotEmpty) ? name : state.fullName,
+        email: (email != null && email.isNotEmpty) ? email : state.email,
+        selectedAiModel: isPro ? 'claude-3-5-sonnet' : 'gpt-4o-mini',
+      );
+      LocalStorageService.instance.saveUserProfile(state);
+    } catch (_) {}
   }
 
   void updateName(String name) {
@@ -101,7 +143,7 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
   void setPro(bool isPro) {
     state = state.copyWith(
       isPro: isPro,
-      monthlyAiTokensLimit: isPro ? 2000000 : 50000,
+      monthlyAiTokensLimit: isPro ? 1000000 : 100000,
       selectedAiModel: isPro ? 'claude-3-5-sonnet' : 'gpt-4o-mini',
     );
     LocalStorageService.instance.saveUserProfile(state);

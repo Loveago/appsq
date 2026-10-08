@@ -228,10 +228,25 @@ class ApiClient {
       'isPro': false,
       'isTrialActive': false,
       'trialDaysRemaining': 0,
+      'limits': {
+        'aiMessages': 50,
+        'aiTokens': 100000,
+        'documentScans': 10,
+        'transcriptionMinutes': 30,
+        'meetingMode': false,
+      },
       'usage': {
-        'aiMessages': {'used': 0, 'limit': 50, 'remaining': 50},
-        'documentScans': {'used': 0, 'limit': 10, 'remaining': 10},
-        'audioMinutes': {'used': 0, 'limit': 15, 'remaining': 15},
+        'aiMessages': 0,
+        'aiTokens': 0,
+        'documentScans': 0,
+        'transcriptionMinutes': 0,
+      },
+      'remaining': {
+        'aiMessages': 50,
+        'aiTokens': 100000,
+        'documentScans': 10,
+        'transcriptionMinutes': 30,
+        'meetingMode': false,
       },
     };
   }

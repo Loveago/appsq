@@ -200,8 +200,8 @@ Return ONLY valid JSON without markdown formatting or codeblocks.`;
         const completion = await client.chat.completions.create({
           model,
           messages: [{ role: 'user', content: prompt }],
-          temperature: 0.3,
-          max_tokens: 800,
+          temperature: 0.1,
+          max_tokens: 400,
         });
 
         const raw = completion.choices[0]?.message?.content?.trim();
@@ -701,8 +701,8 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
       }
     }
 
-    // If audio buffer or audioUrl is supplied, transcribe with AssemblyAI Universal-3.5 Pro
-    if (audioBuffer || audioUrl) {
+    // If raw transcript was not already captured by on-device STT, transcribe with AssemblyAI Universal-3.5 Pro
+    if ((!rawTranscript || rawTranscript.trim().length <= 5) && (audioBuffer || audioUrl)) {
       try {
         const assemblyAiResult = await this.transcribeWithAssemblyAI(audioBuffer, audioUrl);
         if (assemblyAiResult && assemblyAiResult.trim().length > 0) {
@@ -816,10 +816,11 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
     const transcriptData = (await transcriptRes.json()) as { id: string; status: string; text?: string };
     const transcriptId = transcriptData.id;
 
-    // Poll until completed or error (up to 90 seconds)
-    const maxPolls = 30;
+    // Poll until completed or error with low-latency dynamic backoff
+    const maxPolls = 40;
     for (let i = 0; i < maxPolls; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const delay = Math.min(600 + i * 250, 2000);
+      await new Promise((resolve) => setTimeout(resolve, delay));
       const pollRes = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
         headers: { Authorization: apiKey },
       });
@@ -1110,6 +1111,7 @@ If you return an action in <<<ACTIONS>>>, do not say "You can create a note..." 
 If no action is required, do NOT include the <<<ACTIONS>>> block.`;
 
     let assistantAnswer = '';
+    let tokensUsed = 0;
     const executedActions: ExecutedToolAction[] = [];
     const citedNoteIds: string[] = [];
 
@@ -1156,6 +1158,8 @@ ${meetingsContext}
           max_tokens: 1200,
         });
 
+        tokensUsed = completion.usage?.total_tokens || Math.ceil((query.length + (completion.choices[0]?.message?.content?.length || 0)) / 3.5);
+
         const rawContent = completion.choices[0]?.message?.content?.trim() || '';
         const actionMatch = rawContent.match(/<<<ACTIONS>>>([\s\S]*?)<<<END_ACTIONS>>>/);
         assistantAnswer = rawContent.replace(/<<<ACTIONS>>>[\s\S]*?<<<END_ACTIONS>>>/, '').trim();
@@ -1187,6 +1191,10 @@ ${meetingsContext}
       }
     }
 
+    if (!tokensUsed) {
+      tokensUsed = Math.ceil((query.length + assistantAnswer.length) / 3.5);
+    }
+
     // Save assistant message to conversation history
     try {
       if (conv?.id && !conv.id.startsWith('conv_')) {
@@ -1215,9 +1223,17 @@ ${meetingsContext}
             userId,
             feature: 'AI_CHAT',
             quantity: 1,
-            metadata: { conversationId: conv.id },
+            metadata: { conversationId: conv.id, tokensUsed },
           },
         }).catch(() => null);
+
+        // Record actual AI tokens in billing service
+        if (userId && this.billingService && tokensUsed > 0) {
+          await this.billingService.recordAiTokenUsage(userId, tokensUsed, {
+            conversationId: conv.id,
+            model,
+          }).catch(() => null);
+        }
       }
     } catch {
       // In offline / guest mode, proceed safely without db error
@@ -1229,6 +1245,7 @@ ${meetingsContext}
       citedNoteIds,
       actionsExecuted: executedActions,
       suggestedTitle: conv.title,
+      tokensUsed,
     };
   }
 

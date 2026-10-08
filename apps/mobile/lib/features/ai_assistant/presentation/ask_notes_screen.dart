@@ -406,8 +406,21 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
       }
     }
 
+    // Authoritatively track token usage
+    final tokensUsed = (response['tokensUsed'] is num)
+        ? (response['tokensUsed'] as num).toInt()
+        : int.tryParse(response['tokensUsed']?.toString() ?? '0') ?? 0;
+    if (tokensUsed > 0) {
+      ref.read(userProfileProvider.notifier).consumeTokens(tokensUsed);
+    }
+
     // Refresh conversation history in background
     _loadConversations();
+    ApiClient.instance.getEntitlements().then((ent) {
+      if (mounted && ent.isNotEmpty) {
+        ref.read(userProfileProvider.notifier).syncFromEntitlements(ent);
+      }
+    }).catchError((_) {});
 
     final sources = <({String title, String tag, String? noteId})>[];
     for (final id in citedIds) {

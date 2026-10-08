@@ -60,7 +60,7 @@ export class BillingService {
   public static readonly DEFAULT_PLAN_LIMITS: Record<string, PlanLimits> = {
     FREE: {
       aiMessages: 50,
-      aiTokens: 10000,
+      aiTokens: 100000,
       documentScans: 10,
       transcriptionMinutes: 30,
       meetingMode: false,
@@ -110,7 +110,7 @@ export class BillingService {
         return {
           FREE: {
             aiMessages: Number(val.FREE?.aiMessages ?? 50),
-            aiTokens: Number(val.FREE?.aiTokens ?? 10000),
+            aiTokens: Number(val.FREE?.aiTokens ?? 100000),
             documentScans: Number(val.FREE?.documentScans ?? 10),
             transcriptionMinutes: Number(val.FREE?.transcriptionMinutes ?? 30),
             meetingMode: Boolean(val.FREE?.meetingMode ?? false),
@@ -591,24 +591,29 @@ export class BillingService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    if (user.trialStartedAt) {
-      throw new BadRequestException(
-        'Free trial has already been utilized on this account.',
-      );
+    if (user.plan === 'PRO') {
+      throw new BadRequestException('You already have an active Pro subscription.');
     }
 
     const now = new Date();
+    // If trial is already active, return current entitlements immediately
+    if (user.plan === 'TRIAL' && user.trialEndsAt && user.trialEndsAt.getTime() > now.getTime()) {
+      return this.getUserEntitlements(userId);
+    }
+
     const trialEnds = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     await this.prisma.user.update({
       where: { id: userId },
       data: {
         plan: 'TRIAL',
-        trialStartedAt: now,
+        subscriptionTier: 'PRO',
+        trialStartedAt: user.trialStartedAt || now,
         trialEndsAt: trialEnds,
       },
     });
 
+    this.logger.log(`Activated 7-day free trial for user: ${userId}`);
     return this.getUserEntitlements(userId);
   }
 

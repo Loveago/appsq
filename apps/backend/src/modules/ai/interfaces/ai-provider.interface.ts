@@ -52,6 +52,7 @@ export interface AiChatResult {
   citedNoteIds: string[];
   actionsExecuted: ExecutedToolAction[];
   suggestedTitle?: string;
+  tokensUsed?: number;
 }
 
 export interface IAiProvider {

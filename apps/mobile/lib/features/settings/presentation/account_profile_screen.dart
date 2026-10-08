@@ -31,6 +31,7 @@ class _AccountProfileScreenState extends ConsumerState<AccountProfileScreen> {
       final profile = await ApiClient.instance.getProfile();
       final entitlements = await ApiClient.instance.getEntitlements();
       if (mounted) {
+        ref.read(userProfileProvider.notifier).syncFromEntitlements(entitlements);
         setState(() {
           _profileData = profile;
           _entitlementsData = entitlements;
@@ -248,8 +249,11 @@ class _AccountProfileScreenState extends ConsumerState<AccountProfileScreen> {
 
   Future<void> _startTrial() async {
     try {
-      await ApiClient.instance.startFreeTrial();
-      _fetchAccountData();
+      final res = await ApiClient.instance.startFreeTrial();
+      if (res.containsKey('plan') || res.containsKey('limits')) {
+        ref.read(userProfileProvider.notifier).syncFromEntitlements(res);
+      }
+      await _fetchAccountData();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('7-Day Mindora Pro Trial Activated!')),
@@ -341,12 +345,28 @@ class _AccountProfileScreenState extends ConsumerState<AccountProfileScreen> {
     final trialDays = _entitlementsData?['trialDaysRemaining'] ?? 0;
 
     final usage = _entitlementsData?['usage'] as Map<String, dynamic>?;
-    final aiUsed = usage?['aiMessages']?['used'] ?? 0;
-    final aiLimit = usage?['aiMessages']?['limit'] ?? 50;
-    final scanUsed = usage?['documentScans']?['used'] ?? 0;
-    final scanLimit = usage?['documentScans']?['limit'] ?? 10;
-    final audioUsed = usage?['audioMinutes']?['used'] ?? 0;
-    final audioLimit = usage?['audioMinutes']?['limit'] ?? 15;
+    final limits = _entitlementsData?['limits'] as Map<String, dynamic>?;
+
+    int safeInt(dynamic val, [int fallback = 0]) {
+      if (val is int) return val;
+      if (val is num) return val.toInt();
+      if (val is String) return int.tryParse(val) ?? fallback;
+      if (val is Map) {
+        final sub = val['used'] ?? val['limit'] ?? val['value'];
+        if (sub is num) return sub.toInt();
+        if (sub is String) return int.tryParse(sub) ?? fallback;
+      }
+      return fallback;
+    }
+
+    final aiUsed = safeInt(usage?['aiTokens'] ?? usage?['aiMessages'], 0);
+    final aiLimit = safeInt(limits?['aiTokens'] ?? limits?['aiMessages'], isPro ? 1000000 : 10000);
+
+    final audioUsed = safeInt(usage?['transcriptionMinutes'] ?? usage?['audioMinutes'], 0);
+    final audioLimit = safeInt(limits?['transcriptionMinutes'] ?? limits?['audioMinutes'], isPro ? 300 : 30);
+
+    final scanUsed = safeInt(usage?['documentScans'], 0);
+    final scanLimit = safeInt(limits?['documentScans'], isPro ? 500 : 10);
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.background,

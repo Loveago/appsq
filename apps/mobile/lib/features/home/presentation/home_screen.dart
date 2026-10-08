@@ -46,6 +46,20 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _currentNavIndex = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    _syncEntitlements();
+  }
+
+  void _syncEntitlements() {
+    ApiClient.instance.getEntitlements().then((ent) {
+      if (mounted && ent.isNotEmpty) {
+        ref.read(userProfileProvider.notifier).syncFromEntitlements(ent);
+      }
+    }).catchError((_) {});
+  }
+
   void _onSelectTab(int index) {
     setState(() => _currentNavIndex = index);
     widget.onNavTap?.call(index);
