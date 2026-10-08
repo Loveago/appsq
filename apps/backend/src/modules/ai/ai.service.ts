@@ -678,31 +678,140 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
     }
   }
 
+  async getAssemblyAiStreamingToken(expiresInSeconds = 120): Promise<string | null> {
+    const apiKey = await this.getAssemblyAiKey();
+    if (!apiKey) return null;
+
+    try {
+      const response = await fetch(
+        `https://streaming.assemblyai.com/v3/token?expires_in_seconds=${expiresInSeconds}`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: apiKey,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Failed to get AssemblyAI streaming token: ${response.status} ${errorText}`);
+        return null;
+      }
+
+      const data = (await response.json()) as { token?: string };
+      return data.token || null;
+    } catch (err) {
+      console.error('Error fetching AssemblyAI streaming token:', err);
+      return null;
+    }
+  }
+
   async createTranscriptionSession(
     userId: string,
     voiceNoteId?: string,
     meetingId?: string,
   ) {
     const sessionId = `ts_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    let allowed = true;
+    let remainingMinutes = 30;
+    let limitMinutes = 30;
+
     if (this.billingService) {
       const check = await this.billingService.canTranscribe(userId, 60);
+      allowed = check.allowed;
+      remainingMinutes = check.remainingMinutes;
+      limitMinutes = check.limitMinutes;
+    }
+
+    if (!allowed) {
       return {
-        allowed: check.allowed,
+        allowed: false,
+        reason: 'LIMIT_REACHED',
         sessionId,
         voiceNoteId,
         meetingId,
-        remainingMinutes: check.remainingMinutes,
-        limitMinutes: check.limitMinutes,
-        reason: check.allowed ? undefined : 'LIMIT_REACHED',
+        remainingMinutes,
+        limitMinutes,
       };
     }
+
+    // Generate authoritative short-lived ephemeral token for client streaming
+    const token = await this.getAssemblyAiStreamingToken(120);
+
     return {
       allowed: true,
+      token,
       sessionId,
       voiceNoteId,
       meetingId,
-      remainingMinutes: 30,
-      limitMinutes: 30,
+      remainingMinutes,
+      limitMinutes,
+    };
+  }
+
+  async finalizeTranscriptionSession(
+    userId: string,
+    data: {
+      sessionId: string;
+      durationSec: number;
+      transcript?: string;
+      voiceNoteId?: string;
+      meetingId?: string;
+    },
+  ) {
+    const { durationSec, transcript, voiceNoteId, meetingId } = data;
+
+    // 1. Authoritative quota deduction
+    if (this.billingService && durationSec > 0) {
+      await this.billingService.recordTranscriptionUsage(userId, durationSec);
+    }
+
+    let detectedTasks: any[] = [];
+    let suggestedTitle = 'Voice Note';
+
+    // 2. Intelligent entity and task extraction from canonical final transcript
+    if (transcript && transcript.trim().length > 0) {
+      try {
+        const extraction = await this.extractContext(transcript, userId, false);
+        detectedTasks = extraction.tasks || [];
+        suggestedTitle = extraction.suggestedTitle || suggestedTitle;
+      } catch (_) {}
+
+      // 3. Persist to VoiceNote if ID provided
+      if (voiceNoteId) {
+        try {
+          await this.prisma.voiceNote.update({
+            where: { id: voiceNoteId },
+            data: {
+              transcript,
+              title: suggestedTitle,
+              durationSec: Math.round(durationSec),
+            },
+          });
+        } catch (_) {}
+      }
+
+      // 4. Persist to Meeting if ID provided
+      if (meetingId) {
+        try {
+          await this.prisma.meeting.update({
+            where: { id: meetingId },
+            data: {
+              transcript,
+              title: suggestedTitle,
+              durationSec: Math.round(durationSec),
+            },
+          });
+        } catch (_) {}
+      }
+    }
+
+    return {
+      success: true,
+      transcript: transcript || '',
+      detectedTasks,
+      suggestedTitle,
     };
   }
 

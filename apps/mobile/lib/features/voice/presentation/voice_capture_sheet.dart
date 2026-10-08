@@ -88,8 +88,11 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
       }
 
       final sessionId = session['sessionId'] as String? ?? 'sess_${DateTime.now().millisecondsSinceEpoch}';
+      final streamingToken = session['token'] as String?;
+
       _streamClient = TranscriptionStreamClient(
         baseUrl: ApiClient.instance.currentBaseUrl,
+        streamingToken: streamingToken,
         token: ApiClient.instance.authToken,
         sessionId: sessionId,
         voiceNoteId: _voiceNoteId,
@@ -183,14 +186,35 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
       } catch (_) {}
     }
 
-    // Fallback batch transcribe only if streaming did not return a transcript
-    if ((res['transcript'] == null || res['transcript'].toString().trim().isEmpty) && !_transcriptionLimitReached) {
+    final streamTranscript = (res['transcript'] as String?)?.trim() ?? _transcript.trim();
+
+    // Fallback batch transcribe ONLY if live streaming was unavailable and no transcript was captured
+    if (streamTranscript.isEmpty && !_transcriptionLimitReached) {
       if (_audioPath != null) {
         res = await ApiClient.instance.transcribeAudio(
           _audioPath!,
-          transcriptText: _transcript.isNotEmpty ? _transcript : null,
         );
       }
+    } else if (streamTranscript.isNotEmpty) {
+      _transcript = streamTranscript;
+      // Authoritatively deduct quota on backend and trigger context extraction
+      ApiClient.instance.finalizeTranscriptionSession(
+        sessionId: _streamClient?.sessionId ?? 'sess_$_voiceNoteId',
+        durationSec: _elapsedSeconds.toDouble(),
+        transcript: _transcript,
+        voiceNoteId: _voiceNoteId,
+      ).then((finalizeRes) {
+        if (mounted && finalizeRes['success'] == true) {
+          setState(() {
+            if (finalizeRes['detectedTasks'] is List && (finalizeRes['detectedTasks'] as List).isNotEmpty) {
+              _detectedTasks = (finalizeRes['detectedTasks'] as List).map((e) => e.toString()).toList();
+            }
+            if (finalizeRes['suggestedTitle'] != null && finalizeRes['suggestedTitle'].toString().isNotEmpty) {
+              _suggestedTitle = finalizeRes['suggestedTitle'].toString();
+            }
+          });
+        }
+      }).catchError((_) {});
     }
 
     if (mounted) {

@@ -114,6 +114,23 @@ export class AiController {
     return this.aiService.createTranscriptionSession(effectiveUserId, voiceNoteId, meetingId);
   }
 
+  @UseGuards(OptionalJwtAuthGuard)
+  @Post('transcription/finalize')
+  async finalizeTranscriptionSession(
+    @Body()
+    body: {
+      sessionId: string;
+      durationSec: number;
+      transcript?: string;
+      voiceNoteId?: string;
+      meetingId?: string;
+    },
+    @CurrentUser('id') userId?: string,
+  ) {
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.aiService.finalizeTranscriptionSession(effectiveUserId, body);
+  }
+
   // ==========================================
   // AI CHAT & TOOL EXECUTION CONVERSATIONS
   // ==========================================

@@ -92,11 +92,14 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
 
       if (session['allowed'] == true) {
         final sessionId = session['sessionId'] as String? ?? 'sess_mt_${DateTime.now().millisecondsSinceEpoch}';
+        final streamingToken = session['token'] as String?;
+        final meetingId = 'mt_${DateTime.now().millisecondsSinceEpoch}';
         _streamClient = TranscriptionStreamClient(
           baseUrl: ApiClient.instance.currentBaseUrl,
+          streamingToken: streamingToken,
           token: ApiClient.instance.authToken,
           sessionId: sessionId,
-          meetingId: 'mt_${DateTime.now().millisecondsSinceEpoch}',
+          meetingId: meetingId,
         );
 
         _partialSub = _streamClient!.partialTranscriptStream.listen((text) {
@@ -177,16 +180,28 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
         } catch (_) {}
       }
 
-      // Transcribe finalized recording using fallback only if needed
+      if (meetingTranscript.isEmpty && _liveTranscript.trim().isNotEmpty) {
+        meetingTranscript = _liveTranscript.trim();
+      }
+
+      // Authoritatively deduct billing usage
+      if (meetingTranscript.isNotEmpty) {
+        ApiClient.instance.finalizeTranscriptionSession(
+          sessionId: _streamClient?.sessionId ?? 'sess_meeting',
+          durationSec: _secondsElapsed.toDouble(),
+          transcript: meetingTranscript,
+          meetingId: _streamClient?.meetingId,
+        ).catchError((_) => <String, dynamic>{});
+      }
+
+      // Transcribe finalized recording using fallback only if live streaming was unavailable
       if (meetingTranscript.isEmpty && _recordedAudioPath != null && File(_recordedAudioPath!).existsSync()) {
         final transcribeRes = await ApiClient.instance.transcribeAudio(_recordedAudioPath!);
         meetingTranscript = (transcribeRes['transcript'] as String?)?.trim() ?? '';
       }
 
       if (meetingTranscript.isEmpty) {
-        meetingTranscript = _liveTranscript.trim().isNotEmpty
-            ? _liveTranscript.trim()
-            : 'Recorded meeting session lasting $durationStr with $_bookmarkCount key bookmarked timestamps.';
+        meetingTranscript = 'Recorded meeting session lasting $durationStr with $_bookmarkCount key bookmarked timestamps.';
       }
 
       // Call live distillation engine
