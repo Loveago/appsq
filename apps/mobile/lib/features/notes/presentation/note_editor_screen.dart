@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -91,13 +92,27 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
   bool _isProcessingAi = false;
   String? _aiFeedbackMessage;
 
+  // Authoritative Note Identity & Autosave State
+  late String _currentNoteId;
+  bool _isCreatedInState = false;
+  Timer? _autosaveTimer;
+  String _saveStatus = 'Saved'; // 'Saving...', 'Saved', 'Pending Sync', 'Failed to save'
+
   @override
   void initState() {
     super.initState();
+    _currentNoteId = widget.noteId == 'new'
+        ? 'note_${DateTime.now().millisecondsSinceEpoch}'
+        : widget.noteId;
+    _isCreatedInState = widget.noteId != 'new';
+
     _titleController = TextEditingController(text: widget.initialTitle);
     _contentController = TextEditingController(text: widget.initialContent);
     _imagePaths = List<String>.from(widget.initialImagePaths);
     _audioPath = widget.initialAudioPath;
+
+    _titleController.addListener(_onTextChanged);
+    _contentController.addListener(_onTextChanged);
 
     // If opening an existing note from store, ensure imagePaths and audioPath are populated
     if (widget.noteId != 'new') {
@@ -127,8 +142,26 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
     });
   }
 
+  void _onTextChanged() {
+    if (!mounted) return;
+    if (_saveStatus != 'Saving...') {
+      setState(() {
+        _saveStatus = 'Saving...';
+      });
+    }
+    _autosaveTimer?.cancel();
+    _autosaveTimer = Timer(const Duration(milliseconds: 900), () {
+      if (mounted) {
+        _saveNote(isManual: false);
+      }
+    });
+  }
+
   @override
   void dispose() {
+    _autosaveTimer?.cancel();
+    _titleController.removeListener(_onTextChanged);
+    _contentController.removeListener(_onTextChanged);
     _titleController.dispose();
     _contentController.dispose();
     super.dispose();
@@ -183,17 +216,30 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
     );
   }
 
-  void _saveNote() {
+  void _saveNote({bool isManual = false}) {
+    _autosaveTimer?.cancel();
     final title = _titleController.text.trim().isEmpty ? 'Untitled Note' : _titleController.text.trim();
     final content = _contentController.text;
     final snippet = content.length > 80 ? '${content.substring(0, 80)}...' : content;
 
     try {
       final notes = ref.read(notesProvider);
-      final existingIndex = notes.indexWhere((n) => n.id == widget.noteId);
+      final existingIndex = notes.indexWhere((n) => n.id == _currentNoteId);
 
-      if (existingIndex >= 0) {
-        final updated = notes[existingIndex].copyWith(
+      if (existingIndex >= 0 || _isCreatedInState) {
+        // UPDATE existing note with the SAME persistent ID
+        final target = existingIndex >= 0 ? notes[existingIndex] : notes.where((n) => n.id == _currentNoteId).firstOrNull;
+        final updated = (target ?? NoteModel(
+          id: _currentNoteId,
+          title: title,
+          content: content,
+          snippet: snippet,
+          date: 'Just now',
+          category: 'Ideas',
+          tag: widget.tag,
+          tagColor: widget.tagColor,
+          icon: NoteModel.iconForCategory('Ideas'),
+        )).copyWith(
           title: title,
           content: content,
           snippet: snippet,
@@ -202,8 +248,9 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
         );
         ref.read(notesProvider.notifier).updateNote(updated);
       } else {
+        // CREATE note ONCE with authoritative _currentNoteId
         final newNote = NoteModel(
-          id: widget.noteId == 'new' ? DateTime.now().millisecondsSinceEpoch.toString() : widget.noteId,
+          id: _currentNoteId,
           title: title,
           content: content,
           snippet: snippet,
@@ -216,8 +263,61 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
           audioPath: _audioPath,
         );
         ref.read(notesProvider.notifier).addNote(newNote);
+        _isCreatedInState = true;
       }
-    } catch (_) {}
+
+      if (mounted) {
+        setState(() {
+          _saveStatus = 'Saved';
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _saveStatus = 'Pending Sync';
+        });
+      }
+    }
+  }
+
+  void _confirmDeleteNote() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(context).brightness == Brightness.dark
+            ? AppColors.darkSurface
+            : Colors.white,
+        title: const Text(
+          'Delete Note?',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: const Text(
+          'This note will be permanently removed from your second brain.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.of(ctx).pop(); // Dismiss dialog
+              try {
+                ref.read(notesProvider.notifier).deleteNote(_currentNoteId);
+              } catch (_) {}
+              if (mounted) {
+                Navigator.of(context).pop(); // Exit editor
+              }
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _triggerAiAction(String action) async {
@@ -385,27 +485,52 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
             ),
           ),
           actions: [
+            // Delete Note button
+            IconButton(
+              tooltip: 'Delete Note',
+              icon: Icon(
+                Icons.delete_outline_rounded,
+                size: 20,
+                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+              ),
+              onPressed: _confirmDeleteNote,
+            ),
+            // Save & Status Button
             IconButton(
               onPressed: () {
-                _saveNote();
+                _saveNote(isManual: true);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Note changes saved to neural graph.')),
+                  const SnackBar(
+                    content: Text('Note changes saved to neural graph.'),
+                    duration: Duration(seconds: 1),
+                  ),
                 );
               },
               icon: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: AppColors.primary,
+                  color: _saveStatus == 'Saving...'
+                      ? AppColors.primary.withValues(alpha: 0.7)
+                      : (_saveStatus == 'Pending Sync' ? Colors.amber.shade800 : AppColors.primary),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.check_rounded, size: 14, color: Colors.white),
-                    SizedBox(width: 4),
+                    if (_saveStatus == 'Saving...')
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    else if (_saveStatus == 'Pending Sync')
+                      const Icon(Icons.cloud_queue_rounded, size: 14, color: Colors.white)
+                    else
+                      const Icon(Icons.check_rounded, size: 14, color: Colors.white),
+                    const SizedBox(width: 5),
                     Text(
-                      'Saved',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
+                      _saveStatus,
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
                     ),
                   ],
                 ),

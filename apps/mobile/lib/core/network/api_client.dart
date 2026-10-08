@@ -290,12 +290,14 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>?> createNote({
+    String? id,
     required String title,
     required String content,
     String? projectId,
   }) async {
     try {
       final response = await _dio.post('/notes', data: {
+        if (id != null) 'id': id,
         'title': title,
         'content': content,
         if (projectId != null) 'projectId': projectId,
@@ -307,12 +309,13 @@ class ApiClient {
     return null;
   }
 
-  Future<bool> updateNote(String id, {String? title, String? content, bool? isPinned}) async {
+  Future<bool> updateNote(String id, {String? title, String? content, bool? isPinned, int? version}) async {
     try {
       final response = await _dio.put('/notes/$id', data: {
         if (title != null) 'title': title,
         if (content != null) 'content': content,
         if (isPinned != null) 'isPinned': isPinned,
+        if (version != null) 'version': version,
       });
       return response.statusCode == 200 || response.statusCode == 201;
     } catch (_) {
@@ -323,6 +326,44 @@ class ApiClient {
   Future<bool> deleteNote(String id) async {
     try {
       final response = await _dio.delete('/notes/$id');
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Voice Notes APIs
+  Future<Map<String, dynamic>?> saveVoiceNote({
+    required String id,
+    String? title,
+    String? audioUrl,
+    String? localPath,
+    int? durationSec,
+    String? transcript,
+    List<String>? detectedTasks,
+    String? detectedDue,
+  }) async {
+    try {
+      final response = await _dio.post('/voice-notes', data: {
+        'id': id,
+        if (title != null) 'title': title,
+        if (audioUrl != null) 'audioUrl': audioUrl,
+        if (localPath != null) 'localPath': localPath,
+        if (durationSec != null) 'durationSec': durationSec,
+        if (transcript != null) 'transcript': transcript,
+        if (detectedTasks != null) 'detectedTasks': detectedTasks,
+        if (detectedDue != null) 'detectedDue': detectedDue,
+      });
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<bool> deleteVoiceNote(String id) async {
+    try {
+      final response = await _dio.delete('/voice-notes/$id');
       return response.statusCode == 200 || response.statusCode == 201;
     } catch (_) {
       return false;

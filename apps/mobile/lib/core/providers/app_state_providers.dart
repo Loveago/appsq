@@ -169,6 +169,7 @@ class NotesNotifier extends StateNotifier<List<NoteModel>> {
     state = [note, ...state];
     LocalStorageService.instance.saveNotes(state);
     ApiClient.instance.createNote(
+      id: note.id,
       title: note.title,
       content: note.content,
       projectId: note.projectId,

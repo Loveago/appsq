@@ -60,6 +60,7 @@ class AppColors {
 
   // Status & Utility
   static const Color danger = Color(0xFFEF4444);
+  static const Color error = Color(0xFFEF4444);
   static const Color warning = Color(0xFFF59E0B);
   static const Color info = Color(0xFF00F0FF);
 

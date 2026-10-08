@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, UseGuards } from '@nestjs/common';
 import { MeetingsService } from './meetings.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -24,5 +24,10 @@ export class MeetingsController {
     @Body() body: { title?: string; durationSec?: number; transcript: string },
   ) {
     return this.meetingsService.create(userId, body);
+  }
+
+  @Delete(':id')
+  async delete(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.meetingsService.delete(id, userId);
   }
 }

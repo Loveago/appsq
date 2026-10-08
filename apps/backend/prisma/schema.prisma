@@ -89,6 +89,7 @@ model User {
   targetAuditLogs       AuditLog[]       @relation("TargetAuditLogs")
   usageRecords          UsageRecord[]
   scannedDocuments      ScannedDocument[]
+  voiceNotes            VoiceNote[]
 
   @@index([email])
   @@index([subscriptionTier])
@@ -128,6 +129,8 @@ model Note {
   // 1536-dimensional vector embedding (for OpenAI text-embedding-3-small)
   embedding Unsupported("vector(1536)")?
 
+  version           Int      @default(1)
+  deletedAt         DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -230,6 +233,7 @@ model Meeting {
   decisions   Json? // Array of strings
   actionItems Json? // Array of { assignee: string, task: string, deadline: string }
 
+  deletedAt   DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -426,6 +430,27 @@ model ScannedDocument {
 
   @@index([userId])
   @@index([documentType])
+  @@index([createdAt])
+}
+
+model VoiceNote {
+  id            String    @id @default(uuid())
+  userId        String
+  title         String    @default("Voice Memo")
+  audioUrl      String?
+  localPath     String?
+  durationSec   Int       @default(0)
+  transcript    String?   @db.Text
+  status        String    @default("SAVED") // SAVED, TRANSCRIBING, TRANSCRIBED, NOT_TRANSCRIBED, TRANSCRIPTION_LIMIT_REACHED
+  detectedTasks Json?
+  detectedDue   String?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
   @@index([createdAt])
 }
 

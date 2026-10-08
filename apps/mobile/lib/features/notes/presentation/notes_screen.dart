@@ -56,6 +56,43 @@ class _NotesScreenViewState extends ConsumerState<_NotesScreenView> {
     }).toList();
   }
 
+  void _confirmDeleteNote(NoteModel note) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(context).brightness == Brightness.dark
+            ? AppColors.darkSurface
+            : Colors.white,
+        title: const Text(
+          'Delete Note?',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'Are you sure you want to delete "${note.title}"? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              try {
+                ref.read(notesProvider.notifier).deleteNote(note.id);
+              } catch (_) {}
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -303,6 +340,7 @@ class _NotesScreenViewState extends ConsumerState<_NotesScreenView> {
               ),
             );
           },
+          onLongPress: () => _confirmDeleteNote(note),
           borderRadius: BorderRadius.circular(18),
           child: Container(
             padding: const EdgeInsets.all(16),
@@ -429,11 +467,37 @@ class _NotesScreenViewState extends ConsumerState<_NotesScreenView> {
                     ],
                   ),
                 ),
-                const SizedBox(width: 6),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 18,
-                  color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  icon: Icon(
+                    Icons.more_vert_rounded,
+                    size: 18,
+                    color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                  ),
+                  onSelected: (val) {
+                    if (val == 'delete') {
+                      _confirmDeleteNote(note);
+                    }
+                  },
+                  itemBuilder: (ctx) => const [
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_outline_rounded, color: AppColors.error, size: 18),
+                          SizedBox(width: 8),
+                          Text(
+                            'Delete Note',
+                            style: TextStyle(
+                              color: AppColors.error,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

@@ -14,6 +14,7 @@ import {
   MeetingDistillationSchema,
   DailyBriefingSchema,
 } from './schemas/extraction.schema';
+import { BillingService } from '../billing/billing.service';
 
 @Injectable()
 export class AiService {
@@ -23,6 +24,7 @@ export class AiService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly billingService: BillingService,
   ) {
     const apiKey =
       this.configService.get<string>('AI_API_KEY') ||
@@ -143,29 +145,21 @@ export class AiService {
 
   async checkAndTrackQuota(userId: string, tokensEstimate: number): Promise<void> {
     try {
-      const user = await this.prisma.user.findUnique({ where: { id: userId } });
-      if (!user) return;
-
-      const isPro = user.subscriptionTier === 'PRO';
-      const limit = isPro ? 2000000 : 50000;
-
-      if (user.monthlyAiTokensUsed + tokensEstimate > limit) {
-        throw new ForbiddenException(
-          'Monthly AI token quota exceeded. Please upgrade to Mindora Pro to unlock unlimited AI intelligence.',
-        );
+      if (this.billingService) {
+        const check = await this.billingService.canUseAiTokens(userId, tokensEstimate);
+        if (!check.allowed) {
+          throw new ForbiddenException({
+            statusCode: 403,
+            error: 'AI_LIMIT_REACHED',
+            message: "You've reached your monthly AI token limit. Please upgrade to Mindora Pro.",
+            used: check.usedTokens,
+            limit: check.limitTokens,
+            remaining: check.remainingTokens,
+          });
+        }
       }
-
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          monthlyAiTokensUsed: {
-            increment: tokensEstimate,
-          },
-        },
-      });
     } catch (err) {
       if (err instanceof ForbiddenException) throw err;
-      // In offline / mock dev mode, continue gracefully
     }
   }
 
@@ -511,7 +505,7 @@ Return ONLY valid JSON without markdown formatting or codeblocks.`;
     if (searchNotes.length === 0 && userId) {
       try {
         const dbNotes = await this.prisma.note.findMany({
-          where: { userId, isArchived: false },
+          where: { userId, isArchived: false, deletedAt: null },
         });
         searchNotes = dbNotes.map((n) => ({ id: n.id, title: n.title, content: n.content }));
       } catch (_) {}
@@ -576,6 +570,15 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
 
         const answer = completion.choices[0]?.message?.content?.trim();
         if (answer) {
+          const totalTokens = completion.usage?.total_tokens || 350;
+          if (userId && this.billingService) {
+            await this.billingService.recordAiTokenUsage(userId, totalTokens, {
+              promptTokens: completion.usage?.prompt_tokens,
+              completionTokens: completion.usage?.completion_tokens,
+              model,
+            }).catch(() => {});
+          }
+
           // If action tag exists, extract and potentially create note/task in db if userId exists
           const actionMatch = answer.match(/<<<ACTION>>>([\s\S]*?)<<<\/ACTION>>>/);
           let cleanedAnswer = answer.replace(/<<<ACTION>>>[\s\S]*?<<<\/ACTION>>>/, '').trim();
@@ -652,7 +655,7 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
     }
     try {
       const notes = await this.prisma.note.findMany({
-        where: { userId, isArchived: false },
+        where: { userId, isArchived: false, deletedAt: null },
       });
       const q = query.toLowerCase();
       return notes
@@ -681,11 +684,22 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
     audioBuffer?: Buffer,
     audioUrl?: string,
   ) {
-    if (userId) {
-      await this.checkAndTrackQuota(userId, 500);
-    }
-
     let rawTranscript = transcript?.trim() || '';
+
+    // Check transcription quota
+    if (userId && this.billingService) {
+      const check = await this.billingService.canTranscribe(userId, 60);
+      if (!check.allowed) {
+        return {
+          error: 'TRANSCRIPTION_LIMIT_REACHED',
+          transcript: rawTranscript.length > 0 ? rawTranscript : 'Voice recording saved.',
+          message: "You've reached your monthly transcription limit. Recording audio saved. Upgrade to Pro for elevated transcription limits.",
+          detectedTasks: [],
+          detectedDue: null,
+          suggestedTitle: 'Voice Memo',
+        };
+      }
+    }
 
     // If audio buffer or audioUrl is supplied, transcribe with AssemblyAI Universal-3.5 Pro
     if (audioBuffer || audioUrl) {
@@ -693,6 +707,9 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
         const assemblyAiResult = await this.transcribeWithAssemblyAI(audioBuffer, audioUrl);
         if (assemblyAiResult && assemblyAiResult.trim().length > 0) {
           rawTranscript = assemblyAiResult.trim();
+          if (userId && this.billingService) {
+            await this.billingService.recordTranscriptionUsage(userId, 60, 'TRANSCRIPTION').catch(() => {});
+          }
         }
       } catch (err) {
         console.warn('AssemblyAI transcription failed, using fallback:', err);

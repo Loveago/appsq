@@ -63,11 +63,38 @@ export class AppController {
   async migrateDb() {
     const results: Array<{ step: string; status: string; error?: string }> = [];
 
-    // Split SQL by statement
-    const rawStatements = SCHEMA_SQL
-      .split(';')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    const extraStatements = [
+      'ALTER TABLE "Note" ADD COLUMN IF NOT EXISTS "version" INTEGER NOT NULL DEFAULT 1',
+      'ALTER TABLE "Note" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3)',
+      'ALTER TABLE "Meeting" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3)',
+      `CREATE TABLE IF NOT EXISTS "VoiceNote" (
+        "id" TEXT NOT NULL,
+        "userId" TEXT NOT NULL,
+        "title" TEXT NOT NULL DEFAULT 'Voice Memo',
+        "audioUrl" TEXT,
+        "localPath" TEXT,
+        "durationSec" INTEGER NOT NULL DEFAULT 0,
+        "transcript" TEXT,
+        "status" TEXT NOT NULL DEFAULT 'SAVED',
+        "detectedTasks" JSONB,
+        "detectedDue" TEXT,
+        "deletedAt" TIMESTAMP(3),
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "VoiceNote_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "VoiceNote_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
+      )`,
+      'CREATE INDEX IF NOT EXISTS "VoiceNote_userId_idx" ON "VoiceNote"("userId")',
+      'CREATE INDEX IF NOT EXISTS "VoiceNote_createdAt_idx" ON "VoiceNote"("createdAt")',
+    ];
+
+    const rawStatements = [
+      ...SCHEMA_SQL
+        .split(';')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0),
+      ...extraStatements,
+    ];
 
     for (let i = 0; i < rawStatements.length; i++) {
       let stmt = rawStatements[i];

@@ -15,6 +15,7 @@ import '../../notes/presentation/ai_extract_sheet.dart';
 import '../../ai_assistant/presentation/ask_notes_screen.dart';
 import '../../meeting/presentation/meeting_mode_screen.dart';
 import '../../settings/presentation/settings_screen.dart';
+import '../../settings/presentation/account_profile_screen.dart';
 import '../../projects/presentation/project_detail_screen.dart';
 import '../../graph/presentation/knowledge_graph_screen.dart';
 import '../../briefing/presentation/daily_briefing_dialog.dart';
@@ -186,12 +187,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     children: [
                       IconButton(
                         visualDensity: VisualDensity.compact,
-                        onPressed: widget.onOpenMeetingMode ?? () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => const MeetingModeScreen()),
-                          );
-                        },
+                        onPressed: widget.onOpenMeetingMode ?? () => _openMeetingMode(context),
                         icon: Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
@@ -436,12 +432,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   reminderCount: pendingTasks.isNotEmpty ? 1 : 0,
                   onSeeAll: () => _onSelectTab(2),
                   onTapActions: () => _onSelectTab(2),
-                  onTapAudio: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const MeetingModeScreen()),
-                    );
-                  },
+                  onTapAudio: () => _openMeetingMode(context),
                   onTapSynapse: () {
                     Navigator.push(
                       context,
@@ -563,6 +554,129 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  void _openMeetingMode(BuildContext context) {
+    final isPro = ref.read(isProProvider);
+    if (!isPro) {
+      _showMeetingModeProGateModal(context);
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const MeetingModeScreen()),
+    );
+  }
+
+  void _showMeetingModeProGateModal(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 34),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF131722) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(
+            color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+            width: 0.8,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.matrixEmerald.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.matrixEmerald.withValues(alpha: 0.4), width: 0.8),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lock_rounded, size: 12, color: AppColors.matrixEmerald),
+                  SizedBox(width: 5),
+                  Text(
+                    'PRO FEATURE',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
+                      color: AppColors.matrixEmerald,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Meeting Mode is available with Pro',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Capture multi-speaker conversations, transcribe audio in real-time, and extract executive summaries, decisions, and action items automatically.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 0,
+                ),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const AccountProfileScreen()),
+                  );
+                },
+                child: const Text('Upgrade to Pro', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(
+                'Maybe Not Now',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleCaptureMode(BuildContext context, String mode) async {
     if (mode == 'write') {
       Navigator.push(
@@ -585,10 +699,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         builder: (context) => const VoiceCaptureSheet(),
       );
     } else if (mode == 'meeting') {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const MeetingModeScreen()),
-      );
+      _openMeetingMode(context);
     } else if (mode == 'list') {
       _onSelectTab(2);
     } else if (mode == 'photo') {
@@ -1061,10 +1172,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   badge: 'PRO',
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const MeetingModeScreen()),
-                    );
+                    _openMeetingMode(context);
                   },
                   isDark: isDark,
                 ),

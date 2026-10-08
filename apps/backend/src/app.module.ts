@@ -11,6 +11,7 @@ import { BriefingsModule } from './modules/briefings/briefings.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { DocumentsModule } from './modules/documents/documents.module';
+import { VoiceNotesModule } from './modules/voice-notes/voice-notes.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -27,6 +28,7 @@ import { AppController } from './app.controller';
     BillingModule,
     AdminModule,
     DocumentsModule,
+    VoiceNotesModule,
   ],
   controllers: [AppController],
 })

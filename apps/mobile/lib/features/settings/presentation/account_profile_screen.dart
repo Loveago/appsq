@@ -574,11 +574,36 @@ class _AccountProfileScreenState extends ConsumerState<AccountProfileScreen> {
                   ),
                   child: Column(
                     children: [
-                      _buildUsageRow('AI Chat Messages', aiUsed, aiLimit, isDark),
+                      _buildUsageRow('AI Tokens Allowance', aiUsed, aiLimit, isDark),
+                      Divider(height: 24, color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder),
+                      _buildUsageRow('Voice Transcription (Minutes)', audioUsed, audioLimit, isDark),
                       Divider(height: 24, color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder),
                       _buildUsageRow('Document Scans & OCR', scanUsed, scanLimit, isDark),
                       Divider(height: 24, color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder),
-                      _buildUsageRow('Voice Transcription (Minutes)', audioUsed, audioLimit, isDark),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Meeting Mode Intelligence', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: isPro ? AppColors.matrixEmerald.withValues(alpha: 0.15) : Colors.white10,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(isPro ? Icons.check_circle_outline_rounded : Icons.lock_outline_rounded, size: 12, color: isPro ? AppColors.matrixEmerald : Colors.white54),
+                                const SizedBox(width: 4),
+                                Text(
+                                  isPro ? 'Available' : 'Locked (Pro Only)',
+                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: isPro ? AppColors.matrixEmerald : Colors.white70),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -647,13 +672,44 @@ class _AccountProfileScreenState extends ConsumerState<AccountProfileScreen> {
 
   Widget _buildUsageRow(String label, int used, int limit, bool isDark) {
     final pct = limit > 0 ? (used / limit).clamp(0.0, 1.0) : 0.0;
+    Color barColor = AppColors.primary;
+    String? warningBadge;
+    if (pct >= 1.0) {
+      barColor = Colors.redAccent;
+      warningBadge = '100% (LIMIT)';
+    } else if (pct >= 0.9) {
+      barColor = Colors.orangeAccent;
+      warningBadge = '90%';
+    } else if (pct >= 0.75) {
+      barColor = Colors.amber;
+      warningBadge = '75%';
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
+            Row(
+              children: [
+                Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
+                if (warningBadge != null) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: barColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      warningBadge,
+                      style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: barColor),
+                    ),
+                  ),
+                ],
+              ],
+            ),
             Text('$used / $limit', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)),
           ],
         ),
@@ -664,7 +720,7 @@ class _AccountProfileScreenState extends ConsumerState<AccountProfileScreen> {
             value: pct,
             minHeight: 5,
             backgroundColor: isDark ? AppColors.darkSurfaceSubtle : AppColors.surfaceSubtle,
-            valueColor: AlwaysStoppedAnimation<Color>(pct > 0.9 ? Colors.redAccent : AppColors.primary),
+            valueColor: AlwaysStoppedAnimation<Color>(barColor),
           ),
         ),
       ],

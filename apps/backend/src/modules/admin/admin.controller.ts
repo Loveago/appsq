@@ -13,16 +13,31 @@ import {
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../../common/guards/admin.guard';
+import { BillingService } from '../billing/billing.service';
 
 @UseGuards(JwtAuthGuard, AdminGuard)
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly billingService: BillingService,
+  ) {}
 
   // 1. DASHBOARD & SYSTEM OVERVIEW
   @Get('overview')
   async getOverview() {
     return this.adminService.getOverviewMetrics();
+  }
+
+  // 1b. PLANS & LIMITS MANAGEMENT
+  @Get('plans/limits')
+  async getPlanLimits() {
+    return this.billingService.getEffectivePlanLimits();
+  }
+
+  @Put('plans/limits')
+  async updatePlanLimits(@Req() req: any, @Body() body: any) {
+    return this.billingService.updatePlanLimitsConfig(req.user, body);
   }
 
   // 2. USER MANAGEMENT

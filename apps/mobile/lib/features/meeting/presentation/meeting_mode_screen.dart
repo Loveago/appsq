@@ -12,6 +12,7 @@ import '../../../../core/providers/app_state_providers.dart';
 import '../../../../core/services/audio_service.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/widgets/audio_playback_bar.dart';
+import '../../settings/presentation/account_profile_screen.dart';
 
 class MeetingModeScreen extends StatefulWidget {
   final VoidCallback? onStopRecording;
@@ -33,6 +34,7 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
   final String _liveTranscript = '';
   String? _recordedAudioPath;
   late final String _startTime;
+  bool _isProLocked = false;
 
   @override
   void initState() {
@@ -56,11 +58,19 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
       _animController.value = 0.5;
     }
 
-    AudioRecordingService.instance.startRecording();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
-        ProviderScope.containerOf(context, listen: false).read(adSuppressionProvider.notifier).state = true;
+        final container = ProviderScope.containerOf(context, listen: false);
+        final isPro = container.read(isProProvider);
+        if (!isPro && !isTesting) {
+          setState(() {
+            _isProLocked = true;
+          });
+          return;
+        }
+        container.read(adSuppressionProvider.notifier).state = true;
       } catch (_) {}
+      AudioRecordingService.instance.startRecording();
     });
   }
 
@@ -519,6 +529,70 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (_isProLocked) {
+      return Scaffold(
+        backgroundColor: AppColors.darkBackground,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 16),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppColors.matrixEmerald.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.matrixEmerald.withValues(alpha: 0.3)),
+                  ),
+                  child: const Icon(Icons.lock_rounded, size: 40, color: AppColors.matrixEmerald),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Meeting Mode is Locked',
+                  style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Meeting Mode is available exclusively on Mindora Pro. Upgrade to unlock live transcription and continuous intelligence.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.darkTextSecondary, fontSize: 13, height: 1.5),
+                ),
+                const SizedBox(height: 28),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const AccountProfileScreen()),
+                      );
+                    },
+                    child: const Text('Upgrade to Pro', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.darkBackground,
       appBar: AppBar(

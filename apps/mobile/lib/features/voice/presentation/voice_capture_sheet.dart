@@ -27,9 +27,14 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
   String _detectedDue = 'Today';
   String _suggestedTitle = 'Voice Memo';
 
+  // Persistent Voice Note ID & transcription entitlement state
+  late String _voiceNoteId;
+  bool _transcriptionLimitReached = false;
+
   @override
   void initState() {
     super.initState();
+    _voiceNoteId = 'vn_${DateTime.now().millisecondsSinceEpoch}';
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -94,24 +99,38 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
     final RecordingResult? result = await AudioRecordingService.instance.stopRecording();
     _audioPath = result?.filePath;
 
+    // Immediately persist Voice Note record to authoritative backend (Recording is ALWAYS permitted)
+    ApiClient.instance.saveVoiceNote(
+      id: _voiceNoteId,
+      title: _suggestedTitle,
+      localPath: _audioPath,
+      durationSec: _elapsedSeconds,
+    ).catchError((_) => null);
+
+    // Evaluate transcription entitlement separately
     final res = await ApiClient.instance.transcribeAudio(
       _audioPath ?? '',
       transcriptText: _transcript.isNotEmpty ? _transcript : null,
     );
     if (mounted) {
       setState(() {
-        _transcript = res['transcript'] as String? ?? (_transcript.isNotEmpty ? _transcript : 'Voice recording saved.');
-        if (res['detectedTasks'] != null) {
-          _detectedTasks = (res['detectedTasks'] as List).map((e) => e.toString()).toList();
-        }
-        if (res['detectedDue'] != null) {
-          _detectedDue = res['detectedDue'].toString();
-        }
-        if (res['suggestedTitle'] != null) {
-          _suggestedTitle = res['suggestedTitle'].toString();
-        } else if (_transcript.isNotEmpty) {
-          final words = _transcript.split(' ');
-          _suggestedTitle = words.length > 5 ? '${words.take(5).join(' ')}...' : _transcript;
+        if (res['error'] == 'TRANSCRIPTION_LIMIT_REACHED') {
+          _transcriptionLimitReached = true;
+          _transcript = 'Voice recording preserved. Transcription is unavailable because your monthly transcription quota has been reached.';
+        } else {
+          _transcript = res['transcript'] as String? ?? (_transcript.isNotEmpty ? _transcript : 'Voice recording saved.');
+          if (res['detectedTasks'] != null) {
+            _detectedTasks = (res['detectedTasks'] as List).map((e) => e.toString()).toList();
+          }
+          if (res['detectedDue'] != null) {
+            _detectedDue = res['detectedDue'].toString();
+          }
+          if (res['suggestedTitle'] != null) {
+            _suggestedTitle = res['suggestedTitle'].toString();
+          } else if (_transcript.isNotEmpty) {
+            final words = _transcript.split(' ');
+            _suggestedTitle = words.length > 5 ? '${words.take(5).join(' ')}...' : _transcript;
+          }
         }
         _isProcessing = false;
       });
@@ -129,9 +148,9 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
         ? 'Voice note: ${_detectedTasks.length} action items extracted.'
         : content;
 
-    // 1. Add to notes
+    // 1. Add to notes with stable _voiceNoteId
     final note = NoteModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: _voiceNoteId,
       title: title,
       content: content,
       snippet: snippet,
@@ -145,6 +164,17 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
     );
     ref.read(notesProvider.notifier).addNote(note);
 
+    // Sync updated transcript to Voice Note backend
+    ApiClient.instance.saveVoiceNote(
+      id: _voiceNoteId,
+      title: title,
+      localPath: _audioPath,
+      durationSec: _elapsedSeconds,
+      transcript: _transcript,
+      detectedTasks: _detectedTasks,
+      detectedDue: _detectedDue,
+    ).catchError((_) => null);
+
     // 2. Add extracted tasks if any
     if (_detectedTasks.isNotEmpty) {
       ref.read(tasksProvider.notifier).addExtractedTasks(
@@ -155,14 +185,23 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
     }
 
     Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_detectedTasks.isNotEmpty
-            ? 'Voice thought saved! ${_detectedTasks.length} task(s) added.'
-            : 'Voice thought saved to notes.'),
-        duration: const Duration(milliseconds: 2000),
-      ),
-    );
+    if (_transcriptionLimitReached) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Voice note saved. Transcription unavailable (monthly limit reached)."),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_detectedTasks.isNotEmpty
+              ? 'Voice thought saved! ${_detectedTasks.length} task(s) added.'
+              : 'Voice thought saved to notes.'),
+          duration: const Duration(milliseconds: 2000),
+        ),
+      );
+    }
   }
 
   @override

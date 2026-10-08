@@ -21,7 +21,7 @@ export class NotesController {
   @Post()
   async create(
     @CurrentUser('id') userId: string,
-    @Body() body: { title?: string; content: string; projectId?: string },
+    @Body() body: { id?: string; title?: string; content: string; projectId?: string },
   ) {
     return this.notesService.create(userId, body);
   }
@@ -30,7 +30,7 @@ export class NotesController {
   async update(
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
-    @Body() body: { title?: string; content?: string; isPinned?: boolean },
+    @Body() body: { title?: string; content?: string; isPinned?: boolean; version?: number },
   ) {
     return this.notesService.update(id, userId, body);
   }
