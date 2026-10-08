@@ -28,6 +28,10 @@ export interface MeetingDistillationResult {
     task: string;
     deadline: string;
   }>;
+  keyPoints?: string[];
+  openQuestions?: string[];
+  participants?: string[];
+  cleanedTranscript?: string;
   sentiment: string;
 }
 

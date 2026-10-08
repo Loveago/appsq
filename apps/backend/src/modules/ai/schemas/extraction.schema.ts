@@ -19,6 +19,7 @@ export const ExtractedContextSchema = z.object({
 
 export const MeetingDistillationSchema = z.object({
   summary: z.string(),
+  keyPoints: z.array(z.string()).default([]),
   decisions: z.array(z.string()).default([]),
   actionItems: z
     .array(
@@ -29,6 +30,9 @@ export const MeetingDistillationSchema = z.object({
       }),
     )
     .default([]),
+  openQuestions: z.array(z.string()).default([]),
+  participants: z.array(z.string()).default([]),
+  cleanedTranscript: z.string().optional(),
   sentiment: z.string().default('Focused'),
 });
 

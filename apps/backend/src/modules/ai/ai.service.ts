@@ -390,30 +390,37 @@ Return ONLY valid JSON without markdown formatting or codeblocks.`;
     if (client) {
       try {
         const prompt = `You are Mindora AI, an executive meeting intelligence system.
-Analyze the following meeting transcript and return a pure JSON object adhering strictly to this schema:
+Analyze the following meeting transcript where multiple speakers are identified.
+Extract the structured insights and return a pure JSON object adhering strictly to this schema:
 {
-  "summary": "Executive summary of what was discussed",
-  "decisions": ["Clear key decision 1", "Key decision 2"],
+  "summary": "Executive overview of what was discussed across speakers",
+  "keyPoints": ["Key discussion point 1", "Key discussion point 2"],
+  "decisions": ["Clear key agreed decision 1", "Decision 2"],
   "actionItems": [
     {
-      "assignee": "Name or Self",
-      "task": "Specific actionable task",
-      "deadline": "Deadline or Upcoming"
+      "assignee": "Exact participant name or speaker who agreed to it, or Self",
+      "task": "Specific actionable commitment or deliverable",
+      "deadline": "Stated deadline or Upcoming"
     }
   ],
-  "sentiment": "Productive / Strategic / Urgent / etc."
+  "openQuestions": ["Unresolved question or open topic 1"],
+  "participants": ["Name or Speaker label of each person who spoke"],
+  "sentiment": "Productive / Strategic / Collaborative / Urgent / etc."
 }
 
 Transcript:
 """${transcript}"""
 
-Return ONLY valid JSON without markdown formatting or codeblocks.`;
+CRITICAL INSTRUCTIONS:
+- Attribute action items strictly to the actual person or speaker who agreed to perform them.
+- Do NOT hallucinate people's names. If someone is labeled "Speaker A", keep "Speaker A" unless their name was explicitly stated in speech.
+- Return ONLY valid JSON without markdown formatting or codeblocks.`;
 
         const completion = await client.chat.completions.create({
           model,
           messages: [{ role: 'user', content: prompt }],
-          temperature: 0.3,
-          max_tokens: 900,
+          temperature: 0.25,
+          max_tokens: 1200,
         });
 
         const raw = completion.choices[0]?.message?.content?.trim();
@@ -454,14 +461,81 @@ Return ONLY valid JSON without markdown formatting or codeblocks.`;
       .filter((s) => s.toLowerCase().includes('decid') || s.toLowerCase().includes('will') || s.toLowerCase().includes('agreed') || s.toLowerCase().includes('roadmap') || s.toLowerCase().includes('plan'))
       .slice(0, 3);
 
+    // Heuristically discover speakers/participants from lines like "Speaker A:" or "Emmanuel:"
+    const speakerMatches = Array.from(transcript.matchAll(/^([A-Za-z0-9 _-]+):/gm)).map((m) => m[1].trim());
+    const participants = Array.from(new Set(speakerMatches));
+
     const result = {
       summary,
+      keyPoints: sentences.slice(0, 4),
       decisions: decisions.length > 0 ? decisions : ['Key topics reviewed and noted for execution.'],
       actionItems,
+      openQuestions: [],
+      participants: participants.length > 0 ? participants : ['Participants'],
       sentiment: 'Productive and actionable',
     };
 
     return MeetingDistillationSchema.parse(result) as unknown as MeetingDistillationResult;
+  }
+
+  async askMeetingQuestion(
+    meetingId: string,
+    question: string,
+    userId: string,
+  ): Promise<{ answer: string; citedSpeakers?: string[] }> {
+    if (userId) {
+      await this.checkAndTrackQuota(userId, 800);
+    }
+
+    const meeting = await this.prisma.meeting.findFirst({
+      where: { id: meetingId, userId, deletedAt: null },
+    });
+
+    if (!meeting) {
+      return {
+        answer: "I couldn't locate this meeting in your records.",
+      };
+    }
+
+    const { client, model } = await this.getAiClient();
+    const prompt = `You are Mindora AI, an intelligent meeting intelligence assistant.
+Answer the user's specific question using ONLY the provided meeting information and speaker-attributed transcript.
+Be accurate, factual, and strictly attribute statements to the exact speaker who made them.
+Never attribute statements to someone who didn't say them. If the information isn't in the transcript, state that clearly.
+
+Meeting Title: ${meeting.title}
+Summary: ${meeting.summary || 'None'}
+Decisions: ${JSON.stringify(meeting.decisions || [])}
+Action Items: ${JSON.stringify(meeting.actionItems || [])}
+Transcript:
+"""
+${meeting.transcript}
+"""
+
+User Question: "${question}"
+
+Provide a concise, direct answer citing the specific speaker(s).`;
+
+    if (client) {
+      try {
+        const completion = await client.chat.completions.create({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.2,
+          max_tokens: 500,
+        });
+        const ans = completion.choices[0]?.message?.content?.trim();
+        if (ans) {
+          return { answer: ans };
+        }
+      } catch (err) {
+        console.warn('askMeetingQuestion LLM call failed:', err);
+      }
+    }
+
+    return {
+      answer: `Based on the meeting transcript for "${meeting.title}", here is what was recorded: ${meeting.summary || 'Review the meeting notes for details.'}`,
+    };
   }
 
   async generateDailyBriefing(userId?: string): Promise<DailyBriefingResult> {
@@ -758,9 +832,12 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
       transcript?: string;
       voiceNoteId?: string;
       meetingId?: string;
+      speakers?: any[];
+      segments?: any[];
+      audioUrl?: string;
     },
   ) {
-    const { durationSec, transcript, voiceNoteId, meetingId } = data;
+    const { durationSec, transcript, voiceNoteId, meetingId, speakers, segments, audioUrl } = data;
 
     // 1. Authoritative quota deduction
     if (this.billingService && durationSec > 0) {
@@ -768,15 +845,23 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
     }
 
     let detectedTasks: any[] = [];
-    let suggestedTitle = 'Voice Note';
+    let suggestedTitle = meetingId ? 'Recorded Meeting' : 'Voice Note';
+    let meetingDistillation: any = null;
 
-    // 2. Intelligent entity and task extraction from canonical final transcript
+    // 2. Intelligent entity and task extraction / meeting distillation
     if (transcript && transcript.trim().length > 0) {
-      try {
-        const extraction = await this.extractContext(transcript, userId, false);
-        detectedTasks = extraction.tasks || [];
-        suggestedTitle = extraction.suggestedTitle || suggestedTitle;
-      } catch (_) {}
+      if (meetingId) {
+        try {
+          meetingDistillation = await this.distillMeeting(transcript, userId);
+          suggestedTitle = 'Meeting: ' + (meetingDistillation.keyPoints?.[0]?.slice(0, 30) || 'Session Discussion');
+        } catch (_) {}
+      } else {
+        try {
+          const extraction = await this.extractContext(transcript, userId, false);
+          detectedTasks = extraction.tasks || [];
+          suggestedTitle = extraction.suggestedTitle || suggestedTitle;
+        } catch (_) {}
+      }
 
       // 3. Persist to VoiceNote if ID provided
       if (voiceNoteId) {
@@ -795,12 +880,39 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
       // 4. Persist to Meeting if ID provided
       if (meetingId) {
         try {
-          await this.prisma.meeting.update({
+          await this.prisma.meeting.upsert({
             where: { id: meetingId },
-            data: {
+            update: {
               transcript,
               title: suggestedTitle,
               durationSec: Math.round(durationSec),
+              status: 'COMPLETED',
+              audioUrl: audioUrl || undefined,
+              summary: meetingDistillation?.summary,
+              decisions: meetingDistillation?.decisions as any,
+              actionItems: meetingDistillation?.actionItems as any,
+              keyPoints: meetingDistillation?.keyPoints as any,
+              openQuestions: meetingDistillation?.openQuestions as any,
+              participants: meetingDistillation?.participants as any,
+              speakers: (speakers || []) as any,
+              segments: (segments || []) as any,
+            },
+            create: {
+              id: meetingId,
+              userId,
+              transcript,
+              title: suggestedTitle,
+              durationSec: Math.round(durationSec),
+              status: 'COMPLETED',
+              audioUrl: audioUrl || undefined,
+              summary: meetingDistillation?.summary,
+              decisions: meetingDistillation?.decisions as any,
+              actionItems: meetingDistillation?.actionItems as any,
+              keyPoints: meetingDistillation?.keyPoints as any,
+              openQuestions: meetingDistillation?.openQuestions as any,
+              participants: meetingDistillation?.participants as any,
+              speakers: (speakers || []) as any,
+              segments: (segments || []) as any,
             },
           });
         } catch (_) {}
@@ -810,8 +922,9 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
     return {
       success: true,
       transcript: transcript || '',
-      detectedTasks,
+      detectedTasks: meetingDistillation?.actionItems?.map((a: any) => `${a.assignee}: ${a.task}`) || detectedTasks,
       suggestedTitle,
+      meetingDistillation,
     };
   }
 

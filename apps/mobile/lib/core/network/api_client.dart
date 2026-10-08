@@ -443,18 +443,61 @@ class ApiClient {
     required String title,
     required String transcript,
     int durationSec = 0,
+    String? audioUrl,
+    List<dynamic>? speakers,
+    List<dynamic>? segments,
   }) async {
     try {
       final response = await _dio.post('/meetings', data: {
         'title': title,
         'transcript': transcript,
         'durationSec': durationSec,
+        if (audioUrl != null) 'audioUrl': audioUrl,
+        if (speakers != null) 'speakers': speakers,
+        if (segments != null) 'segments': segments,
       });
       if (response.statusCode == 200 || response.statusCode == 201) {
         return Map<String, dynamic>.from(response.data as Map);
       }
     } catch (_) {}
     return null;
+  }
+
+  Future<Map<String, dynamic>?> updateMeetingSpeakers(
+    String meetingId, {
+    String? speakerKey,
+    String? newName,
+    String? mergeSpeakerKey,
+    String? intoSpeakerKey,
+  }) async {
+    try {
+      final response = await _dio.patch(
+        '/meetings/$meetingId/speakers',
+        data: {
+          if (speakerKey != null) 'speakerKey': speakerKey,
+          if (newName != null) 'newName': newName,
+          if (mergeSpeakerKey != null) 'mergeSpeakerKey': mergeSpeakerKey,
+          if (intoSpeakerKey != null) 'intoSpeakerKey': intoSpeakerKey,
+        },
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<String> askMeetingQuestion(String meetingId, String question) async {
+    try {
+      final response = await _dio.post(
+        '/meetings/$meetingId/ask',
+        data: {'question': question},
+      );
+      if (response.data is Map && response.data['answer'] != null) {
+        return response.data['answer'].toString();
+      }
+    } catch (_) {}
+    return 'Unable to query meeting assistant right now.';
   }
 
   /// AI Context Extraction with offline fallback
@@ -686,6 +729,9 @@ class ApiClient {
     String? transcript,
     String? voiceNoteId,
     String? meetingId,
+    List<dynamic>? speakers,
+    List<dynamic>? segments,
+    String? audioUrl,
   }) async {
     final isTesting = WidgetsBinding.instance.runtimeType.toString().contains('Test');
     if (isTesting) {
@@ -706,6 +752,9 @@ class ApiClient {
           if (transcript != null) 'transcript': transcript,
           if (voiceNoteId != null) 'voiceNoteId': voiceNoteId,
           if (meetingId != null) 'meetingId': meetingId,
+          if (speakers != null) 'speakers': speakers,
+          if (segments != null) 'segments': segments,
+          if (audioUrl != null) 'audioUrl': audioUrl,
         },
       );
       if (response.data is Map) {

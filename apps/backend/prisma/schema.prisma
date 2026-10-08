@@ -233,6 +233,11 @@ model Meeting {
   summary     String?       @db.Text
   decisions   Json? // Array of strings
   actionItems Json? // Array of { assignee: string, task: string, deadline: string }
+  speakers    Json? // Array of { id: string, key: string, displayName: string, confidence: number }
+  segments    Json? // Array of { id: string, speakerKey: string, speakerName: string, text: string, startMs: number, endMs: number, confidence: number }
+  keyPoints   Json? // Array of strings
+  openQuestions Json? // Array of strings
+  participants Json? // Array of strings
 
   deletedAt   DateTime?
   createdAt DateTime @default(now())

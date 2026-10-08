@@ -38,6 +38,8 @@ void main() {
     expect(find.text('Sync with Neural Brain'), findsOneWidget);
 
     // Tap Sync button
+    await tester.ensureVisible(find.text('Sync with Neural Brain'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Sync with Neural Brain'));
     await tester.pumpAndSettle();
 
@@ -61,6 +63,7 @@ void main() {
     tester.view.physicalSize = const Size(320, 568);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
+
 
     await tester.pumpWidget(MaterialApp(
       theme: ThemeData.dark(),

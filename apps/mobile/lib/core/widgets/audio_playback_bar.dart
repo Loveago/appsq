@@ -4,16 +4,29 @@ import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../theme/app_colors.dart';
 
+class AudioPlaybackController {
+  _AudioPlaybackBarState? _state;
+  void _attach(_AudioPlaybackBarState state) => _state = state;
+  void _detach() => _state = null;
+
+  void seekTo(Duration position) => _state?.seekTo(position);
+  void play() => _state?.play();
+  void pause() => _state?.pause();
+  Duration get currentPosition => _state?.currentPosition ?? Duration.zero;
+}
+
 class AudioPlaybackBar extends StatefulWidget {
   final String audioPath;
   final VoidCallback? onRemove;
   final String? title;
+  final AudioPlaybackController? controller;
 
   const AudioPlaybackBar({
     super.key,
     required this.audioPath,
     this.onRemove,
     this.title,
+    this.controller,
   });
 
   @override
@@ -26,6 +39,8 @@ class _AudioPlaybackBarState extends State<AudioPlaybackBar> {
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
 
+  Duration get currentPosition => _position;
+
   StreamSubscription? _stateSub;
   StreamSubscription? _durationSub;
   StreamSubscription? _positionSub;
@@ -34,10 +49,39 @@ class _AudioPlaybackBarState extends State<AudioPlaybackBar> {
   @override
   void initState() {
     super.initState();
+    widget.controller?._attach(this);
     _player = AudioPlayer();
     _player.setReleaseMode(ReleaseMode.stop);
     _initAudioListeners();
     _loadInitialDuration();
+  }
+
+  Future<void> seekTo(Duration pos) async {
+    try {
+      if (_playerState != PlayerState.playing) {
+        Source source;
+        if (widget.audioPath.startsWith('http://') || widget.audioPath.startsWith('https://')) {
+          source = UrlSource(widget.audioPath);
+        } else {
+          source = DeviceFileSource(widget.audioPath);
+        }
+        await _player.play(source, position: pos);
+      } else {
+        await _player.seek(pos);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> play() async {
+    if (_playerState != PlayerState.playing) {
+      await _togglePlayPause();
+    }
+  }
+
+  Future<void> pause() async {
+    if (_playerState == PlayerState.playing) {
+      await _player.pause();
+    }
   }
 
   void _loadInitialDuration() {
@@ -82,6 +126,7 @@ class _AudioPlaybackBarState extends State<AudioPlaybackBar> {
 
   @override
   void dispose() {
+    widget.controller?._detach();
     _stateSub?.cancel();
     _durationSub?.cancel();
     _positionSub?.cancel();

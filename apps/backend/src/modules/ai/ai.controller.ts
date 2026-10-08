@@ -124,6 +124,9 @@ export class AiController {
       transcript?: string;
       voiceNoteId?: string;
       meetingId?: string;
+      speakers?: any[];
+      segments?: any[];
+      audioUrl?: string;
     },
     @CurrentUser('id') userId?: string,
   ) {
