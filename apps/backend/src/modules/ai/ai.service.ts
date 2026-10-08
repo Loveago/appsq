@@ -905,64 +905,81 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
     await this.checkAndTrackQuota(userId, 1000);
 
     // 1. Resolve or create persistent conversation
-    let conv = conversationId
-      ? await this.prisma.aiConversation.findFirst({
-          where: { id: conversationId, userId },
-          include: {
-            messages: {
-              take: 8,
-              orderBy: { createdAt: 'desc' },
+    let conv: any = null;
+    try {
+      conv = conversationId
+        ? await this.prisma.aiConversation.findFirst({
+            where: { id: conversationId, userId },
+            include: {
+              messages: {
+                take: 8,
+                orderBy: { createdAt: 'desc' },
+              },
             },
-          },
-        })
-      : null;
+          })
+        : null;
 
-    if (!conv) {
-      const cleanTitle = query.length > 32 ? `${query.slice(0, 32)}...` : query;
-      conv = await this.prisma.aiConversation.create({
+      if (!conv) {
+        const cleanTitle = query.length > 32 ? `${query.slice(0, 32)}...` : query;
+        conv = await this.prisma.aiConversation.create({
+          data: {
+            userId,
+            title: cleanTitle,
+          },
+          include: { messages: true },
+        });
+      }
+
+      // Record the incoming user message
+      await this.prisma.aiMessage.create({
         data: {
-          userId,
-          title: cleanTitle,
+          conversationId: conv.id,
+          role: 'user',
+          content: query,
         },
-        include: { messages: true },
       });
+    } catch {
+      conv = {
+        id: conversationId || `conv_${Date.now()}`,
+        title: query.length > 32 ? `${query.slice(0, 32)}...` : query,
+        messages: [],
+      };
     }
 
-    // Record the incoming user message
-    await this.prisma.aiMessage.create({
-      data: {
-        conversationId: conv.id,
-        role: 'user',
-        content: query,
-      },
-    });
-
     // 2. Retrieve user context from database: Notes, Tasks, Projects, Meetings
-    const [notes, tasks, projects, meetings] = await Promise.all([
-      this.prisma.note.findMany({
-        where: { userId, isArchived: false },
-        take: 12,
-        orderBy: [{ isPinned: 'desc' }, { updatedAt: 'desc' }],
-        select: { id: true, title: true, content: true, summary: true, createdAt: true },
-      }),
-      this.prisma.task.findMany({
-        where: { userId, status: 'PENDING' },
-        take: 12,
-        orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }],
-        select: { id: true, title: true, priority: true, dueDate: true, dueTimeStr: true },
-      }),
-      this.prisma.project.findMany({
-        where: { userId },
-        take: 6,
-        select: { id: true, name: true, description: true, aiSummary: true },
-      }),
-      this.prisma.meeting.findMany({
-        where: { userId },
-        take: 4,
-        orderBy: { createdAt: 'desc' },
-        select: { id: true, title: true, summary: true, decisions: true, actionItems: true },
-      }),
-    ]);
+    let notes: any[] = [];
+    let tasks: any[] = [];
+    let projects: any[] = [];
+    let meetings: any[] = [];
+    try {
+      [notes, tasks, projects, meetings] = await Promise.all([
+        this.prisma.note.findMany({
+          where: { userId, isArchived: false },
+          take: 12,
+          orderBy: [{ isPinned: 'desc' }, { updatedAt: 'desc' }],
+          select: { id: true, title: true, content: true, summary: true, createdAt: true },
+        }),
+        this.prisma.task.findMany({
+          where: { userId, status: 'PENDING' },
+          take: 12,
+          orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }],
+          select: { id: true, title: true, priority: true, dueDate: true, dueTimeStr: true },
+        }),
+        this.prisma.project.findMany({
+          where: { userId },
+          take: 6,
+          select: { id: true, name: true, description: true, aiSummary: true },
+        }),
+        this.prisma.meeting.findMany({
+          where: { userId },
+          take: 4,
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, title: true, summary: true, decisions: true, actionItems: true },
+        }),
+      ]);
+    } catch {
+      // In offline / guest mode, proceed with empty context
+    }
 
     // Build context summary for second brain
     const notesContext = notes.length > 0
@@ -1122,21 +1139,27 @@ ${meetingsContext}
     }
 
     // Save assistant message to conversation history
-    await this.prisma.aiMessage.create({
-      data: {
-        conversationId: conv.id,
-        role: 'assistant',
-        content: assistantAnswer,
-        citedNoteIds: citedNoteIds.length > 0 ? (citedNoteIds as any) : undefined,
-        toolCalls: executedActions.length > 0 ? (executedActions as any) : undefined,
-      },
-    });
+    try {
+      if (conv?.id && !conv.id.startsWith('conv_')) {
+        await this.prisma.aiMessage.create({
+          data: {
+            conversationId: conv.id,
+            role: 'assistant',
+            content: assistantAnswer,
+            citedNoteIds: citedNoteIds.length > 0 ? (citedNoteIds as any) : undefined,
+            toolCalls: executedActions.length > 0 ? (executedActions as any) : undefined,
+          },
+        });
 
-    // Touch conversation updated timestamp
-    await this.prisma.aiConversation.update({
-      where: { id: conv.id },
-      data: { updatedAt: new Date() },
-    });
+        // Touch conversation updated timestamp
+        await this.prisma.aiConversation.update({
+          where: { id: conv.id },
+          data: { updatedAt: new Date() },
+        });
+      }
+    } catch {
+      // In offline / guest mode, proceed safely without db error
+    }
 
     return {
       answer: assistantAnswer,
