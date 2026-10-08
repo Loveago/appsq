@@ -6,7 +6,7 @@ import '../models/note_model.dart';
 import '../storage/local_storage_service.dart';
 
 class ApiClient {
-  static const String defaultBaseUrl = String.fromEnvironment('API_URL', defaultValue: 'https://mindora-backend-jbxx.onrender.com');
+  static const String defaultBaseUrl = String.fromEnvironment('API_URL', defaultValue: 'https://appsq-two.vercel.app');
   late final Dio _dio;
   String _authToken = '';
   String _currentBaseUrl = defaultBaseUrl;

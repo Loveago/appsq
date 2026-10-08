@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://mindora-backend-jbxx.onrender.com';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://appsq-two.vercel.app';
 
 export function getAdminToken(): string | null {
   if (typeof window === 'undefined') return null;

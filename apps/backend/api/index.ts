@@ -1,15 +1,16 @@
+import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../src/app.module';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import express, { Request, Response } from 'express';
 import { ValidationPipe } from '@nestjs/common';
 
-const server = express();
-let isAppInitialized = false;
+let server: any;
 
 async function bootstrapServer() {
-  if (!isAppInitialized) {
-    const app = await NestFactory.create(AppModule, new ExpressAdapter(server));
+  if (!server) {
+    const expressApp = express();
+    const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp));
     app.enableCors({
       origin: '*',
       methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
@@ -23,12 +24,22 @@ async function bootstrapServer() {
       }),
     );
     await app.init();
-    isAppInitialized = true;
+    server = expressApp;
   }
   return server;
 }
 
 export default async function handler(req: Request, res: Response) {
-  const expressServer = await bootstrapServer();
-  expressServer(req, res);
+  try {
+    const expressServer = await bootstrapServer();
+    return expressServer(req, res);
+  } catch (error: any) {
+    console.error('Vercel serverless invocation error:', error);
+    res.status(500).json({
+      statusCode: 500,
+      message: 'Internal server error during backend bootstrap',
+      error: error?.message || String(error),
+      stack: error?.stack,
+    });
+  }
 }
