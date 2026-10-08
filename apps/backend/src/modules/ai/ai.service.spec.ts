@@ -126,4 +126,95 @@ describe('AiService', () => {
     expect(noteCreationRes.actionsExecuted.length).toBeGreaterThan(0);
     expect(noteCreationRes.actionsExecuted[0].tool).toBe('create_note');
   });
+
+  it('should retrieve relevant notes by scoring keywords and filtering archived/deleted notes', async () => {
+    (mockPrismaService as any).note.findMany = jest.fn().mockImplementation((args: any) => {
+      // Check that soft deleted and archived are filtered out
+      expect(args.where.isArchived).toBe(false);
+      expect(args.where.deletedAt).toBeNull();
+      return [
+        {
+          id: 'note-biz',
+          title: 'Business Idea: AI Notes',
+          content: 'We are building an executive second brain app with audio memos.',
+          summary: 'Second brain app',
+          isPinned: true,
+          updatedAt: new Date(),
+        },
+        {
+          id: 'note-recipe',
+          title: 'Pasta Recipe',
+          content: 'Tomato sauce and basil.',
+          summary: 'Food',
+          isPinned: false,
+          updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000),
+        },
+      ];
+    });
+
+    const notes = await service.retrieveRelevantNotes('user-1', 'What did I write about my business idea?');
+    expect(notes.length).toBeGreaterThan(0);
+    expect(notes[0].id).toBe('note-biz');
+  });
+
+  it('should record user audio metadata and retrieve full conversation messages', async () => {
+    const mockMessages = [
+      {
+        id: 'msg-u1',
+        role: 'user',
+        content: 'Transcribed voice memo',
+        metadata: { isAudio: true, audioPath: '/tmp/memo.m4a', durationSec: 12 },
+        createdAt: new Date(),
+      },
+      {
+        id: 'msg-a1',
+        role: 'assistant',
+        content: 'Understood your audio note.',
+        citedNoteIds: ['note-biz'],
+        metadata: { sources: [{ id: 'note-biz', title: 'Business Idea' }] },
+        createdAt: new Date(),
+      },
+    ];
+
+    (mockPrismaService as any).aiConversation.findFirst = jest.fn().mockResolvedValue({
+      id: 'conv-voice',
+      userId: 'user-1',
+      title: 'Voice Note Chat',
+      messages: mockMessages,
+    });
+
+    const conv = await service.getConversation('conv-voice', 'user-1');
+    expect(conv).toBeDefined();
+    expect(conv.messages.length).toBe(2);
+    expect((conv.messages[0] as any).metadata.isAudio).toBe(true);
+  });
+
+  it('should require user confirmation before executing destructive archive_note tool', async () => {
+    (mockPrismaService as any).note.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+
+    // Without confirmation
+    const unconfirmed = await (service as any).executeToolAction('user-1', 'archive_note', {
+      noteId: 'note-123',
+      confirmed: false,
+    });
+    expect(unconfirmed.success).toBe(false);
+    expect(unconfirmed.result.requiresConfirmation).toBe(true);
+
+    // With confirmation
+    const confirmed = await (service as any).executeToolAction('user-1', 'archive_note', {
+      noteId: 'note-123',
+      confirmed: true,
+    });
+    expect(confirmed.success).toBe(true);
+    expect(confirmed.result.archived).toBe(true);
+  });
+
+  it('should enforce transcription quota and protect user recording on limit reach', async () => {
+    (mockBillingService.canTranscribe as jest.Mock).mockResolvedValueOnce({ allowed: false });
+
+    const result = await service.transcribeAudio('', 'user-1', Buffer.from('test'), undefined, 45);
+    expect(result.error).toBe('TRANSCRIPTION_LIMIT_REACHED');
+    expect(result.transcript).toBe('');
+  });
 });
+

@@ -34,6 +34,28 @@ void main() {
     expect(find.byType(TextField), findsOneWidget);
   });
 
+  testWidgets('AskNotesScreen opens conversation history sheet and starts new conversation', (WidgetTester tester) async {
+    await tester.pumpWidget(buildTestableWidget(const AskNotesScreen()));
+    await tester.pumpAndSettle();
+
+    // Tap history button
+    final historyBtn = find.byIcon(Icons.history_rounded);
+    expect(historyBtn, findsOneWidget);
+    await tester.tap(historyBtn);
+    await tester.pumpAndSettle();
+
+    // Verify history sheet contents
+    expect(find.text('CONVERSATIONS'), findsOneWidget);
+    expect(find.text('New Chat'), findsOneWidget);
+
+    // Tap new conversation
+    await tester.tap(find.text('New Chat'));
+    await tester.pumpAndSettle();
+
+    // Verify reset to empty neural assistant state
+    expect(find.text('Neural Query'), findsOneWidget);
+  });
+
   testWidgets('AiExtractSheet renders extracted people, projects, deadlines, and task checkboxes', (WidgetTester tester) async {
     bool applied = false;
 

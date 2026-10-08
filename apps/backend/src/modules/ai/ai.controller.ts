@@ -97,10 +97,12 @@ export class AiController {
     @UploadedFile() file: Express.Multer.File,
     @Body('transcript') transcript: string,
     @Body('audioUrl') audioUrl: string,
+    @Body('durationSec') durationSec: string,
     @CurrentUser('id') userId?: string,
   ) {
     const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
-    return this.aiService.transcribeAudio(transcript, effectiveUserId, file?.buffer, audioUrl);
+    const duration = durationSec ? parseFloat(durationSec) : 60;
+    return this.aiService.transcribeAudio(transcript, effectiveUserId, file?.buffer, audioUrl, duration);
   }
 
   @UseGuards(OptionalJwtAuthGuard)
@@ -142,47 +144,52 @@ export class AiController {
   @Post('chat')
   async chatWithAssistant(
     @Body('message') message: string,
-    @Body('conversationId') conversationId: string,
+    @Body('conversationId') conversationId?: string,
+    @Body('metadata') metadata?: Record<string, any>,
     @CurrentUser('id') userId?: string,
   ) {
     const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
-    return this.aiService.chatWithTools(effectiveUserId, message, conversationId);
+    return this.aiService.chatWithTools(effectiveUserId, message, conversationId, metadata);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('conversations')
-  async getConversations(@CurrentUser('id') userId: string) {
-    return this.aiService.getConversations(userId);
+  async getConversations(@CurrentUser('id') userId?: string) {
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.aiService.getConversations(effectiveUserId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('conversations/:id')
   async getConversation(
     @Param('id') paramId: string,
     @Query('id') queryId: string,
-    @CurrentUser('id') userId: string,
+    @CurrentUser('id') userId?: string,
   ) {
     const id = paramId || queryId;
-    return this.aiService.getConversation(id, userId);
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.aiService.getConversation(id, effectiveUserId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Delete('conversations/:id')
   async deleteConversation(
     @Param('id') paramId: string,
-    @CurrentUser('id') userId: string,
+    @CurrentUser('id') userId?: string,
   ) {
-    return this.aiService.deleteConversation(paramId, userId);
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.aiService.deleteConversation(paramId, effectiveUserId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Post('conversations/:id/delete')
   async deleteConversationLegacy(
     @Param('id') paramId: string,
     @Query('id') queryId: string,
-    @CurrentUser('id') userId: string,
+    @CurrentUser('id') userId?: string,
   ) {
     const id = paramId || queryId;
-    return this.aiService.deleteConversation(id, userId);
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.aiService.deleteConversation(id, effectiveUserId);
   }
 }

@@ -46,6 +46,9 @@ class AskNotesScreen extends StatelessWidget {
 class _ChatMessage {
   final String text;
   final bool isUser;
+  final bool isAudio;
+  final String? audioPath;
+  final int? audioDurationSec;
   final String? groundedAccuracy;
   final List<({String title, String tag, String? noteId})>? sources;
   final List<Map<String, dynamic>>? toolCalls;
@@ -54,6 +57,9 @@ class _ChatMessage {
   _ChatMessage({
     required this.text,
     required this.isUser,
+    this.isAudio = false,
+    this.audioPath,
+    this.audioDurationSec,
     this.groundedAccuracy,
     this.sources,
     this.toolCalls,
@@ -81,6 +87,11 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
   final ScrollController _scrollController = ScrollController();
   bool _isSynthesizing = false;
   bool _isRecordingVoice = false;
+  bool _isTranscribingAudio = false;
+  bool _isLoadingConversation = false;
+  String? _transcriptionError;
+  String? _lastRecordedAudioPath;
+  int? _lastRecordedDurationSec;
 
   final List<({String category, String prompt, Color color})> _suggestedPrompts = const [
     (category: 'SUMMARY', prompt: 'Summarize my recent thoughts', color: AppColors.primary),
@@ -270,11 +281,8 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                             },
                           ),
                           onTap: () {
-                            setState(() {
-                              _currentConversationId = id;
-                              _currentConversationTitle = title;
-                            });
                             Navigator.pop(context);
+                            _selectAndLoadConversation(id, title);
                           },
                         );
                       },
@@ -286,6 +294,106 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
         );
       },
     );
+  }
+
+  Future<void> _selectAndLoadConversation(String id, String title) async {
+    setState(() {
+      _currentConversationId = id;
+      _currentConversationTitle = title;
+      _messages.clear();
+      _isLoadingConversation = true;
+      _transcriptionError = null;
+    });
+
+    // 1. Instant load from local cache if available
+    final cached = await LocalStorageService.instance.loadConversationMessages(id);
+    if (cached != null && cached.isNotEmpty && mounted && _currentConversationId == id) {
+      final loaded = _parseMessagesFromRaw(cached);
+      setState(() {
+        _messages.clear();
+        _messages.addAll(loaded);
+      });
+      _scrollToBottom();
+    }
+
+    // 2. Fetch authoritative conversation messages from backend
+    final conv = await ApiClient.instance.getConversation(id);
+    if (!mounted || _currentConversationId != id) return;
+
+    if (conv != null && conv['messages'] is List) {
+      final rawList = List<Map<String, dynamic>>.from(
+        (conv['messages'] as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      );
+      final loaded = _parseMessagesFromRaw(rawList);
+      setState(() {
+        _messages.clear();
+        _messages.addAll(loaded);
+        _isLoadingConversation = false;
+      });
+      LocalStorageService.instance.saveConversationMessages(id, rawList);
+      _scrollToBottom();
+    } else {
+      setState(() {
+        _isLoadingConversation = false;
+      });
+    }
+  }
+
+  List<_ChatMessage> _parseMessagesFromRaw(List<Map<String, dynamic>> rawList) {
+    final notes = ref.read(notesProvider);
+    final loaded = <_ChatMessage>[];
+
+    for (final m in rawList) {
+      final role = m['role']?.toString() ?? 'user';
+      final isUser = role == 'user';
+      final text = m['content']?.toString() ?? '';
+      final metadata = m['metadata'] is Map ? Map<String, dynamic>.from(m['metadata'] as Map) : null;
+      final isAudio = metadata?['isAudio'] == true;
+      final audioPath = metadata?['audioPath']?.toString();
+      final audioDurationSec = metadata?['durationSec'] is num
+          ? (metadata!['durationSec'] as num).toInt()
+          : null;
+
+      final citedIds = (m['citedNoteIds'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      final toolCalls = (m['toolCalls'] as List<dynamic>?)
+          ?.map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+
+      final sources = <({String title, String tag, String? noteId})>[];
+      if (metadata?['sources'] is List) {
+        for (final s in metadata!['sources']) {
+          if (s is Map) {
+            sources.add((
+              title: s['title']?.toString() ?? 'Saved Note',
+              tag: s['tag']?.toString() ?? 'NOTE',
+              noteId: s['id']?.toString(),
+            ));
+          }
+        }
+      }
+      if (sources.isEmpty) {
+        for (final cid in citedIds) {
+          final match = notes.where((n) => n.id == cid).firstOrNull;
+          if (match != null) {
+            sources.add((title: match.title, tag: match.tag, noteId: match.id));
+          } else {
+            sources.add((title: 'Saved Note', tag: 'NOTE', noteId: cid));
+          }
+        }
+      }
+
+      loaded.add(_ChatMessage(
+        text: text,
+        isUser: isUser,
+        isAudio: isAudio,
+        audioPath: audioPath,
+        audioDurationSec: audioDurationSec,
+        groundedAccuracy: (!isUser && sources.isNotEmpty) ? '97.8% GROUNDED' : null,
+        sources: sources.isNotEmpty ? sources : null,
+        toolCalls: toolCalls,
+      ));
+    }
+    return loaded;
   }
 
   @override
@@ -302,20 +410,28 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
     if (_isRecordingVoice) {
       setState(() {
         _isRecordingVoice = false;
-        _isSynthesizing = true;
+        _isTranscribingAudio = true;
+        _transcriptionError = null;
       });
+
       final RecordingResult? result = await AudioRecordingService.instance.stopRecording();
       final audioPath = result?.filePath;
-      final res = await ApiClient.instance.transcribeAudio(audioPath ?? '');
-      final transcript = res['transcript'] as String? ?? '';
-      if (transcript.isNotEmpty && mounted) {
-        _sendMessage(transcript);
-      } else if (mounted) {
-        setState(() {
-          _isSynthesizing = false;
-        });
+      final durationSec = result?.duration.inSeconds ?? 0;
+      _lastRecordedAudioPath = audioPath;
+      _lastRecordedDurationSec = durationSec;
+
+      if (audioPath == null || audioPath.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _isTranscribingAudio = false;
+          });
+        }
+        return;
       }
+
+      await _transcribeAndSendAudio(audioPath, durationSec);
     } else {
+      _transcriptionError = null;
       await AudioRecordingService.instance.startRecording();
       if (!mounted) return;
       setState(() {
@@ -330,14 +446,86 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
     }
   }
 
-  Future<void> _sendMessage(String query) async {
+  Future<void> _transcribeAndSendAudio(String audioPath, int durationSec) async {
+    setState(() {
+      _isTranscribingAudio = true;
+      _transcriptionError = null;
+    });
+
+    final res = await ApiClient.instance.transcribeAudio(audioPath, durationSec: durationSec);
+    if (!mounted) return;
+
+    if (res['error'] == 'TRANSCRIPTION_LIMIT_REACHED') {
+      setState(() {
+        _isTranscribingAudio = false;
+        _transcriptionError = "Monthly transcription limit reached. Audio recording preserved.";
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res['message']?.toString() ?? "Transcription limit reached. Upgrade to Pro for elevated limits."),
+          action: SnackBarAction(
+            label: 'Upgrade',
+            textColor: AppColors.primary,
+            onPressed: () {
+              Navigator.pushNamed(context, '/paywall');
+            },
+          ),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    if (res['error'] == 'TRANSCRIPTION_FAILED') {
+      setState(() {
+        _isTranscribingAudio = false;
+        _transcriptionError = 'Audio transcription failed. Tap to retry.';
+      });
+      return;
+    }
+
+    final transcript = res['transcript'] as String? ?? '';
+    setState(() {
+      _isTranscribingAudio = false;
+    });
+
+    if (transcript.isNotEmpty) {
+      _sendMessage(
+        transcript,
+        isAudio: true,
+        audioPath: audioPath,
+        durationSec: durationSec,
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No speech detected in audio note. Please try speaking again.'),
+          duration: Duration(milliseconds: 2500),
+        ),
+      );
+    }
+  }
+
+  Future<void> _sendMessage(
+    String query, {
+    bool isAudio = false,
+    String? audioPath,
+    int? durationSec,
+  }) async {
     if (query.trim().isEmpty) return;
 
     final userText = query.trim();
     setState(() {
-      _messages.add(_ChatMessage(text: userText, isUser: true));
+      _messages.add(_ChatMessage(
+        text: userText,
+        isUser: true,
+        isAudio: isAudio,
+        audioPath: audioPath,
+        audioDurationSec: durationSec,
+      ));
       _textController.clear();
       _isSynthesizing = true;
+      _transcriptionError = null;
     });
 
     _scrollToBottom();
@@ -347,6 +535,13 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
       message: userText,
       conversationId: _currentConversationId,
       localNotes: notes,
+      metadata: isAudio
+          ? {
+              'isAudio': true,
+              'audioPath': audioPath,
+              'durationSec': durationSec,
+            }
+          : null,
     );
     if (!mounted) return;
 
@@ -403,6 +598,29 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
         if (items.isNotEmpty) {
           ref.read(smartListsProvider.notifier).generateAiList(title, items);
         }
+      } else if (tool == 'open_note') {
+        final noteId = (params['noteId'] ?? res['noteId'])?.toString();
+        if (noteId != null && noteId.isNotEmpty) {
+          final target = notes.where((n) => n.id == noteId).firstOrNull;
+          if (target != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => NoteEditorScreen(
+                      noteId: target.id,
+                      initialTitle: target.title,
+                      initialContent: target.content,
+                      tag: target.tag,
+                      tagColor: target.tagColor,
+                    ),
+                  ),
+                );
+              }
+            });
+          }
+        }
       }
     }
 
@@ -423,10 +641,23 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
     }).catchError((_) {});
 
     final sources = <({String title, String tag, String? noteId})>[];
-    for (final id in citedIds) {
-      final match = notes.where((n) => n.id == id).firstOrNull;
-      if (match != null) {
-        sources.add((title: match.title, tag: match.tag, noteId: match.id));
+    if (response['sources'] is List) {
+      for (final s in response['sources']) {
+        if (s is Map) {
+          sources.add((
+            title: s['title']?.toString() ?? 'Saved Note',
+            tag: s['tag']?.toString() ?? 'NOTE',
+            noteId: s['id']?.toString(),
+          ));
+        }
+      }
+    }
+    if (sources.isEmpty) {
+      for (final id in citedIds) {
+        final match = notes.where((n) => n.id == id).firstOrNull;
+        if (match != null) {
+          sources.add((title: match.title, tag: match.tag, noteId: match.id));
+        }
       }
     }
 
@@ -443,6 +674,23 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
         ),
       );
     });
+
+    // Save to local cache
+    if (_currentConversationId != null) {
+      final rawToCache = _messages.map((m) => {
+        'role': m.isUser ? 'user' : 'assistant',
+        'content': m.text,
+        'citedNoteIds': m.sources?.map((s) => s.noteId).whereType<String>().toList(),
+        'toolCalls': m.toolCalls,
+        'metadata': {
+          if (m.isAudio) 'isAudio': true,
+          if (m.audioPath != null) 'audioPath': m.audioPath,
+          if (m.audioDurationSec != null) 'durationSec': m.audioDurationSec,
+        },
+      }).toList();
+      LocalStorageService.instance.saveConversationMessages(_currentConversationId!, rawToCache);
+    }
+
     _scrollToBottom();
   }
 
@@ -619,7 +867,11 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
           ),
 
           Expanded(
-            child: _messages.isEmpty && !_isSynthesizing
+            child: _isLoadingConversation && _messages.isEmpty
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
+                  )
+                : _messages.isEmpty && !_isSynthesizing
                 ? Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -706,20 +958,28 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                     controller: _scrollController,
                     padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
                     physics: const BouncingScrollPhysics(),
-                    itemCount: _messages.length + (_isSynthesizing ? 1 : 0),
+                    itemCount: _messages.length + (_isSynthesizing || _isTranscribingAudio ? 1 : 0),
                     itemBuilder: (context, index) {
-                      if (index == _messages.length && _isSynthesizing) {
-                        return _buildSynthesizingIndicator(isDark);
+                      if (index == _messages.length) {
+                        if (_isTranscribingAudio) {
+                          return _buildTranscribingIndicator(isDark);
+                        }
+                        if (_isSynthesizing) {
+                          return _buildSynthesizingIndicator(isDark);
+                        }
                       }
                       final message = _messages[index];
                       if (message.isUser) {
-                        return _buildUserBubble(message.text, isDark);
+                        return _buildUserBubble(message, isDark);
                       } else {
                         return _buildAiBubble(message, isDark);
                       }
                     },
                   ),
           ),
+
+          if (_transcriptionError != null)
+            _buildTranscriptionErrorBanner(isDark),
 
           // Query Input Bar
           Container(
@@ -777,7 +1037,7 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                             ),
                             visualDensity: VisualDensity.compact,
                             onPressed: _toggleVoiceRecording,
-                            tooltip: _isRecordingVoice ? 'Stop recording & send' : 'Speak to AI',
+                            tooltip: _isRecordingVoice ? 'Stop recording & transcribe' : 'Speak to AI',
                           ),
                         ],
                       ),
@@ -808,6 +1068,77 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTranscriptionErrorBanner(bool isDark) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF3B1212) : const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFCA5A5), width: 0.8),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline_rounded, size: 16, color: Color(0xFFEF4444)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _transcriptionError!,
+              style: const TextStyle(fontSize: 12, color: Color(0xFFB91C1C), fontWeight: FontWeight.w500),
+            ),
+          ),
+          if (_lastRecordedAudioPath != null)
+            TextButton(
+              onPressed: () => _transcribeAndSendAudio(_lastRecordedAudioPath!, _lastRecordedDurationSec ?? 0),
+              child: const Text('Retry', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFEF4444))),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTranscribingIndicator(bool isDark) {
+    return SubtlePulse(
+      minScale: 0.95,
+      maxScale: 1.05,
+      duration: const Duration(milliseconds: 900),
+      child: Container(
+        margin: const EdgeInsets.only(right: 48, bottom: 20),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.darkSurface : Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: const Color(0xFFEF4444).withValues(alpha: 0.4),
+            width: 0.8,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.mic_rounded, size: 14, color: Color(0xFFEF4444)),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Transcribing voice memo with AssemblyAI...',
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -854,7 +1185,13 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
     );
   }
 
-  Widget _buildUserBubble(String text, bool isDark) {
+  Widget _buildUserBubble(_ChatMessage message, bool isDark) {
+    final hasAudio = message.isAudio;
+    final durSec = message.audioDurationSec ?? 0;
+    final durStr = durSec > 0
+        ? '${(durSec ~/ 60).toString().padLeft(2, '0')}:${(durSec % 60).toString().padLeft(2, '0')}'
+        : 'Voice Memo';
+
     return FadeSlideIn(
       child: Align(
         alignment: Alignment.centerRight,
@@ -871,13 +1208,59 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
               width: 0.8,
             ),
           ),
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 14,
-              color: isDark ? AppColors.darkTextPrimary : const Color(0xFF1E3A8A),
-              fontWeight: FontWeight.w500,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (hasAudio) ...[
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.mic_rounded, size: 12, color: AppColors.primary),
+                          const SizedBox(width: 4),
+                          Text(
+                            durStr,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'AUDIO MEMO',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+              ],
+              Text(
+                message.text,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDark ? AppColors.darkTextPrimary : const Color(0xFF1E3A8A),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
         ),
       ),

@@ -552,6 +552,7 @@ class ApiClient {
     required String message,
     String? conversationId,
     List<NoteModel>? localNotes,
+    Map<String, dynamic>? metadata,
   }) async {
     try {
       final response = await _dio.post(
@@ -559,6 +560,7 @@ class ApiClient {
         data: {
           'message': message,
           if (conversationId != null) 'conversationId': conversationId,
+          if (metadata != null) 'metadata': metadata,
         },
       );
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -581,6 +583,19 @@ class ApiClient {
       }
     } catch (_) {}
     return [];
+  }
+
+  /// Get single saved chat conversation with full messages
+  Future<Map<String, dynamic>?> getConversation(String id) async {
+    try {
+      final response = await _dio.get('/ai/conversations/$id');
+      if (response.statusCode == 200 && response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } catch (e) {
+      debugPrint('ApiClient getConversation error: $e');
+    }
+    return null;
   }
 
   /// Delete a conversation
@@ -634,7 +649,11 @@ class ApiClient {
   }
 
   /// Audio transcription with offline fallback
-  Future<Map<String, dynamic>> transcribeAudio(String audioPath, {String? transcriptText}) async {
+  Future<Map<String, dynamic>> transcribeAudio(
+    String audioPath, {
+    String? transcriptText,
+    int? durationSec,
+  }) async {
     final isTesting = WidgetsBinding.instance.runtimeType.toString().contains('Test');
     if (isTesting) {
       return {
@@ -657,9 +676,13 @@ class ApiClient {
           ),
           if (transcriptText != null && transcriptText.isNotEmpty)
             'transcript': transcriptText,
+          if (durationSec != null) 'durationSec': durationSec.toString(),
         });
       } else {
-        data = {'transcript': transcriptText ?? ''};
+        data = {
+          'transcript': transcriptText ?? '',
+          if (durationSec != null) 'durationSec': durationSec.toString(),
+        };
       }
 
       final response = await _dio.post(

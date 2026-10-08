@@ -187,6 +187,25 @@ class LocalStorageService {
     }
   }
 
+  Future<void> saveConversationMessages(String conversationId, List<Map<String, dynamic>> messages) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('ai_conv_messages_$conversationId', jsonEncode(messages));
+    } catch (_) {}
+  }
+
+  Future<List<Map<String, dynamic>>?> loadConversationMessages(String conversationId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final str = prefs.getString('ai_conv_messages_$conversationId');
+      if (str == null || str.isEmpty) return null;
+      final decoded = jsonDecode(str) as List<dynamic>;
+      return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> clearAll() async {
     try {
       final prefs = await SharedPreferences.getInstance();

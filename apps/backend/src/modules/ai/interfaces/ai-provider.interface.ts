@@ -54,6 +54,7 @@ export interface AiChatResult {
   answer: string;
   conversationId: string;
   citedNoteIds: string[];
+  sources?: Array<{ id: string; title: string; snippet?: string; tag?: string }>;
   actionsExecuted: ExecutedToolAction[];
   suggestedTitle?: string;
   tokensUsed?: number;
