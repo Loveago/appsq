@@ -281,7 +281,8 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
         _isRecordingVoice = false;
         _isSynthesizing = true;
       });
-      final audioPath = await AudioRecordingService.instance.stopRecording();
+      final RecordingResult? result = await AudioRecordingService.instance.stopRecording();
+      final audioPath = result?.filePath;
       final res = await ApiClient.instance.transcribeAudio(audioPath ?? '');
       final transcript = res['transcript'] as String? ?? '';
       if (transcript.isNotEmpty && mounted) {

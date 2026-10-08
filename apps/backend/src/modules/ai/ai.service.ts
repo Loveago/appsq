@@ -739,7 +739,7 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
     return (
       this.configService.get<string>('ASSEMBLYAI_API_KEY') ||
       process.env.ASSEMBLYAI_API_KEY ||
-      null
+      '984d5db83ae34999a30d75b879b66c80'
     );
   }
 

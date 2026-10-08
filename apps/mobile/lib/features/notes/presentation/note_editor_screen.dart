@@ -901,7 +901,8 @@ class _NoteVoiceRecorderSheetState extends State<_NoteVoiceRecorderSheet> with S
       _isRecording = false;
     });
 
-    final audioPath = await AudioRecordingService.instance.stopRecording();
+    final RecordingResult? result = await AudioRecordingService.instance.stopRecording();
+    final audioPath = result?.filePath;
     String finalTranscript = _liveText;
 
     if (audioPath != null && audioPath.isNotEmpty) {

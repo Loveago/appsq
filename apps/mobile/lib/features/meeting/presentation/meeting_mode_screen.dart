@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -29,7 +30,7 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
   bool _isPaused = false;
   int _bookmarkCount = 0;
   bool _isSynthesizing = false;
-  String _liveTranscript = '';
+  final String _liveTranscript = '';
   String? _recordedAudioPath;
   late final String _startTime;
 
@@ -55,15 +56,7 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
       _animController.value = 0.5;
     }
 
-    AudioRecordingService.instance.startRecording(
-      onWords: (words) {
-        if (mounted && words.isNotEmpty) {
-          setState(() {
-            _liveTranscript = words;
-          });
-        }
-      },
-    );
+    AudioRecordingService.instance.startRecording();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
         ProviderScope.containerOf(context, listen: false).read(adSuppressionProvider.notifier).state = true;
@@ -109,11 +102,21 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
       _isSynthesizing = true;
     });
 
-    final audioPath = await AudioRecordingService.instance.stopRecording();
-    _recordedAudioPath = audioPath;
-    final meetingTranscript = _liveTranscript.trim().isNotEmpty
-        ? _liveTranscript.trim()
-        : 'Recorded meeting session lasting $durationStr with $_bookmarkCount key bookmarked timestamps.';
+    final RecordingResult? result = await AudioRecordingService.instance.stopRecording();
+    _recordedAudioPath = result?.filePath;
+
+    // Transcribe finalized recording using AssemblyAI
+    String meetingTranscript = '';
+    if (_recordedAudioPath != null && File(_recordedAudioPath!).existsSync()) {
+      final transcribeRes = await ApiClient.instance.transcribeAudio(_recordedAudioPath!);
+      meetingTranscript = (transcribeRes['transcript'] as String?)?.trim() ?? '';
+    }
+
+    if (meetingTranscript.isEmpty) {
+      meetingTranscript = _liveTranscript.trim().isNotEmpty
+          ? _liveTranscript.trim()
+          : 'Recorded meeting session lasting $durationStr with $_bookmarkCount key bookmarked timestamps.';
+    }
 
     // Call live distillation engine
     final distillation = await ApiClient.instance.distillMeeting(meetingTranscript);
@@ -781,7 +784,7 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            _isSynthesizing ? 'Distilling decisions & tasks...' : 'Real-time Audio Stream',
+                            _isSynthesizing ? 'Distilling decisions & tasks...' : 'Meeting Audio Recording',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -797,16 +800,13 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                     Text(
                       _isSynthesizing
                           ? 'Synthesizing key decisions, owner assignments, and action items with AI...'
-                          : (_liveTranscript.isNotEmpty
-                              ? _liveTranscript
-                              : (_secondsElapsed > 0
-                                  ? 'Recording in progress ($_secondsElapsed s). Speak naturally; real-time words will stream here...'
-                                  : 'Listening to meeting discussion... Speak clearly or place device in the room.')),
-                      style: TextStyle(
-                        color: _liveTranscript.isNotEmpty ? Colors.white : AppColors.darkTextPrimary,
+                          : (_isPaused
+                              ? 'Recording paused. Tap Resume to continue capturing meeting audio.'
+                              : 'Continuous audio recording active ($_formatTimer()). High-fidelity audio is saved to your device and will be transcribed & distilled by AssemblyAI when you end the meeting.'),
+                      style: const TextStyle(
+                        color: Colors.white,
                         fontSize: 13,
                         height: 1.45,
-                        fontStyle: _liveTranscript.isEmpty ? FontStyle.italic : FontStyle.normal,
                       ),
                     ),
                   ],
@@ -851,6 +851,11 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
             child: GestureDetector(
               onTap: () {
                 setState(() => _isPaused = !_isPaused);
+                if (_isPaused) {
+                  AudioRecordingService.instance.pauseRecording();
+                } else {
+                  AudioRecordingService.instance.resumeRecording();
+                }
               },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),

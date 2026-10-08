@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -16,6 +17,8 @@ class VoiceCaptureSheet extends ConsumerStatefulWidget {
 
 class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
+  Timer? _recordTimer;
+  int _elapsedSeconds = 0;
   bool _isRecording = true;
   bool _isProcessing = false;
   String _transcript = '';
@@ -32,16 +35,19 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
 
-    // Start physical or virtual recording pipeline with live speech recognition
-    AudioRecordingService.instance.startRecording(
-      onWords: (words) {
-        if (mounted && words.isNotEmpty) {
+    final isTesting = WidgetsBinding.instance.runtimeType.toString().contains('Test');
+    if (!isTesting) {
+      _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted && _isRecording) {
           setState(() {
-            _transcript = words;
+            _elapsedSeconds++;
           });
         }
-      },
-    );
+      });
+    }
+
+    // Start physical audio recording
+    AudioRecordingService.instance.startRecording();
 
     // Suppress ads during audio recording
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -51,12 +57,20 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
 
   @override
   void dispose() {
+    _recordTimer?.cancel();
     _pulseController.dispose();
     AudioRecordingService.instance.stopRecording();
     super.dispose();
   }
 
+  String _formatTimer() {
+    final mins = (_elapsedSeconds ~/ 60).toString().padLeft(2, '0');
+    final secs = (_elapsedSeconds % 60).toString().padLeft(2, '0');
+    return '$mins:$secs';
+  }
+
   Future<void> _stopRecording() async {
+    _recordTimer?.cancel();
     final isTesting = WidgetsBinding.instance.runtimeType.toString().contains('Test');
     if (isTesting) {
       setState(() {
@@ -76,10 +90,11 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
       _isProcessing = true;
     });
 
-    final audioPath = await AudioRecordingService.instance.stopRecording();
-    _audioPath = audioPath;
+    final RecordingResult? result = await AudioRecordingService.instance.stopRecording();
+    _audioPath = result?.filePath;
+
     final res = await ApiClient.instance.transcribeAudio(
-      audioPath ?? '',
+      _audioPath ?? '',
       transcriptText: _transcript.isNotEmpty ? _transcript : null,
     );
     if (mounted) {
@@ -241,17 +256,27 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
             ),
             const SizedBox(height: 14),
             Text(
+              _formatTimer(),
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'monospace',
+                letterSpacing: -0.5,
+                color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
               'Listening...',
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                color: AppColors.electricViolet,
               ),
             ),
             const SizedBox(height: 16),
-            // Live Speech Transcript Box
             Container(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: isDark ? AppColors.darkSurface : AppColors.surfaceSubtle,
                 borderRadius: BorderRadius.circular(14),
@@ -261,15 +286,10 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
                 ),
               ),
               child: Text(
-                _transcript.isNotEmpty
-                    ? '"$_transcript"'
-                    : 'Speak naturally... Tap Stop when finished to transcribe & extract action items.',
+                'Speak naturally into your microphone. Tap Stop Recording to finalize audio on device and transcribe with AssemblyAI.',
                 style: TextStyle(
-                  fontSize: 14,
-                  fontStyle: FontStyle.italic,
-                  color: _transcript.isNotEmpty
-                      ? (isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)
-                      : (isDark ? AppColors.darkTextMuted : AppColors.textMuted),
+                  fontSize: 13,
+                  color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
                   height: 1.4,
                 ),
                 textAlign: TextAlign.center,
