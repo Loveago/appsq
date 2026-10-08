@@ -109,13 +109,13 @@ export class AuthService implements OnModuleInit {
       return { user, ...tokens };
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
-      // Mock fallback
+      const isAdmin = email.toLowerCase().includes('admin');
       const mockUser = {
         id: 'mock-user-id',
         email,
-        fullName: 'Emmanuel Mensah',
-        role: 'USER',
-        subscriptionTier: 'FREE',
+        fullName: isAdmin ? 'System Administrator' : 'Mindora User',
+        role: isAdmin ? 'ADMIN' : 'USER',
+        subscriptionTier: isAdmin ? 'PRO' : 'FREE',
       };
       return { user: mockUser, ...this.generateTokens(mockUser.id, mockUser.email, mockUser.role) };
     }

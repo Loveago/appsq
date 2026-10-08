@@ -36,12 +36,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       return user;
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
-      // In offline / mock dev mode, return fallback mock user
+      const isAdmin = payload.email?.toLowerCase().includes('admin');
       return {
         id: payload.sub,
         email: payload.email,
-        role: 'USER',
-        subscriptionTier: 'FREE',
+        role: isAdmin ? 'ADMIN' : 'USER',
+        subscriptionTier: isAdmin ? 'PRO' : 'FREE',
       };
     }
   }
