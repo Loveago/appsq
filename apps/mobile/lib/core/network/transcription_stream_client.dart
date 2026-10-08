@@ -83,7 +83,12 @@ class TranscriptionStreamClient {
           'format_turns': 'true',
           if (enableSpeakerDiarization) 'speaker_labels': 'true',
         };
-        wsUri = Uri.https('streaming.assemblyai.com', '/v3/ws', queryParams);
+        wsUri = Uri(
+          scheme: 'wss',
+          host: 'streaming.assemblyai.com',
+          path: '/v3/ws',
+          queryParameters: queryParams,
+        );
       } else {
         Uri baseUri = Uri.parse(baseUrl);
         String scheme = baseUri.scheme == 'https' ? 'wss' : 'ws';
@@ -251,16 +256,67 @@ class TranscriptionStreamClient {
 
       // Backend bridge messages
       else if (type == 'partial_transcript') {
-        final text = msg['text'] as String? ?? '';
-        final full = msg['fullTranscript'] as String? ?? text;
+        final text = (msg['text'] as String? ?? '').trim();
+        final full = (msg['fullTranscript'] as String? ?? text).trim();
         _accumulatedTranscript = full;
         _partialTranscriptController.add(full);
+
+        if (enableSpeakerDiarization && text.isNotEmpty) {
+          final rawSpeaker = (msg['speaker'] ?? msg['speaker_label'] ?? 'A').toString().trim().toUpperCase();
+          if (!_speakers.containsKey(rawSpeaker)) {
+            _speakers[rawSpeaker] = MeetingSpeaker(
+              id: 'spk_$rawSpeaker',
+              key: rawSpeaker,
+              displayName: 'Speaker $rawSpeaker',
+              confidence: 1.0,
+              isCustomNamed: false,
+            );
+          }
+          final currentSpeaker = _speakers[rawSpeaker]!;
+          _activeSegment = MeetingSpeakerSegment(
+            id: 'seg_partial_${DateTime.now().millisecondsSinceEpoch}',
+            speakerKey: rawSpeaker,
+            speakerName: currentSpeaker.displayName,
+            text: text,
+            startMs: 0,
+            endMs: 0,
+            isPartial: true,
+          );
+          _emitSegments();
+        }
       } else if (type == 'final_turn') {
-        final text = msg['text'] as String? ?? '';
-        final full = msg['fullTranscript'] as String? ?? text;
+        final text = (msg['text'] as String? ?? '').trim();
+        final full = (msg['fullTranscript'] as String? ?? text).trim();
         _accumulatedTranscript = full;
         _finalTurnController.add(text);
         _partialTranscriptController.add(full);
+
+        if (enableSpeakerDiarization && text.isNotEmpty) {
+          final rawSpeaker = (msg['speaker'] ?? msg['speaker_label'] ?? 'A').toString().trim().toUpperCase();
+          if (!_speakers.containsKey(rawSpeaker)) {
+            _speakers[rawSpeaker] = MeetingSpeaker(
+              id: 'spk_$rawSpeaker',
+              key: rawSpeaker,
+              displayName: 'Speaker $rawSpeaker',
+              confidence: 1.0,
+              isCustomNamed: false,
+            );
+          }
+          final currentSpeaker = _speakers[rawSpeaker]!;
+          _activeSegment = null;
+          _segments.add(
+            MeetingSpeakerSegment(
+              id: 'seg_${DateTime.now().millisecondsSinceEpoch}_${_segments.length}',
+              speakerKey: rawSpeaker,
+              speakerName: currentSpeaker.displayName,
+              text: text,
+              startMs: 0,
+              endMs: 0,
+              isPartial: false,
+            ),
+          );
+          _emitSegments();
+        }
       } else if (type == 'limit_reached') {
         _limitReached = true;
         final message = msg['message'] as String? ?? 'Transcription limit reached.';
@@ -369,7 +425,10 @@ class TranscriptionStreamClient {
       }
       _accumulatedTranscript = buffer.toString().trim();
     } else {
-      _accumulatedTranscript = _segments.map((s) => s.text).join(' ').trim();
+      final text = _segments.map((s) => s.text).join(' ').trim();
+      if (text.isNotEmpty) {
+        _accumulatedTranscript = text;
+      }
     }
   }
 
@@ -454,6 +513,10 @@ class TranscriptionStreamClient {
 
   void _safeCompleteFinalResult() {
     if (!_finalResultCompleter.isCompleted) {
+      if (_activeSegment != null && _activeSegment!.text.trim().isNotEmpty) {
+        _segments.add(_activeSegment!.copyWith(isPartial: false));
+        _activeSegment = null;
+      }
       _rebuildAccumulatedTranscript();
       _finalResultCompleter.complete({
         'transcript': _accumulatedTranscript,

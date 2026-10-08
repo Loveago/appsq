@@ -226,18 +226,23 @@ export class StreamingTranscriptionGateway
     });
   }
 
-  private initAssemblyAiStream(session: ActiveStreamSession, apiKey: string) {
+  private async initAssemblyAiStream(session: ActiveStreamSession, apiKey: string) {
     try {
       // AssemblyAI Universal Streaming WebSocket v3
-      // 16kHz, 16-bit PCM mono (pcm_s16le)
-      const aaiUrl =
-        'wss://streaming.assemblyai.com/v3/ws?sample_rate=16000&encoding=pcm_s16le&format_text=true';
+      // 16kHz, 16-bit PCM mono
+      const ephemeralToken = await this.aiService.getAssemblyAiStreamingToken(120);
+      const isMeeting = Boolean(session.meetingId);
+      const params = [
+        'sample_rate=16000',
+        'format_turns=true',
+        isMeeting ? 'speaker_labels=true' : '',
+        ephemeralToken ? `token=${ephemeralToken}` : '',
+      ].filter(Boolean).join('&');
 
-      const aaiWs = new WebSocket(aaiUrl, {
-        headers: {
-          Authorization: apiKey,
-        },
-      });
+      const aaiUrl = `wss://streaming.assemblyai.com/v3/ws?${params}`;
+      const headers = ephemeralToken ? undefined : { Authorization: apiKey };
+
+      const aaiWs = new WebSocket(aaiUrl, headers ? { headers } : undefined);
 
       session.aaiWs = aaiWs;
 
@@ -293,6 +298,8 @@ export class StreamingTranscriptionGateway
         const text: string = (msg.transcript || '').trim();
         const endOfTurn: boolean = Boolean(msg.end_of_turn);
 
+        const speaker = (msg.speaker || msg.speaker_label || 'A').toString().trim().toUpperCase();
+
         if (endOfTurn) {
           // Final stabilized turn segment
           if (text.length > 0) {
@@ -302,6 +309,8 @@ export class StreamingTranscriptionGateway
           this.sendJson(session.clientWs, {
             type: 'final_turn',
             text,
+            speaker,
+            words: msg.words,
             fullTranscript: session.collectedTranscript,
           });
         } else {
@@ -314,6 +323,8 @@ export class StreamingTranscriptionGateway
           this.sendJson(session.clientWs, {
             type: 'partial_transcript',
             text,
+            speaker,
+            words: msg.words,
             fullTranscript: combined,
           });
         }
