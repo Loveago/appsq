@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { AiService } from './ai.service';
 import { PrismaService } from '../../database/prisma.service';
 
+import { BillingService } from '../billing/billing.service';
+
 describe('AiService', () => {
   let service: AiService;
 
@@ -21,12 +23,20 @@ describe('AiService', () => {
     get: jest.fn().mockReturnValue('mock-key'),
   };
 
+  const mockBillingService = {
+    canTranscribe: jest.fn().mockResolvedValue({ allowed: true }),
+    recordTranscriptionUsage: jest.fn().mockResolvedValue(true),
+    canUseAiTokens: jest.fn().mockResolvedValue({ allowed: true }),
+    recordAiTokensUsage: jest.fn().mockResolvedValue(true),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AiService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: BillingService, useValue: mockBillingService },
       ],
     }).compile();
 

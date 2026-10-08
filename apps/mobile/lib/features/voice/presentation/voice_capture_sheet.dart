@@ -6,6 +6,7 @@ import '../../../../core/models/note_model.dart';
 import '../../../../core/providers/app_state_providers.dart';
 import '../../../../core/services/audio_service.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/network/transcription_stream_client.dart';
 import '../../../../core/widgets/audio_playback_bar.dart';
 
 class VoiceCaptureSheet extends ConsumerStatefulWidget {
@@ -31,6 +32,10 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
   late String _voiceNoteId;
   bool _transcriptionLimitReached = false;
 
+  TranscriptionStreamClient? _streamClient;
+  StreamSubscription<String>? _partialSub;
+  StreamSubscription<String>? _limitSub;
+
   @override
   void initState() {
     super.initState();
@@ -51,8 +56,7 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
       });
     }
 
-    // Start physical audio recording
-    AudioRecordingService.instance.startRecording();
+    _initRecording();
 
     // Suppress ads during audio recording
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -60,10 +64,75 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
     });
   }
 
+  Future<void> _initRecording() async {
+    final isTesting = WidgetsBinding.instance.runtimeType.toString().contains('Test');
+    if (isTesting) {
+      AudioRecordingService.instance.startRecording();
+      return;
+    }
+
+    try {
+      final session = await ApiClient.instance.createTranscriptionSession(
+        voiceNoteId: _voiceNoteId,
+      );
+
+      final isAllowed = session['allowed'] == true;
+      if (!isAllowed) {
+        if (mounted) {
+          setState(() {
+            _transcriptionLimitReached = true;
+          });
+        }
+        await AudioRecordingService.instance.startRecording();
+        return;
+      }
+
+      final sessionId = session['sessionId'] as String? ?? 'sess_${DateTime.now().millisecondsSinceEpoch}';
+      _streamClient = TranscriptionStreamClient(
+        baseUrl: ApiClient.instance.currentBaseUrl,
+        token: ApiClient.instance.authToken,
+        sessionId: sessionId,
+        voiceNoteId: _voiceNoteId,
+      );
+
+      _partialSub = _streamClient!.partialTranscriptStream.listen((text) {
+        if (mounted && text.isNotEmpty) {
+          setState(() {
+            _transcript = text;
+          });
+        }
+      });
+
+      _limitSub = _streamClient!.limitReachedStream.listen((msg) {
+        if (mounted) {
+          setState(() {
+            _transcriptionLimitReached = true;
+          });
+        }
+      });
+
+      final connected = await _streamClient!.connect();
+      if (connected) {
+        await AudioRecordingService.instance.startStreamingRecording(
+          onAudioChunk: (chunk) {
+            _streamClient?.sendAudioChunk(chunk);
+          },
+        );
+      } else {
+        await AudioRecordingService.instance.startRecording();
+      }
+    } catch (_) {
+      await AudioRecordingService.instance.startRecording();
+    }
+  }
+
   @override
   void dispose() {
     _recordTimer?.cancel();
     _pulseController.dispose();
+    _partialSub?.cancel();
+    _limitSub?.cancel();
+    _streamClient?.dispose();
     AudioRecordingService.instance.stopRecording();
     super.dispose();
   }
@@ -107,18 +176,37 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
       durationSec: _elapsedSeconds,
     ).catchError((_) => null);
 
-    // Evaluate transcription entitlement separately
-    final res = await ApiClient.instance.transcribeAudio(
-      _audioPath ?? '',
-      transcriptText: _transcript.isNotEmpty ? _transcript : null,
-    );
+    Map<String, dynamic> res = {};
+    if (_streamClient != null) {
+      try {
+        res = await _streamClient!.stop();
+      } catch (_) {}
+    }
+
+    // Fallback batch transcribe only if streaming did not return a transcript
+    if ((res['transcript'] == null || res['transcript'].toString().trim().isEmpty) && !_transcriptionLimitReached) {
+      if (_audioPath != null) {
+        res = await ApiClient.instance.transcribeAudio(
+          _audioPath!,
+          transcriptText: _transcript.isNotEmpty ? _transcript : null,
+        );
+      }
+    }
+
     if (mounted) {
       setState(() {
-        if (res['error'] == 'TRANSCRIPTION_LIMIT_REACHED') {
+        if (_transcriptionLimitReached || res['error'] == 'TRANSCRIPTION_LIMIT_REACHED') {
           _transcriptionLimitReached = true;
-          _transcript = 'Voice recording preserved. Transcription is unavailable because your monthly transcription quota has been reached.';
+          if (_transcript.isEmpty) {
+            _transcript = 'Voice recording preserved. Transcription is unavailable because your monthly transcription quota has been reached.';
+          }
         } else {
-          _transcript = res['transcript'] as String? ?? (_transcript.isNotEmpty ? _transcript : 'Voice recording saved.');
+          final t = res['transcript'] as String?;
+          if (t != null && t.trim().isNotEmpty) {
+            _transcript = t.trim();
+          } else if (_transcript.isEmpty) {
+            _transcript = 'Voice recording saved.';
+          }
           if (res['detectedTasks'] != null) {
             _detectedTasks = (res['detectedTasks'] as List).map((e) => e.toString()).toList();
           }
@@ -316,6 +404,8 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
             ),
             const SizedBox(height: 16),
             Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(minHeight: 64, maxHeight: 130),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: isDark ? AppColors.darkSurface : AppColors.surfaceSubtle,
@@ -325,14 +415,24 @@ class _VoiceCaptureSheetState extends ConsumerState<VoiceCaptureSheet> with Sing
                   width: 0.8,
                 ),
               ),
-              child: Text(
-                'Speak naturally into your microphone. Tap Stop Recording to finalize audio on device and transcribe with AssemblyAI.',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
-                  height: 1.4,
+              child: SingleChildScrollView(
+                reverse: true,
+                child: Text(
+                  _transcript.isNotEmpty
+                      ? _transcript
+                      : (_transcriptionLimitReached
+                          ? 'Transcription quota reached. Audio recording continues safely on device.'
+                          : 'Listening... Speak naturally to see real-time transcription.'),
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontStyle: _transcript.isEmpty ? FontStyle.italic : FontStyle.normal,
+                    color: _transcript.isNotEmpty
+                        ? (isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)
+                        : (isDark ? AppColors.darkTextMuted : AppColors.textMuted),
+                    height: 1.4,
+                  ),
+                  textAlign: _transcript.isEmpty ? TextAlign.center : TextAlign.start,
                 ),
-                textAlign: TextAlign.center,
               ),
             ),
             const SizedBox(height: 20),

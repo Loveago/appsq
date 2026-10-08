@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../../database/prisma.service';
 
+import { BillingService } from '../billing/billing.service';
+
 describe('AuthService', () => {
   let service: AuthService;
 
@@ -22,6 +24,13 @@ describe('AuthService', () => {
     get: jest.fn().mockReturnValue('15m'),
   };
 
+  const mockBillingService = {
+    canTranscribe: jest.fn().mockResolvedValue({ allowed: true }),
+    recordTranscriptionUsage: jest.fn().mockResolvedValue(true),
+    canUseAiTokens: jest.fn().mockResolvedValue({ allowed: true }),
+    recordAiTokensUsage: jest.fn().mockResolvedValue(true),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -29,6 +38,7 @@ describe('AuthService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: JwtService, useValue: mockJwtService },
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: BillingService, useValue: mockBillingService },
       ],
     }).compile();
 

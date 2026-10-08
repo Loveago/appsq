@@ -678,6 +678,34 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
     }
   }
 
+  async createTranscriptionSession(
+    userId: string,
+    voiceNoteId?: string,
+    meetingId?: string,
+  ) {
+    const sessionId = `ts_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    if (this.billingService) {
+      const check = await this.billingService.canTranscribe(userId, 60);
+      return {
+        allowed: check.allowed,
+        sessionId,
+        voiceNoteId,
+        meetingId,
+        remainingMinutes: check.remainingMinutes,
+        limitMinutes: check.limitMinutes,
+        reason: check.allowed ? undefined : 'LIMIT_REACHED',
+      };
+    }
+    return {
+      allowed: true,
+      sessionId,
+      voiceNoteId,
+      meetingId,
+      remainingMinutes: 30,
+      limitMinutes: 30,
+    };
+  }
+
   async transcribeAudio(
     transcript?: string,
     userId?: string,
