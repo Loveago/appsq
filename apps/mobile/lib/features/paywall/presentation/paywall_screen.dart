@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/fade_slide_in.dart';
 import '../../../../core/providers/app_state_providers.dart';
+import '../../../../core/network/api_client.dart';
 
 class PaywallScreen extends StatefulWidget {
   final VoidCallback? onSelectFree;
@@ -20,6 +21,71 @@ class PaywallScreen extends StatefulWidget {
 
 class _PaywallScreenState extends State<PaywallScreen> {
   bool _isAnnual = true;
+  bool _isProcessing = false;
+
+  Future<void> _handleSubscribe() async {
+    setState(() => _isProcessing = true);
+    try {
+      // 1. Send authoritative subscription activation to backend
+      final res = await ApiClient.instance.verifySubscription(
+        provider: 'IN_APP',
+        providerSubscriptionId: 'sub_${DateTime.now().millisecondsSinceEpoch}',
+        plan: 'PRO',
+        durationDays: _isAnnual ? 365 : 30,
+        metadata: {
+          'billingPeriod': _isAnnual ? 'annual' : 'monthly',
+          'source': 'paywall_screen',
+        },
+      );
+
+      // 2. Reconcile with server to guarantee authoritative state
+      final ent = (res.containsKey('plan'))
+          ? res
+          : await ApiClient.instance.reconcileSubscription();
+
+      if (!mounted) return;
+
+      try {
+        ProviderScope.containerOf(context, listen: false)
+            .read(userProfileProvider.notifier)
+            .syncFromEntitlements(ent);
+      } catch (_) {}
+
+      final plan = ent['plan']?.toString().toUpperCase() ?? '';
+      final isPro = plan == 'PRO' || plan == 'TRIAL';
+
+      setState(() => _isProcessing = false);
+      if (isPro) {
+        if (widget.onSelectPro != null) {
+          widget.onSelectPro!();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✦ Welcome to Mindora Pro! Your subscription is active.'),
+              backgroundColor: Color(0xFF10B981),
+            ),
+          );
+          Navigator.maybePop(context);
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not verify Pro subscription. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isProcessing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Subscription failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -249,22 +315,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () {
-                          try {
-                            ProviderScope.containerOf(context, listen: false).read(userProfileProvider.notifier).setPro(true);
-                          } catch (_) {}
-
-                          if (widget.onSelectPro != null) {
-                            widget.onSelectPro!();
-                          } else {
-                            Navigator.maybePop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('✦ Welcome to Mindora Pro! 7-day trial activated.'),
-                              ),
-                            );
-                          }
-                        },
+                        onPressed: _isProcessing ? null : _handleSubscribe,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
@@ -275,10 +326,19 @@ class _PaywallScreenState extends State<PaywallScreen> {
                           ),
                           shadowColor: AppColors.primary.withValues(alpha: 0.4),
                         ),
-                        child: const Text(
-                          'Start 7-Day Free Trial',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, letterSpacing: -0.2),
-                        ),
+                        child: _isProcessing
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : const Text(
+                                'Start 7-Day Free Trial',
+                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, letterSpacing: -0.2),
+                              ),
                       ),
                     ),
 

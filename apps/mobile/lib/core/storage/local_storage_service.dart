@@ -149,11 +149,11 @@ class LocalStorageService {
       if (str == null || str.isEmpty) return null;
       final map = jsonDecode(str) as Map<String, dynamic>;
       return UserProfileState(
-        fullName: map['fullName'] as String? ?? 'Emmanuel Mensah',
-        email: map['email'] as String? ?? 'emmanuel@mindora.ai',
+        fullName: map['fullName'] as String? ?? '',
+        email: map['email'] as String? ?? '',
         isPro: map['isPro'] as bool? ?? false,
-        monthlyAiTokensUsed: map['monthlyAiTokensUsed'] as int? ?? 18400,
-        monthlyAiTokensLimit: map['monthlyAiTokensLimit'] as int? ?? 50000,
+        monthlyAiTokensUsed: map['monthlyAiTokensUsed'] as int? ?? 0,
+        monthlyAiTokensLimit: map['monthlyAiTokensLimit'] as int? ?? 100000,
         selectedAiModel: map['selectedAiModel'] as String? ?? 'gpt-4o-mini',
         responseStyle: map['responseStyle'] as String? ?? 'Concise',
         autoTaskDetection: map['autoTaskDetection'] as bool? ?? true,

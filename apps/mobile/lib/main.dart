@@ -220,6 +220,11 @@ class _MindoraAppState extends ConsumerState<MindoraApp> {
           ref.read(tasksProvider.notifier).setTasks(parsedTasks);
         }
       }
+
+      final remoteEntitlements = await ApiClient.instance.getEntitlements();
+      if (remoteEntitlements.isNotEmpty && mounted) {
+        ref.read(userProfileProvider.notifier).syncFromEntitlements(remoteEntitlements);
+      }
     } catch (_) {}
   }
 
@@ -237,6 +242,7 @@ class _MindoraAppState extends ConsumerState<MindoraApp> {
           ? AuthScreen(
               onAuthSuccess: () {
                 ref.read(isAuthenticatedProvider.notifier).state = true;
+                _syncWithBackend();
               },
             )
           : Builder(

@@ -5,13 +5,17 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { BillingService } from '../billing/billing.service';
 import OpenAI from 'openai';
 
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly billingService: BillingService,
+  ) {}
 
   // ==========================================
   // AUDIT LOG HELPER
@@ -402,31 +406,33 @@ export class AdminService {
     const target = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!target) throw new NotFoundException('User not found');
 
-    const now = new Date();
-    const updateData: any = {
-      plan,
-      subscriptionTier: plan === 'PRO' ? 'PRO' : 'FREE',
-    };
-
-    if (plan === 'PRO') {
-      updateData.subscriptionStartedAt = now;
-      updateData.subscriptionExpiresAt = durationDays
-        ? new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000)
-        : null;
+    if (plan === 'FREE') {
+      await this.billingService.downgradeToFree(
+        userId,
+        'ADMIN',
+        `Overridden to Free by admin ${admin.email}`,
+      );
+    } else if (plan === 'PRO') {
+      await this.billingService.activateSubscription({
+        userId,
+        plan: 'PRO',
+        provider: 'ADMIN',
+        durationDays: durationDays || 30,
+        source: 'ADMIN',
+        metadata: { adminEmail: admin.email, durationDays: durationDays || 30 },
+      });
     } else if (plan === 'TRIAL') {
-      const trialDays = durationDays || 7;
-      updateData.trialStartedAt = now;
-      updateData.trialEndsAt = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
-      updateData.subscriptionExpiresAt = null;
-    } else {
-      updateData.subscriptionExpiresAt = null;
-      updateData.trialEndsAt = null;
+      await this.billingService.activateSubscription({
+        userId,
+        plan: 'TRIAL',
+        provider: 'ADMIN',
+        durationDays: durationDays || 7,
+        source: 'ADMIN',
+        metadata: { adminEmail: admin.email, trialDays: durationDays || 7 },
+      });
     }
 
-    const updated = await this.prisma.user.update({
-      where: { id: userId },
-      data: updateData,
-    });
+    const updated = await this.prisma.user.findUnique({ where: { id: userId } });
 
     await this.logAdminAction({
       adminId: admin.id,

@@ -4,7 +4,9 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 
 export interface PlanLimits {
@@ -42,10 +44,12 @@ export interface EntitlementsResponse {
     daysRemaining: number;
   };
   subscription: {
+    id?: string | null;
     startedAt: Date | null;
     expiresAt: Date | null;
     provider: string | null;
     cancelledAt: Date | null;
+    autoRenewing?: boolean;
   };
   limits: PlanLimits;
   usage: PlanUsage;
@@ -95,7 +99,36 @@ export class BillingService {
     },
   };
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  /**
+   * Structured server-side logging for subscription lifecycle transitions.
+   * Format: USER: ... | OLD PLAN: ... | NEW PLAN: ... | EVENT: ...
+   */
+  public logSubscriptionTransition(params: {
+    userId: string;
+    oldPlan: string;
+    newPlan: string;
+    event: string;
+    paymentRef?: string;
+    subscriptionId?: string;
+    source:
+      | 'WEBHOOK'
+      | 'PAYMENT_VERIFICATION'
+      | 'ADMIN'
+      | 'MANUAL_UPGRADE'
+      | 'SYSTEM_RECONCILIATION'
+      | 'USER_CANCELLATION';
+    metadata?: any;
+  }) {
+    const timestamp = new Date().toISOString();
+    this.logger.log(
+      `[SUBSCRIPTION_TRANSITION] USER: ${params.userId} | OLD PLAN: ${params.oldPlan} | NEW PLAN: ${params.newPlan} | EVENT: ${params.event} | PAYMENT REF: ${params.paymentRef || 'N/A'} | SUBSCRIPTION ID: ${params.subscriptionId || 'N/A'} | SOURCE: ${params.source} | TIMESTAMP: ${timestamp}`,
+    );
+  }
 
   /**
    * Retrieves dynamic plan limits configured by Admin in SystemSetting
@@ -209,47 +242,51 @@ export class BillingService {
     }
 
     const now = new Date();
-    let effectivePlan: 'FREE' | 'TRIAL' | 'PRO' | 'EXPIRED' | 'CANCELLED' =
-      (user.plan as any) || 'FREE';
-    let subscriptionStatus: 'FREE' | 'TRIALING' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED' =
-      'FREE';
 
-    // 1. Evaluate Trial Expiration
+    // 1. Check for authoritative active subscription in Subscription table
+    let activeSub: any = null;
+    try {
+      activeSub = await (this.prisma as any).subscription.findFirst({
+        where: { userId, status: 'ACTIVE' },
+        orderBy: { startedAt: 'desc' },
+      });
+    } catch {}
+
+    let effectivePlan: 'FREE' | 'TRIAL' | 'PRO' | 'EXPIRED' | 'CANCELLED' = 'FREE';
+    let subscriptionStatus: 'FREE' | 'TRIALING' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED' = 'FREE';
     let trialActive = false;
     let trialDaysRemaining = 0;
-    if (effectivePlan === 'TRIAL') {
-      if (user.trialEndsAt && user.trialEndsAt.getTime() <= now.getTime()) {
-        effectivePlan = 'EXPIRED';
-        subscriptionStatus = 'EXPIRED';
-        await this.prisma.user
+    let subStartedAt = user.subscriptionStartedAt;
+    let subExpiresAt = user.subscriptionExpiresAt;
+    let subCancelledAt = user.cancelledAt;
+    let activeProvider = user.stripeCustomerId
+      ? 'Stripe'
+      : user.revenueCatAppUserId
+      ? 'RevenueCat'
+      : null;
+    let activeSubId: string | null = null;
+    let autoRenewing = true;
+
+    if (activeSub) {
+      activeSubId = activeSub.id;
+      activeProvider = activeSub.provider;
+      subStartedAt = activeSub.startedAt;
+      subExpiresAt = activeSub.expiresAt;
+      subCancelledAt = activeSub.cancelledAt;
+      autoRenewing = activeSub.autoRenewing;
+
+      // Check if this active subscription has reached its expiration date
+      if (activeSub.expiresAt && activeSub.expiresAt.getTime() <= now.getTime()) {
+        await (this.prisma as any).subscription
           .update({
-            where: { id: user.id },
-            data: { plan: 'EXPIRED' },
+            where: { id: activeSub.id },
+            data: { status: 'EXPIRED' },
           })
           .catch(() => {});
-      } else {
-        trialActive = true;
-        subscriptionStatus = 'TRIALING';
-        if (user.trialEndsAt) {
-          trialDaysRemaining = Math.max(
-            0,
-            Math.ceil(
-              (user.trialEndsAt.getTime() - now.getTime()) /
-                (1000 * 60 * 60 * 24),
-            ),
-          );
-        }
-      }
-    } else if (
-      effectivePlan === 'PRO' ||
-      user.subscriptionTier === 'PRO'
-    ) {
-      if (
-        user.subscriptionExpiresAt &&
-        user.subscriptionExpiresAt.getTime() <= now.getTime()
-      ) {
+
         effectivePlan = 'EXPIRED';
         subscriptionStatus = 'EXPIRED';
+
         await this.prisma.user
           .update({
             where: { id: user.id },
@@ -257,15 +294,81 @@ export class BillingService {
           })
           .catch(() => {});
       } else {
-        effectivePlan = 'PRO';
-        subscriptionStatus = 'ACTIVE';
+        effectivePlan = activeSub.plan === 'TRIAL' ? 'TRIAL' : 'PRO';
+        subscriptionStatus = activeSub.plan === 'TRIAL' ? 'TRIALING' : 'ACTIVE';
+
+        // Keep User table in sync with authoritative active subscription
+        if (
+          user.plan !== effectivePlan ||
+          user.subscriptionTier !== (effectivePlan === 'PRO' ? 'PRO' : 'FREE') ||
+          user.cancelledAt !== null
+        ) {
+          await this.prisma.user
+            .update({
+              where: { id: user.id },
+              data: {
+                plan: effectivePlan,
+                subscriptionTier: effectivePlan === 'PRO' ? 'PRO' : 'FREE',
+                subscriptionStartedAt: activeSub.startedAt,
+                subscriptionExpiresAt: activeSub.expiresAt,
+                cancelledAt: activeSub.cancelledAt,
+              },
+            })
+            .catch(() => {});
+        }
       }
-    } else if (user.cancelledAt) {
-      effectivePlan = 'CANCELLED';
-      subscriptionStatus = 'CANCELLED';
     } else {
-      effectivePlan = 'FREE';
-      subscriptionStatus = 'FREE';
+      // No active Subscription table record: resolve directly from User table
+      const userPlan = (user.plan as any) || 'FREE';
+
+      if (userPlan === 'TRIAL') {
+        if (user.trialEndsAt && user.trialEndsAt.getTime() <= now.getTime()) {
+          effectivePlan = 'EXPIRED';
+          subscriptionStatus = 'EXPIRED';
+          await this.prisma.user
+            .update({
+              where: { id: user.id },
+              data: { plan: 'EXPIRED', subscriptionTier: 'FREE' },
+            })
+            .catch(() => {});
+        } else {
+          effectivePlan = 'TRIAL';
+          subscriptionStatus = 'TRIALING';
+          trialActive = true;
+          if (user.trialEndsAt) {
+            trialDaysRemaining = Math.max(
+              0,
+              Math.ceil(
+                (user.trialEndsAt.getTime() - now.getTime()) /
+                  (1000 * 60 * 60 * 24),
+              ),
+            );
+          }
+        }
+      } else if (userPlan === 'PRO' || user.subscriptionTier === 'PRO') {
+        if (
+          user.subscriptionExpiresAt &&
+          user.subscriptionExpiresAt.getTime() <= now.getTime()
+        ) {
+          effectivePlan = 'EXPIRED';
+          subscriptionStatus = 'EXPIRED';
+          await this.prisma.user
+            .update({
+              where: { id: user.id },
+              data: { plan: 'EXPIRED', subscriptionTier: 'FREE' },
+            })
+            .catch(() => {});
+        } else {
+          effectivePlan = 'PRO';
+          subscriptionStatus = 'ACTIVE';
+        }
+      } else if (userPlan === 'CANCELLED') {
+        effectivePlan = 'CANCELLED';
+        subscriptionStatus = 'CANCELLED';
+      } else {
+        effectivePlan = 'FREE';
+        subscriptionStatus = 'FREE';
+      }
     }
 
     // 2. Resolve Dynamic Plan Limits
@@ -359,14 +462,12 @@ export class BillingService {
         daysRemaining: trialDaysRemaining,
       },
       subscription: {
-        startedAt: user.subscriptionStartedAt,
-        expiresAt: user.subscriptionExpiresAt,
-        provider: user.stripeCustomerId
-          ? 'Stripe'
-          : user.revenueCatAppUserId
-          ? 'RevenueCat'
-          : null,
-        cancelledAt: user.cancelledAt,
+        id: activeSubId,
+        startedAt: subStartedAt,
+        expiresAt: subExpiresAt,
+        provider: activeProvider,
+        cancelledAt: subCancelledAt,
+        autoRenewing,
       },
       limits,
       usage,
@@ -618,55 +719,256 @@ export class BillingService {
   }
 
   /**
-   * RevenueCat Webhook Handler
+   * Authoritatively activates or renews a Pro/Trial subscription.
+   * Closes prior active subscriptions, generates a new Subscription record,
+   * clears any stale cancelledAt flags, updates user table, and records audit transition.
    */
-  async handleRevenueCatWebhook(payload: any) {
+  async activateSubscription(params: {
+    userId: string;
+    plan: 'PRO' | 'TRIAL';
+    provider: 'REVENUECAT' | 'STRIPE' | 'IN_APP' | 'ADMIN' | 'PLAY_STORE' | 'APP_STORE';
+    providerSubscriptionId?: string;
+    paymentRef?: string;
+    durationDays?: number;
+    expiresAt?: Date | null;
+    source: 'WEBHOOK' | 'PAYMENT_VERIFICATION' | 'ADMIN' | 'MANUAL_UPGRADE' | 'SYSTEM_RECONCILIATION';
+    metadata?: any;
+  }): Promise<EntitlementsResponse> {
+    const user = await this.prisma.user.findUnique({ where: { id: params.userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const now = new Date();
+    const calculatedExpiresAt =
+      params.expiresAt !== undefined
+        ? params.expiresAt
+        : params.durationDays
+        ? new Date(now.getTime() + params.durationDays * 24 * 60 * 60 * 1000)
+        : null;
+
+    // 1. Mark existing active subscriptions as SUPERSEDED / CANCELLED so there is only 1 active subscription
+    await (this.prisma as any).subscription
+      .updateMany({
+        where: { userId: params.userId, status: 'ACTIVE' },
+        data: { status: 'CANCELLED', cancelledAt: now },
+      })
+      .catch(() => {});
+
+    // 2. Create authoritative Subscription record
+    let newSubscription: any = null;
+    try {
+      newSubscription = await (this.prisma as any).subscription.create({
+        data: {
+          userId: params.userId,
+          provider: params.provider,
+          providerSubscriptionId: params.providerSubscriptionId || params.paymentRef || null,
+          plan: params.plan,
+          status: 'ACTIVE',
+          startedAt: now,
+          expiresAt: calculatedExpiresAt,
+          cancelledAt: null,
+          autoRenewing: true,
+          metadata: params.metadata || {},
+        },
+      });
+    } catch (e: any) {
+      this.logger.warn(`Could not create Subscription record: ${e.message}`);
+    }
+
+    // 3. Update User table authoritatively:
+    // IMPORTANT: Clear stale cancelledAt and set fresh subscriptionStartedAt & subscriptionExpiresAt!
+    await this.prisma.user.update({
+      where: { id: params.userId },
+      data: {
+        plan: params.plan,
+        subscriptionTier: params.plan === 'PRO' ? 'PRO' : 'FREE',
+        subscriptionStartedAt: now,
+        subscriptionExpiresAt: calculatedExpiresAt,
+        cancelledAt: null, // Clear any past cancellation flag!
+      },
+    });
+
+    // 4. Log the subscription transition with full context
+    this.logSubscriptionTransition({
+      userId: params.userId,
+      oldPlan: user.plan,
+      newPlan: params.plan,
+      event: 'ACTIVATE_SUBSCRIPTION',
+      paymentRef: params.paymentRef,
+      subscriptionId: newSubscription?.id || params.providerSubscriptionId,
+      source: params.source,
+      metadata: params.metadata,
+    });
+
+    return this.getUserEntitlements(params.userId);
+  }
+
+  /**
+   * Authoritatively downgrades a user to Free tier.
+   * Revokes active subscriptions in the Subscription table and clears expiry dates.
+   */
+  async downgradeToFree(
+    userId: string,
+    source: 'ADMIN' | 'SYSTEM_RECONCILIATION' | 'USER_CANCELLATION' | 'WEBHOOK' = 'ADMIN',
+    reason?: string,
+  ): Promise<EntitlementsResponse> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const now = new Date();
+
+    // Revoke all active subscriptions in Subscription table
+    await (this.prisma as any).subscription
+      .updateMany({
+        where: { userId, status: 'ACTIVE' },
+        data: { status: 'REVOKED', cancelledAt: now },
+      })
+      .catch(() => {});
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        plan: 'FREE',
+        subscriptionTier: 'FREE',
+        subscriptionExpiresAt: null,
+        trialEndsAt: null,
+      },
+    });
+
+    this.logSubscriptionTransition({
+      userId,
+      oldPlan: user.plan,
+      newPlan: 'FREE',
+      event: 'DOWNGRADE_TO_FREE',
+      source,
+      metadata: { reason },
+    });
+
+    return this.getUserEntitlements(userId);
+  }
+
+  /**
+   * RevenueCat Webhook Handler with idempotency & out-of-order event protection.
+   */
+  async handleRevenueCatWebhook(payload: any, authHeader?: string) {
+    const secret = this.configService.get<string>('REVENUECAT_WEBHOOK_AUTH_TOKEN');
+    if (secret && authHeader && authHeader !== secret) {
+      this.logger.warn('Unauthorized RevenueCat webhook attempt');
+      throw new UnauthorizedException('Invalid webhook authorization token');
+    }
+
     const event = payload?.event;
     if (!event) return { received: true };
 
+    const eventId = event.id;
     const appUserId = event.app_user_id;
     const type = event.type;
+    const eventTimeMs = event.event_timestamp_ms ? Number(event.event_timestamp_ms) : Date.now();
 
-    this.logger.log(`RevenueCat event: ${type} for user: ${appUserId}`);
+    // 1. Idempotency Check: if event was already processed, skip duplicate
+    if (eventId) {
+      try {
+        const existingEvent = await (this.prisma as any).webhookEvent.findUnique({
+          where: { eventId },
+        });
+        if (existingEvent) {
+          this.logger.log(`Skipping duplicate RevenueCat webhook event: ${eventId}`);
+          return { received: true, duplicate: true };
+        }
 
-    try {
-      if (type === 'INITIAL_PURCHASE' || type === 'RENEWAL') {
-        await this.prisma.user.updateMany({
-          where: {
-            OR: [{ id: appUserId }, { revenueCatAppUserId: appUserId }],
-          },
+        await (this.prisma as any).webhookEvent.create({
           data: {
-            plan: 'PRO',
-            subscriptionTier: 'PRO',
-            subscriptionStartedAt: new Date(),
-            subscriptionExpiresAt: event.expiration_at_ms
-              ? new Date(event.expiration_at_ms)
-              : null,
-            cancelledAt: null,
+            eventId,
+            provider: 'REVENUECAT',
+            eventType: type,
+            userId: appUserId,
+            payload: event,
           },
         });
-      } else if (type === 'EXPIRATION') {
-        await this.prisma.user.updateMany({
-          where: {
-            OR: [{ id: appUserId }, { revenueCatAppUserId: appUserId }],
-          },
-          data: {
-            plan: 'EXPIRED',
-            subscriptionTier: 'FREE',
-          },
-        });
-      } else if (type === 'CANCELLATION') {
-        await this.prisma.user.updateMany({
-          where: {
-            OR: [{ id: appUserId }, { revenueCatAppUserId: appUserId }],
-          },
-          data: {
-            cancelledAt: new Date(),
-          },
-        });
+      } catch (err: any) {
+        // Ignore duplicate key collision
       }
-    } catch (err: any) {
-      this.logger.error(`Error updating subscription from webhook: ${err.message}`);
+    }
+
+    // 2. Locate User by id, email, or revenueCatAppUserId
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { id: appUserId },
+          { revenueCatAppUserId: appUserId },
+          { email: appUserId },
+        ],
+      },
+    });
+
+    if (!user) {
+      this.logger.warn(`RevenueCat webhook user not found: ${appUserId}`);
+      return { received: true, userFound: false };
+    }
+
+    // 3. Out-of-order event check:
+    // If user's current subscription was started AFTER this webhook event's timestamp,
+    // and this event is a downgrade (EXPIRATION or CANCELLATION), ignore it!
+    if (user.subscriptionStartedAt && user.subscriptionStartedAt.getTime() > eventTimeMs) {
+      if (type === 'EXPIRATION' || type === 'CANCELLATION') {
+        this.logger.warn(
+          `Ignoring out-of-order RevenueCat event ${type} (${new Date(eventTimeMs).toISOString()}) because user has newer subscription started at ${user.subscriptionStartedAt.toISOString()}`,
+        );
+        return { received: true, ignored: 'out_of_order' };
+      }
+    }
+
+    const expiresAt = event.expiration_at_ms ? new Date(event.expiration_at_ms) : null;
+    const originalTransactionId = event.original_transaction_id || event.transaction_id || eventId;
+
+    if (
+      type === 'INITIAL_PURCHASE' ||
+      type === 'RENEWAL' ||
+      type === 'PRODUCT_CHANGE' ||
+      type === 'UNCANCELLATION' ||
+      type === 'NON_RENEWING_PURCHASE' ||
+      type === 'SUBSCRIPTION_EXTENDED'
+    ) {
+      await this.activateSubscription({
+        userId: user.id,
+        plan: 'PRO',
+        provider: 'REVENUECAT',
+        providerSubscriptionId: originalTransactionId,
+        paymentRef: event.transaction_id,
+        expiresAt,
+        source: 'WEBHOOK',
+        metadata: {
+          productId: event.product_id,
+          currency: event.currency,
+          price: event.price_in_purchased_currency,
+        },
+      });
+    } else if (type === 'CANCELLATION') {
+      // In RevenueCat, CANCELLATION means auto-renew is off, but Pro remains until expiresAt!
+      await (this.prisma as any).subscription
+        .updateMany({
+          where: { userId: user.id, status: 'ACTIVE' },
+          data: { autoRenewing: false, cancelledAt: new Date() },
+        })
+        .catch(() => {});
+
+      await this.prisma.user
+        .update({
+          where: { id: user.id },
+          data: { cancelledAt: new Date() },
+        })
+        .catch(() => {});
+
+      this.logSubscriptionTransition({
+        userId: user.id,
+        oldPlan: user.plan,
+        newPlan: user.plan,
+        event: 'REVENUECAT_CANCELLATION',
+        paymentRef: originalTransactionId,
+        source: 'WEBHOOK',
+        metadata: { reason: event.cancel_reason },
+      });
+    } else if (type === 'EXPIRATION') {
+      await this.downgradeToFree(user.id, 'WEBHOOK', 'Subscription expired in RevenueCat');
     }
 
     return { success: true };
@@ -685,13 +987,15 @@ export class BillingService {
   }
 
   async setTier(userId: string, tier: 'FREE' | 'PRO') {
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        plan: tier,
-        subscriptionTier: tier,
-        subscriptionStartedAt: tier === 'PRO' ? new Date() : null,
-      },
-    });
+    if (tier === 'PRO') {
+      return this.activateSubscription({
+        userId,
+        plan: 'PRO',
+        provider: 'IN_APP',
+        source: 'MANUAL_UPGRADE',
+      });
+    } else {
+      return this.downgradeToFree(userId, 'ADMIN');
+    }
   }
 }
