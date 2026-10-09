@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -446,12 +448,26 @@ class ApiClient {
     String? audioUrl,
     List<dynamic>? speakers,
     List<dynamic>? segments,
+    String? id,
+    String? summary,
+    List<dynamic>? decisions,
+    List<dynamic>? actionItems,
+    List<dynamic>? keyPoints,
+    List<dynamic>? openQuestions,
+    List<dynamic>? participants,
   }) async {
     try {
       final response = await _dio.post('/meetings', data: {
         'title': title,
         'transcript': transcript,
         'durationSec': durationSec,
+        if (id != null) 'id': id,
+        if (summary != null) 'summary': summary,
+        if (decisions != null) 'decisions': decisions,
+        if (actionItems != null) 'actionItems': actionItems,
+        if (keyPoints != null) 'keyPoints': keyPoints,
+        if (openQuestions != null) 'openQuestions': openQuestions,
+        if (participants != null) 'participants': participants,
         if (audioUrl != null) 'audioUrl': audioUrl,
         if (speakers != null) 'speakers': speakers,
         if (segments != null) 'segments': segments,
@@ -572,6 +588,94 @@ class ApiClient {
 
     // Fallback to offline intelligent assistant with natural action detection
     return _fallbackChatWithAssistant(message, conversationId, localNotes ?? []);
+  }
+
+  /// Realtime Streaming AI Assistant with honest stage indicators, reasoning tokens, and content chunks
+  Future<void> chatWithAssistantStream({
+    required String message,
+    String? conversationId,
+    Map<String, dynamic>? metadata,
+    CancelToken? cancelToken,
+    required void Function(String stage, String message) onStage,
+    required void Function(String reasoning) onReasoning,
+    required void Function(String chunk) onChunk,
+    required void Function(Map<String, dynamic> result) onDone,
+    required void Function(dynamic error) onError,
+  }) async {
+    try {
+      final response = await _dio.post<ResponseBody>(
+        '/ai/chat/stream',
+        data: {
+          'message': message,
+          if (conversationId != null) 'conversationId': conversationId,
+          if (metadata != null) 'metadata': metadata,
+        },
+        options: Options(
+          responseType: ResponseType.stream,
+          headers: {
+            'Accept': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+          },
+        ),
+        cancelToken: cancelToken,
+      );
+
+      final stream = response.data?.stream;
+      if (stream == null) {
+        throw Exception('No response stream received from server');
+      }
+
+      String currentEvent = 'message';
+      final buffer = StringBuffer();
+
+      await for (final line in stream.cast<List<int>>().transform(utf8.decoder).transform(const LineSplitter())) {
+        if (line.isEmpty) {
+          if (buffer.isNotEmpty) {
+            final dataStr = buffer.toString().trim();
+            buffer.clear();
+            if (dataStr.isNotEmpty) {
+              try {
+                final decoded = jsonDecode(dataStr);
+                if (currentEvent == 'stage' && decoded is Map) {
+                  final stage = decoded['stage']?.toString() ?? 'processing';
+                  final msg = decoded['message']?.toString() ?? '';
+                  onStage(stage, msg);
+                } else if (currentEvent == 'reasoning' && decoded is Map) {
+                  final reasoning = decoded['reasoning']?.toString() ?? '';
+                  onReasoning(reasoning);
+                } else if (currentEvent == 'chunk' && decoded is Map) {
+                  final chunk = decoded['chunk']?.toString() ?? '';
+                  onChunk(chunk);
+                } else if (currentEvent == 'done' && decoded is Map) {
+                  onDone(Map<String, dynamic>.from(decoded));
+                } else if (currentEvent == 'error' && decoded is Map) {
+                  onError(decoded['message'] ?? 'Streaming error');
+                }
+              } catch (_) {
+                if (currentEvent == 'chunk') {
+                  onChunk(dataStr);
+                }
+              }
+            }
+          }
+          currentEvent = 'message';
+          continue;
+        }
+
+        if (line.startsWith('event:')) {
+          currentEvent = line.substring(6).trim();
+        } else if (line.startsWith('data:')) {
+          final dataPart = line.substring(5).trim();
+          if (buffer.isNotEmpty) buffer.write('\n');
+          buffer.write(dataPart);
+        }
+      }
+    } catch (e) {
+      if (e is DioException && CancelToken.isCancel(e)) {
+        return; // Canceled by user intentionally
+      }
+      onError(e);
+    }
   }
 
   /// Get saved chat conversations

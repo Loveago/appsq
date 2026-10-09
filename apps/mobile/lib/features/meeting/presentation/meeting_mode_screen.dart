@@ -929,7 +929,7 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
-                      onPressed: () {
+                      onPressed: () async {
                         try {
                           final container = ProviderScope.containerOf(context, listen: false);
                           final taskTitles = actionItems.map((e) => e['task'] ?? '').where((t) => t.isNotEmpty).toList();
@@ -944,9 +944,11 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                           if (transcript != null && transcript.isNotEmpty) {
                             fullContent.writeln('\nSpeaker-Attributed Transcript:\n$transcript');
                           }
+                          final targetMeetingId = _streamClient?.meetingId ?? _meetingId;
+                          final noteTitle = 'Meeting Notes ($duration)';
                           final note = NoteModel(
-                            id: DateTime.now().millisecondsSinceEpoch.toString(),
-                            title: 'Meeting Notes ($duration)',
+                            id: targetMeetingId,
+                            title: noteTitle,
                             content: fullContent.toString(),
                             snippet: summary.isNotEmpty ? (summary.length > 80 ? '${summary.substring(0, 80)}...' : summary) : 'Executive Meeting Session',
                             date: 'Just now',
@@ -960,18 +962,37 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                           );
                           container.read(notesProvider.notifier).addNote(note);
 
-                          ApiClient.instance.createMeeting(
-                            title: 'Meeting Notes ($duration)',
+                          // Authoritatively persist meeting with full distillation data to backend
+                          await ApiClient.instance.createMeeting(
+                            id: targetMeetingId,
+                            title: noteTitle,
                             transcript: transcript ?? '',
+                            summary: summary,
+                            decisions: decisions,
+                            actionItems: actionItems,
+                            keyPoints: keyPoints,
+                            openQuestions: openQuestions,
+                            participants: speakers.map((s) => s.displayName).toList(),
                             durationSec: _secondsElapsed,
                             audioUrl: audioPath,
                             speakers: speakers.map((s) => s.toJson()).toList(),
                             segments: segments.map((s) => s.toJson()).toList(),
                           ).catchError((_) => null);
+
+                          // Also persist note to backend for central personal context search
+                          await ApiClient.instance.createNote(
+                            id: targetMeetingId,
+                            title: noteTitle,
+                            content: fullContent.toString(),
+                          ).catchError((_) => null);
                         } catch (_) {}
 
-                        Navigator.pop(modalContext);
-                        Navigator.maybePop(context);
+                        if (modalContext.mounted) {
+                          Navigator.pop(modalContext);
+                        }
+                        if (context.mounted) {
+                          Navigator.maybePop(context);
+                        }
                       },
                       child: const Text('Sync with Neural Brain', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                     ),

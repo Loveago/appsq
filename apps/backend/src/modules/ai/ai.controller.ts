@@ -9,7 +9,9 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AiService } from './ai.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -150,6 +152,40 @@ export class AiController {
   ) {
     const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
     return this.aiService.chatWithTools(effectiveUserId, message, conversationId, metadata);
+  }
+
+  @UseGuards(OptionalJwtAuthGuard)
+  @Post('chat/stream')
+  async chatWithAssistantStream(
+    @Res() res: Response,
+    @Body('message') message: string,
+    @Body('conversationId') conversationId?: string,
+    @Body('metadata') metadata?: Record<string, any>,
+    @CurrentUser('id') userId?: string,
+  ) {
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    if (typeof (res as any).flushHeaders === 'function') {
+      (res as any).flushHeaders();
+    }
+
+    try {
+      await this.aiService.chatWithToolsStream(
+        effectiveUserId,
+        message,
+        conversationId,
+        metadata,
+        (event: string, data: any) => {
+          res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        },
+      );
+    } catch (err: any) {
+      res.write(`event: error\ndata: ${JSON.stringify({ message: err?.message || 'Chat stream failed' })}\n\n`);
+    } finally {
+      res.end();
+    }
   }
 
   @UseGuards(OptionalJwtAuthGuard)

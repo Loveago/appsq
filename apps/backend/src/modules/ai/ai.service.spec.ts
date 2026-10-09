@@ -216,5 +216,65 @@ describe('AiService', () => {
     expect(result.error).toBe('TRANSCRIPTION_LIMIT_REACHED');
     expect(result.transcript).toBe('');
   });
+
+  it('should retrieve saved meetings with decisions and action items in personal context', async () => {
+    (mockPrismaService as any).meeting = {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id: 'mtg-q3-sync',
+          title: 'Q3 Product & Payments Sync',
+          summary: 'Discussed launching Stripe subscriptions and new mobile UI.',
+          transcript: 'Emmanuel: We will target next Monday for launch. Sarah: Payment integration will be ready Friday.',
+          decisions: ['Target Monday for launch', 'Deploy backend to production'],
+          actionItems: [{ assignee: 'Sarah', task: 'Complete payment integration', deadline: 'Friday' }],
+          speakers: [{ key: 'A', displayName: 'Emmanuel' }, { key: 'B', displayName: 'Sarah' }],
+          segments: [
+            { speakerName: 'Emmanuel', text: 'We will target next Monday for launch.' },
+            { speakerName: 'Sarah', text: 'Payment integration will be ready Friday.' },
+          ],
+          createdAt: new Date(),
+        },
+      ]),
+    };
+
+    const context = await service.retrieveUserPersonalContext('user-1', 'What did we decide about the launch in our last meeting?');
+    expect(context.meetings.length).toBeGreaterThan(0);
+    expect(context.meetings[0].id).toBe('mtg-q3-sync');
+    expect(context.contextPrompt).toContain('<<<SAVED_MEETINGS>>>');
+    expect(context.contextPrompt).toContain('Target Monday for launch');
+    expect(context.contextPrompt).toContain('Sarah: "Payment integration will be ready Friday."');
+    expect(context.sources.some((s) => s.id === 'mtg-q3-sync' && s.tag === 'Meeting')).toBe(true);
+  });
+
+  it('should stream progressive chat stages and response via chatWithToolsStream', async () => {
+    const events: Array<{ event: string; data: any }> = [];
+    (mockPrismaService as any).aiConversation.create = jest.fn().mockResolvedValue({
+      id: 'conv-stream-1',
+      title: 'Streaming Chat',
+      messages: [],
+    });
+    (mockPrismaService as any).aiMessage.create = jest.fn().mockResolvedValue({});
+    (mockPrismaService as any).aiConversation.update = jest.fn().mockResolvedValue({});
+
+    await service.chatWithToolsStream(
+      'user-1',
+      'What were the action items from my meeting with Sarah?',
+      undefined,
+      undefined,
+      (event, data) => {
+        events.push({ event, data });
+      },
+    );
+
+    const stages = events.filter((e) => e.event === 'status').map((e) => e.data.stage);
+    expect(stages).toContain('preparing');
+    expect(stages).toContain('retrieving');
+    expect(stages).toContain('thinking');
+    expect(stages).toContain('completed');
+
+    const doneEvent = events.find((e) => e.event === 'done');
+    expect(doneEvent).toBeDefined();
+    expect(doneEvent?.data.answer).toBeDefined();
+  });
 });
 

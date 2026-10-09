@@ -33,10 +33,17 @@ export class MeetingsService {
   async create(
     userId: string,
     data: {
+      id?: string;
       title?: string;
       durationSec?: number;
       transcript: string;
       audioUrl?: string;
+      summary?: string;
+      decisions?: any[];
+      actionItems?: any[];
+      keyPoints?: any[];
+      openQuestions?: any[];
+      participants?: any[];
       speakers?: any[];
       segments?: any[];
     },
@@ -61,48 +68,68 @@ export class MeetingsService {
       { title: data.title },
     );
 
-    // 3. AI Meeting distillation with structured multi-speaker context
-    const analysis = await this.aiService.distillMeeting(data.transcript, userId);
+    // 3. AI Meeting distillation with structured multi-speaker context (skip if already provided)
+    let analysis: any = null;
+    if (data.summary && data.summary.trim().length > 0) {
+      analysis = {
+        summary: data.summary,
+        decisions: data.decisions || [],
+        actionItems: data.actionItems || [],
+        keyPoints: data.keyPoints || [],
+        openQuestions: data.openQuestions || [],
+        participants: data.participants || [],
+      };
+    } else {
+      try {
+        analysis = await this.aiService.distillMeeting(data.transcript, userId);
+      } catch (distillErr) {
+        console.warn('AI distillMeeting failed during meeting creation:', distillErr);
+        analysis = {
+          summary: data.transcript.slice(0, 200),
+          decisions: [],
+          actionItems: [],
+          keyPoints: [],
+          openQuestions: [],
+          participants: [],
+        };
+      }
+    }
 
-    try {
-      return await this.prisma.meeting.create({
-        data: {
+    const meetingPayload = {
+      title: data.title || 'Recorded Meeting',
+      durationSec: duration,
+      audioUrl: data.audioUrl,
+      status: 'COMPLETED' as const,
+      transcript: data.transcript,
+      summary: analysis.summary || data.summary || 'Meeting discussion recorded.',
+      decisions: (data.decisions || analysis.decisions || []) as any,
+      actionItems: (data.actionItems || analysis.actionItems || []) as any,
+      keyPoints: (data.keyPoints || analysis.keyPoints || []) as any,
+      openQuestions: (data.openQuestions || analysis.openQuestions || []) as any,
+      participants: (data.participants || analysis.participants || []) as any,
+      speakers: (data.speakers || []) as any,
+      segments: (data.segments || []) as any,
+      deletedAt: null,
+    };
+
+    if (data.id) {
+      return await this.prisma.meeting.upsert({
+        where: { id: data.id },
+        update: meetingPayload,
+        create: {
+          id: data.id,
           userId,
-          title: data.title || 'Recorded Meeting',
-          durationSec: duration,
-          audioUrl: data.audioUrl,
-          status: 'COMPLETED',
-          transcript: data.transcript,
-          summary: analysis.summary,
-          decisions: analysis.decisions as any,
-          actionItems: analysis.actionItems as any,
-          keyPoints: (analysis.keyPoints || []) as any,
-          openQuestions: (analysis.openQuestions || []) as any,
-          participants: (analysis.participants || []) as any,
-          speakers: (data.speakers || []) as any,
-          segments: (data.segments || []) as any,
+          ...meetingPayload,
         },
       });
-    } catch {
-      return {
-        id: 'meeting-' + Date.now(),
-        userId,
-        title: data.title || 'Recorded Meeting',
-        durationSec: duration,
-        audioUrl: data.audioUrl,
-        status: 'COMPLETED',
-        transcript: data.transcript,
-        summary: analysis.summary,
-        decisions: analysis.decisions,
-        actionItems: analysis.actionItems,
-        keyPoints: analysis.keyPoints || [],
-        openQuestions: analysis.openQuestions || [],
-        participants: analysis.participants || [],
-        speakers: data.speakers || [],
-        segments: data.segments || [],
-        createdAt: new Date(),
-      };
     }
+
+    return await this.prisma.meeting.create({
+      data: {
+        userId,
+        ...meetingPayload,
+      },
+    });
   }
 
   async updateSpeakers(

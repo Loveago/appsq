@@ -1,10 +1,14 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/fade_slide_in.dart';
 import '../../../../core/providers/app_state_providers.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/network/transcription_stream_client.dart';
 import '../../../../core/storage/local_storage_service.dart';
 import '../../../../core/services/audio_service.dart';
 import '../../../../core/models/note_model.dart';
@@ -53,6 +57,7 @@ class _ChatMessage {
   final List<({String title, String tag, String? noteId})>? sources;
   final List<Map<String, dynamic>>? toolCalls;
   final String? createdNoteId;
+  final String? reasoning;
 
   _ChatMessage({
     required this.text,
@@ -64,6 +69,7 @@ class _ChatMessage {
     this.sources,
     this.toolCalls,
     this.createdNoteId,
+    this.reasoning,
   });
 }
 
@@ -87,11 +93,25 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
   final ScrollController _scrollController = ScrollController();
   bool _isSynthesizing = false;
   bool _isRecordingVoice = false;
-  bool _isTranscribingAudio = false;
   bool _isLoadingConversation = false;
   String? _transcriptionError;
-  String? _lastRecordedAudioPath;
-  int? _lastRecordedDurationSec;
+
+  // Live streaming transcription state
+  TranscriptionStreamClient? _streamClient;
+  StreamSubscription<String>? _partialSub;
+  StreamSubscription<String>? _finalSub;
+  StreamSubscription<String>? _limitSub;
+  Timer? _recordingTimer;
+  int _recordingElapsedSeconds = 0;
+  String _liveTranscript = '';
+
+  // Streaming AI response & thinking stage state
+  CancelToken? _currentCancelToken;
+  String _currentThinkingStage = 'preparing';
+  String _currentThinkingMessage = 'Preparing request...';
+  String _streamingReasoning = '';
+  String _streamingAnswer = '';
+  bool _isReasoningExpanded = false;
 
   final List<({String category, String prompt, Color color})> _suggestedPrompts = const [
     (category: 'SUMMARY', prompt: 'Summarize my recent thoughts', color: AppColors.primary),
@@ -400,110 +420,226 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
   void dispose() {
     _textController.dispose();
     _scrollController.dispose();
+    _recordingTimer?.cancel();
+    _partialSub?.cancel();
+    _finalSub?.cancel();
+    _limitSub?.cancel();
+    _streamClient?.dispose();
     if (_isRecordingVoice) {
       AudioRecordingService.instance.stopRecording();
     }
+    _currentCancelToken?.cancel();
     super.dispose();
   }
 
-  Future<void> _toggleVoiceRecording() async {
-    if (_isRecordingVoice) {
-      setState(() {
-        _isRecordingVoice = false;
-        _isTranscribingAudio = true;
-        _transcriptionError = null;
-      });
+  Future<void> _startVoiceRecording() async {
+    setState(() {
+      _transcriptionError = null;
+      _liveTranscript = '';
+      _recordingElapsedSeconds = 0;
+    });
 
-      final RecordingResult? result = await AudioRecordingService.instance.stopRecording();
-      final audioPath = result?.filePath;
-      final durationSec = result?.duration.inSeconds ?? 0;
-      _lastRecordedAudioPath = audioPath;
-      _lastRecordedDurationSec = durationSec;
-
-      if (audioPath == null || audioPath.isEmpty) {
+    try {
+      final session = await ApiClient.instance.createTranscriptionSession();
+      final isAllowed = session['allowed'] == true;
+      if (!isAllowed) {
         if (mounted) {
           setState(() {
-            _isTranscribingAudio = false;
+            _transcriptionError = session['message']?.toString() ?? "Monthly transcription limit reached. Upgrade to Pro for elevated limits.";
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(session['message']?.toString() ?? "Monthly transcription limit reached."),
+              action: SnackBarAction(
+                label: 'Upgrade',
+                textColor: AppColors.primary,
+                onPressed: () => Navigator.pushNamed(context, '/paywall'),
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      final sessionId = session['sessionId'] as String? ?? 'sess_chat_${DateTime.now().millisecondsSinceEpoch}';
+      final streamingToken = session['token'] as String?;
+
+      _streamClient = TranscriptionStreamClient(
+        baseUrl: ApiClient.instance.currentBaseUrl,
+        streamingToken: streamingToken,
+        token: ApiClient.instance.authToken,
+        sessionId: sessionId,
+        enableSpeakerDiarization: false,
+      );
+
+      _partialSub = _streamClient!.partialTranscriptStream.listen((text) {
+        if (mounted && text.isNotEmpty) {
+          setState(() {
+            _liveTranscript = text;
+          });
+        }
+      });
+
+      _finalSub = _streamClient!.finalTurnStream.listen((text) {
+        if (mounted && text.isNotEmpty) {
+          setState(() {
+            _liveTranscript = text;
+          });
+        }
+      });
+
+      _limitSub = _streamClient!.limitReachedStream.listen((msg) {
+        if (mounted) {
+          setState(() {
+            _transcriptionError = msg;
+          });
+        }
+      });
+
+      final connected = await _streamClient!.connect();
+      if (!connected) {
+        if (mounted) {
+          setState(() {
+            _transcriptionError = 'Unable to establish streaming connection.';
           });
         }
         return;
       }
 
-      await _transcribeAndSendAudio(audioPath, durationSec);
-    } else {
-      _transcriptionError = null;
-      await AudioRecordingService.instance.startRecording();
-      if (!mounted) return;
-      setState(() {
-        _isRecordingVoice = true;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Listening... Speak to the AI and tap mic when done.'),
-          duration: Duration(milliseconds: 1500),
-        ),
+      await AudioRecordingService.instance.startStreamingRecording(
+        onAudioChunk: (chunk) {
+          _streamClient?.sendAudioChunk(chunk);
+        },
       );
+
+      _recordingTimer?.cancel();
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (mounted) {
+          setState(() {
+            _recordingElapsedSeconds++;
+          });
+        }
+      });
+
+      if (mounted) {
+        setState(() {
+          _isRecordingVoice = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _transcriptionError = 'Error starting audio recording: $e';
+        });
+      }
     }
   }
 
-  Future<void> _transcribeAndSendAudio(String audioPath, int durationSec) async {
-    setState(() {
-      _isTranscribingAudio = true;
-      _transcriptionError = null;
-    });
+  Future<void> _cancelVoiceRecording() async {
+    _recordingTimer?.cancel();
+    _partialSub?.cancel();
+    _finalSub?.cancel();
+    _limitSub?.cancel();
+    _streamClient?.dispose();
+    _streamClient = null;
 
-    final res = await ApiClient.instance.transcribeAudio(audioPath, durationSec: durationSec);
-    if (!mounted) return;
-
-    if (res['error'] == 'TRANSCRIPTION_LIMIT_REACHED') {
-      setState(() {
-        _isTranscribingAudio = false;
-        _transcriptionError = "Monthly transcription limit reached. Audio recording preserved.";
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(res['message']?.toString() ?? "Transcription limit reached. Upgrade to Pro for elevated limits."),
-          action: SnackBarAction(
-            label: 'Upgrade',
-            textColor: AppColors.primary,
-            onPressed: () {
-              Navigator.pushNamed(context, '/paywall');
-            },
-          ),
-          duration: const Duration(seconds: 4),
-        ),
-      );
-      return;
+    final result = await AudioRecordingService.instance.stopRecording();
+    if (result?.filePath != null) {
+      try {
+        final f = File(result!.filePath);
+        if (f.existsSync()) f.deleteSync();
+      } catch (_) {}
     }
 
-    if (res['error'] == 'TRANSCRIPTION_FAILED') {
+    if (mounted) {
       setState(() {
-        _isTranscribingAudio = false;
-        _transcriptionError = 'Audio transcription failed. Tap to retry.';
+        _isRecordingVoice = false;
+        _liveTranscript = '';
+        _recordingElapsedSeconds = 0;
       });
-      return;
+    }
+  }
+
+  Future<void> _stopAndEditRecording() async {
+    _recordingTimer?.cancel();
+    _partialSub?.cancel();
+    _finalSub?.cancel();
+    _limitSub?.cancel();
+    _streamClient?.dispose();
+    _streamClient = null;
+
+    await AudioRecordingService.instance.stopRecording();
+    final capturedText = _liveTranscript.trim();
+
+    if (mounted) {
+      setState(() {
+        _isRecordingVoice = false;
+        _recordingElapsedSeconds = 0;
+        if (capturedText.isNotEmpty) {
+          _textController.text = capturedText;
+          _textController.selection = TextSelection.fromPosition(
+            TextPosition(offset: capturedText.length),
+          );
+        }
+      });
+    }
+  }
+
+  Future<void> _stopAndSendRecording() async {
+    _recordingTimer?.cancel();
+    _partialSub?.cancel();
+    _finalSub?.cancel();
+    _limitSub?.cancel();
+    _streamClient?.dispose();
+    _streamClient = null;
+
+    final result = await AudioRecordingService.instance.stopRecording();
+    final audioPath = result?.filePath;
+    final durSec = result?.duration.inSeconds ?? _recordingElapsedSeconds;
+    final capturedText = _liveTranscript.trim();
+
+    if (mounted) {
+      setState(() {
+        _isRecordingVoice = false;
+        _recordingElapsedSeconds = 0;
+        _liveTranscript = '';
+      });
     }
 
-    final transcript = res['transcript'] as String? ?? '';
-    setState(() {
-      _isTranscribingAudio = false;
-    });
-
-    if (transcript.isNotEmpty) {
+    if (capturedText.isNotEmpty) {
       _sendMessage(
-        transcript,
+        capturedText,
         isAudio: true,
         audioPath: audioPath,
-        durationSec: durationSec,
+        durationSec: durSec,
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No speech detected in audio note. Please try speaking again.'),
-          duration: Duration(milliseconds: 2500),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No speech detected in audio. Please speak clearly.'),
+            duration: Duration(milliseconds: 2000),
+          ),
+        );
+      }
     }
+  }
+
+  Future<void> _toggleVoiceRecording() async {
+    if (_isRecordingVoice) {
+      await _stopAndEditRecording();
+    } else {
+      await _startVoiceRecording();
+    }
+  }
+
+  void _cancelGeneration() {
+    _currentCancelToken?.cancel('User cancelled request');
+    setState(() {
+      _isSynthesizing = false;
+      _streamingReasoning = '';
+      _streamingAnswer = '';
+    });
   }
 
   Future<void> _sendMessage(
@@ -513,8 +649,10 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
     int? durationSec,
   }) async {
     if (query.trim().isEmpty) return;
+    if (_isSynthesizing) return; // Prevent duplicate submissions
 
     final userText = query.trim();
+
     setState(() {
       _messages.add(_ChatMessage(
         text: userText,
@@ -525,41 +663,111 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
       ));
       _textController.clear();
       _isSynthesizing = true;
+      _currentThinkingStage = 'preparing';
+      _currentThinkingMessage = 'Preparing request...';
+      _streamingReasoning = '';
+      _streamingAnswer = '';
+      _isReasoningExpanded = false;
       _transcriptionError = null;
     });
 
     _scrollToBottom();
 
+    _currentCancelToken = CancelToken();
+
     final notes = ref.read(notesProvider);
-    final response = await ApiClient.instance.chatWithAssistant(
-      message: userText,
-      conversationId: _currentConversationId,
-      localNotes: notes,
-      metadata: isAudio
-          ? {
-              'isAudio': true,
-              'audioPath': audioPath,
-              'durationSec': durationSec,
-            }
-          : null,
-    );
+    final metadata = isAudio
+        ? {
+            'isAudio': true,
+            'audioPath': audioPath,
+            'durationSec': durationSec,
+          }
+        : null;
+
+    bool streamSucceeded = false;
+    Map<String, dynamic>? finalResult;
+
+    try {
+      await ApiClient.instance.chatWithAssistantStream(
+        message: userText,
+        conversationId: _currentConversationId,
+        metadata: metadata,
+        cancelToken: _currentCancelToken,
+        onStage: (stage, message) {
+          if (mounted) {
+            setState(() {
+              _currentThinkingStage = stage;
+              _currentThinkingMessage = message;
+            });
+            _scrollToBottom();
+          }
+        },
+        onReasoning: (reasoning) {
+          if (mounted) {
+            setState(() {
+              _streamingReasoning += reasoning;
+            });
+            _scrollToBottom();
+          }
+        },
+        onChunk: (chunk) {
+          if (mounted) {
+            setState(() {
+              _currentThinkingStage = 'generating';
+              _streamingAnswer += chunk;
+            });
+            _scrollToBottom();
+          }
+        },
+        onDone: (result) {
+          streamSucceeded = true;
+          finalResult = result;
+        },
+        onError: (err) {
+          debugPrint('chatWithAssistantStream error: $err');
+        },
+      );
+    } catch (e) {
+      debugPrint('chatWithAssistantStream exception: $e');
+    }
+
     if (!mounted) return;
 
-    final answer = response['answer'] as String? ?? 'I am ready to help organize your notes and thoughts.';
-    final convId = response['conversationId']?.toString();
+    if (_currentCancelToken?.isCancelled == true) {
+      setState(() {
+        _isSynthesizing = false;
+      });
+      return;
+    }
+
+    // Fall back to standard chatWithAssistant if stream did not complete cleanly
+    if (!streamSucceeded || finalResult == null) {
+      finalResult = await ApiClient.instance.chatWithAssistant(
+        message: userText,
+        conversationId: _currentConversationId,
+        localNotes: notes,
+        metadata: metadata,
+      );
+    }
+
+    final answer = (finalResult?['answer'] as String?)?.isNotEmpty == true
+        ? finalResult!['answer'] as String
+        : (_streamingAnswer.isNotEmpty ? _streamingAnswer : 'I am ready to help organize your notes and thoughts.');
+
+    final convId = finalResult?['conversationId']?.toString();
     if (convId != null && convId.isNotEmpty) {
       _currentConversationId = convId;
     }
 
-    final citedIds = (response['citedNoteIds'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-    final actionsExecuted = (response['actionsExecuted'] as List<dynamic>?)
+    final citedIds = (finalResult?['citedNoteIds'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+    final actionsExecuted = (finalResult?['actionsExecuted'] as List<dynamic>?)
             ?.map((e) => Map<String, dynamic>.from(e as Map))
             .toList() ??
         [];
 
     String? createdNoteId;
 
-    // Apply executed actions to local Riverpod providers so the UI is immediately in sync
+    // Apply executed actions to local Riverpod providers
     for (final act in actionsExecuted) {
       final tool = act['tool']?.toString();
       final params = act['parameters'] is Map ? act['parameters'] as Map : {};
@@ -625,14 +833,13 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
     }
 
     // Authoritatively track token usage
-    final tokensUsed = (response['tokensUsed'] is num)
-        ? (response['tokensUsed'] as num).toInt()
-        : int.tryParse(response['tokensUsed']?.toString() ?? '0') ?? 0;
+    final tokensUsed = (finalResult?['tokensUsed'] is num)
+        ? (finalResult!['tokensUsed'] as num).toInt()
+        : int.tryParse(finalResult?['tokensUsed']?.toString() ?? '0') ?? 0;
     if (tokensUsed > 0) {
       ref.read(userProfileProvider.notifier).consumeTokens(tokensUsed);
     }
 
-    // Refresh conversation history in background
     _loadConversations();
     ApiClient.instance.getEntitlements().then((ent) {
       if (mounted && ent.isNotEmpty) {
@@ -641,8 +848,8 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
     }).catchError((_) {});
 
     final sources = <({String title, String tag, String? noteId})>[];
-    if (response['sources'] is List) {
-      for (final s in response['sources']) {
+    if (finalResult?['sources'] is List) {
+      for (final s in finalResult!['sources']) {
         if (s is Map) {
           sources.add((
             title: s['title']?.toString() ?? 'Saved Note',
@@ -671,8 +878,11 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
           sources: sources,
           toolCalls: actionsExecuted.isNotEmpty ? actionsExecuted : null,
           createdNoteId: createdNoteId,
+          reasoning: _streamingReasoning.isNotEmpty ? _streamingReasoning : null,
         ),
       );
+      _streamingReasoning = '';
+      _streamingAnswer = '';
     });
 
     // Save to local cache
@@ -958,15 +1168,10 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                     controller: _scrollController,
                     padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
                     physics: const BouncingScrollPhysics(),
-                    itemCount: _messages.length + (_isSynthesizing || _isTranscribingAudio ? 1 : 0),
+                    itemCount: _messages.length + (_isSynthesizing ? 1 : 0),
                     itemBuilder: (context, index) {
                       if (index == _messages.length) {
-                        if (_isTranscribingAudio) {
-                          return _buildTranscribingIndicator(isDark);
-                        }
-                        if (_isSynthesizing) {
-                          return _buildSynthesizingIndicator(isDark);
-                        }
+                        return _buildSynthesizingIndicator(isDark);
                       }
                       final message = _messages[index];
                       if (message.isUser) {
@@ -977,6 +1182,9 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                     },
                   ),
           ),
+
+          if (_isRecordingVoice)
+            _buildLiveRecordingBar(isDark),
 
           if (_transcriptionError != null)
             _buildTranscriptionErrorBanner(isDark),
@@ -1019,14 +1227,18 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                                 fontSize: 14,
                               ),
                               decoration: InputDecoration(
-                                hintText: 'Ask your neural second brain...',
+                                hintText: _isSynthesizing
+                                    ? 'AI is generating answer...'
+                                    : 'Ask your neural second brain...',
                                 hintStyle: TextStyle(
                                   color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
                                   fontSize: 13,
                                 ),
                                 border: InputBorder.none,
                               ),
-                              onSubmitted: (val) => _sendMessage(val),
+                              onSubmitted: (val) {
+                                if (!_isSynthesizing) _sendMessage(val);
+                              },
                             ),
                           ),
                           IconButton(
@@ -1037,7 +1249,7 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                             ),
                             visualDensity: VisualDensity.compact,
                             onPressed: _toggleVoiceRecording,
-                            tooltip: _isRecordingVoice ? 'Stop recording & transcribe' : 'Speak to AI',
+                            tooltip: _isRecordingVoice ? 'Stop recording & edit' : 'Speak to AI (live streaming)',
                           ),
                         ],
                       ),
@@ -1045,22 +1257,34 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                   ),
                   const SizedBox(width: 10),
                   GestureDetector(
-                    onTap: () => _sendMessage(_textController.text),
+                    onTap: () {
+                      if (_isSynthesizing) {
+                        _cancelGeneration();
+                      } else {
+                        _sendMessage(_textController.text);
+                      }
+                    },
                     child: Container(
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
-                        gradient: AppColors.proGradient,
+                        gradient: _isSynthesizing
+                            ? const LinearGradient(colors: [Color(0xFFEF4444), Color(0xFFDC2626)])
+                            : AppColors.proGradient,
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.35),
+                            color: (_isSynthesizing ? const Color(0xFFEF4444) : AppColors.primary).withValues(alpha: 0.35),
                             blurRadius: 10,
                             offset: const Offset(0, 4),
                           ),
                         ],
                       ),
-                      child: const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 20),
+                      child: Icon(
+                        _isSynthesizing ? Icons.stop_rounded : Icons.arrow_upward_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                   ),
                 ],
@@ -1091,96 +1315,356 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
               style: const TextStyle(fontSize: 12, color: Color(0xFFB91C1C), fontWeight: FontWeight.w500),
             ),
           ),
-          if (_lastRecordedAudioPath != null)
-            TextButton(
-              onPressed: () => _transcribeAndSendAudio(_lastRecordedAudioPath!, _lastRecordedDurationSec ?? 0),
-              child: const Text('Retry', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFEF4444))),
-            ),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, size: 16, color: Color(0xFFEF4444)),
+            visualDensity: VisualDensity.compact,
+            tooltip: 'Dismiss',
+            onPressed: () {
+              setState(() {
+                _transcriptionError = null;
+              });
+            },
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildTranscribingIndicator(bool isDark) {
-    return SubtlePulse(
-      minScale: 0.95,
-      maxScale: 1.05,
-      duration: const Duration(milliseconds: 900),
+  Widget _buildLiveRecordingBar(bool isDark) {
+    final mins = (_recordingElapsedSeconds ~/ 60).toString().padLeft(2, '0');
+    final secs = (_recordingElapsedSeconds % 60).toString().padLeft(2, '0');
+    final timerStr = '$mins:$secs';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurfaceElevated : const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFFEF4444).withValues(alpha: 0.4),
+          width: 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFEF4444),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'LIVE RECORDING ($timerStr)',
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFEF4444),
+                  letterSpacing: 0.8,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close_rounded, size: 18),
+                color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Cancel Recording',
+                onPressed: _cancelVoiceRecording,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(minHeight: 40, maxHeight: 100),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.darkSurface : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                width: 0.8,
+              ),
+            ),
+            child: SingleChildScrollView(
+              child: Text(
+                _liveTranscript.isNotEmpty
+                    ? _liveTranscript
+                    : 'Listening... Speak your prompt or question.',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontStyle: _liveTranscript.isEmpty ? FontStyle.italic : FontStyle.normal,
+                  color: _liveTranscript.isNotEmpty
+                      ? (isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)
+                      : (isDark ? AppColors.darkTextMuted : AppColors.textMuted),
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              OutlinedButton.icon(
+                icon: const Icon(Icons.edit_note_rounded, size: 16),
+                label: const Text('Edit Text', style: TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                  side: BorderSide(
+                    color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: _stopAndEditRecording,
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.arrow_upward_rounded, size: 15),
+                label: const Text('Send Audio', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: _stopAndSendRecording,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSynthesizingIndicator(bool isDark) {
+    IconData stageIcon;
+    Color stageColor;
+    switch (_currentThinkingStage) {
+      case 'retrieving':
+        stageIcon = Icons.search_rounded;
+        stageColor = AppColors.phosphorCyan;
+        break;
+      case 'thinking':
+        stageIcon = Icons.psychology_outlined;
+        stageColor = AppColors.electricViolet;
+        break;
+      case 'generating':
+        stageIcon = Icons.auto_awesome_rounded;
+        stageColor = AppColors.emerald;
+        break;
+      default:
+        stageIcon = Icons.sync_rounded;
+        stageColor = AppColors.primary;
+    }
+
+    return FadeSlideIn(
       child: Container(
-        margin: const EdgeInsets.only(right: 48, bottom: 20),
-        padding: const EdgeInsets.all(14),
+        margin: const EdgeInsets.only(right: 24, bottom: 20),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: isDark ? AppColors.darkSurface : Colors.white,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(20).copyWith(
+            topLeft: const Radius.circular(4),
+          ),
           border: Border.all(
-            color: const Color(0xFFEF4444).withValues(alpha: 0.4),
+            color: stageColor.withValues(alpha: 0.35),
             width: 0.8,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEF4444).withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.mic_rounded, size: 14, color: Color(0xFFEF4444)),
+            // Stage Status Bar
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: stageColor.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(stageIcon, size: 14, color: stageColor),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _currentThinkingMessage.isNotEmpty
+                        ? _currentThinkingMessage
+                        : 'Thinking...',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _cancelGeneration,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  ),
+                  child: const Text('Stop', style: TextStyle(fontSize: 11, color: Color(0xFFEF4444), fontWeight: FontWeight.bold)),
+                ),
+              ],
             ),
-            const SizedBox(width: 10),
-            Text(
-              'Transcribing voice memo with AssemblyAI...',
-              style: TextStyle(
-                fontSize: 12,
-                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                fontStyle: FontStyle.italic,
+
+            // Provider Reasoning disclosure
+            if (_streamingReasoning.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    _isReasoningExpanded = !_isReasoningExpanded;
+                  });
+                },
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.darkSurfaceSubtle : AppColors.surfaceSubtle,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                      width: 0.6,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.psychology_rounded, size: 13, color: AppColors.electricViolet),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Thinking Process',
+                        style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.electricViolet,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const Spacer(),
+                      Icon(
+                        _isReasoningExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                        size: 16,
+                        color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
+              if (_isReasoningExpanded) ...[
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.darkSurfaceElevated : Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    _streamingReasoning,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+
+            // Realtime streaming answer preview
+            if (_streamingAnswer.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                _streamingAnswer,
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.55,
+                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                ),
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                backgroundColor: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                valueColor: AlwaysStoppedAnimation<Color>(stageColor),
+                minHeight: 2,
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSynthesizingIndicator(bool isDark) {
-    return SubtlePulse(
-      minScale: 0.95,
-      maxScale: 1.05,
-      duration: const Duration(milliseconds: 900),
-      child: Container(
-        margin: const EdgeInsets.only(right: 48, bottom: 20),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.darkSurface : Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
-            width: 0.8,
+  Widget _buildReasoningCard(String reasoning, bool isDark) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: 8),
+        leading: const Icon(Icons.psychology_outlined, size: 14, color: AppColors.electricViolet),
+        title: const Text(
+          'Thinking Process',
+          style: TextStyle(
+            fontFamily: 'monospace',
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            color: AppColors.electricViolet,
+            letterSpacing: 0.5,
           ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.darkSurfaceSubtle : AppColors.surfaceSubtle,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                width: 0.6,
               ),
-              child: const Icon(Icons.auto_awesome_rounded, size: 14, color: AppColors.primary),
             ),
-            const SizedBox(width: 10),
-            Text(
-              'Retrieving vector embeddings & synthesizing...',
+            child: Text(
+              reasoning,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 11,
+                fontFamily: 'monospace',
                 color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                fontStyle: FontStyle.italic,
+                height: 1.4,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1367,6 +1851,10 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                 ),
               ],
             ),
+            if (message.reasoning != null && message.reasoning!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _buildReasoningCard(message.reasoning!, isDark),
+            ],
             const SizedBox(height: 10),
             Text(
               message.text,
