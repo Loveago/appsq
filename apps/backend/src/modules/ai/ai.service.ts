@@ -1214,7 +1214,11 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
   // APP-WIDE PERSONAL CONTEXT & RETRIEVAL ENGINE
   // ==========================================
 
-  async retrieveUserPersonalContext(userId: string, query: string) {
+  async retrieveUserPersonalContext(
+    userId: string,
+    query: string,
+    clientNotes?: Array<{ id: string; title: string; content: string; summary?: string }>,
+  ) {
     const stopWords = new Set([
       'what', 'when', 'where', 'which', 'who', 'whom', 'whose', 'why', 'how',
       'did', 'does', 'do', 'have', 'has', 'had', 'is', 'am', 'are', 'was', 'were',
@@ -1258,7 +1262,7 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
         userProjects,
       ] = await Promise.all([
         uniqueTokens.length > 0 && this.prisma.note?.findMany
-          ? this.prisma.note.findMany({
+          ? Promise.resolve(this.prisma.note.findMany({
               where: {
                 userId,
                 isArchived: false,
@@ -1273,18 +1277,18 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
               },
               take: 16,
               select: { id: true, title: true, content: true, summary: true, isPinned: true, updatedAt: true, createdAt: true },
-            })
+            })).catch(() => [])
           : Promise.resolve([]),
         this.prisma.note?.findMany
-          ? this.prisma.note.findMany({
+          ? Promise.resolve(this.prisma.note.findMany({
               where: { userId, isArchived: false, deletedAt: null },
               take: 8,
               orderBy: [{ isPinned: 'desc' }, { updatedAt: 'desc' }],
               select: { id: true, title: true, content: true, summary: true, isPinned: true, updatedAt: true, createdAt: true },
-            })
+            })).catch(() => [])
           : Promise.resolve([]),
         uniqueTokens.length > 0 && this.prisma.meeting?.findMany
-          ? this.prisma.meeting.findMany({
+          ? Promise.resolve(this.prisma.meeting.findMany({
               where: {
                 userId,
                 deletedAt: null,
@@ -1311,10 +1315,10 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
                 durationSec: true,
                 createdAt: true,
               },
-            })
+            })).catch(() => [])
           : Promise.resolve([]),
         this.prisma.meeting?.findMany
-          ? this.prisma.meeting.findMany({
+          ? Promise.resolve(this.prisma.meeting.findMany({
               where: { userId, deletedAt: null },
               take: 6,
               orderBy: { createdAt: 'desc' },
@@ -1332,38 +1336,38 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
                 durationSec: true,
                 createdAt: true,
               },
-            })
+            })).catch(() => [])
           : Promise.resolve([]),
         this.prisma.voiceNote?.findMany
-          ? this.prisma.voiceNote.findMany({
+          ? Promise.resolve(this.prisma.voiceNote.findMany({
               where: { userId, deletedAt: null },
               take: 6,
               orderBy: { createdAt: 'desc' },
               select: { id: true, title: true, transcript: true, status: true, durationSec: true, createdAt: true },
-            })
+            })).catch(() => [])
           : Promise.resolve([]),
         this.prisma.scannedDocument?.findMany
-          ? this.prisma.scannedDocument.findMany({
+          ? Promise.resolve(this.prisma.scannedDocument.findMany({
               where: { userId },
               take: 6,
               orderBy: { createdAt: 'desc' },
               select: { id: true, title: true, extractedText: true, documentType: true, createdAt: true },
-            })
+            })).catch(() => [])
           : Promise.resolve([]),
         this.prisma.task?.findMany
-          ? this.prisma.task.findMany({
+          ? Promise.resolve(this.prisma.task.findMany({
               where: { userId, status: 'PENDING' },
               take: 12,
               orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }],
               select: { id: true, title: true, priority: true, dueDate: true, dueTimeStr: true },
-            })
+            })).catch(() => [])
           : Promise.resolve([]),
         this.prisma.project?.findMany
-          ? this.prisma.project.findMany({
+          ? Promise.resolve(this.prisma.project.findMany({
               where: { userId },
               take: 6,
               select: { id: true, name: true, description: true, aiSummary: true },
-            })
+            })).catch(() => [])
           : Promise.resolve([]),
       ]);
 
@@ -1383,6 +1387,22 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
     const notesMap = new Map<string, any>();
     for (const n of [...keywordNotes, ...recentNotes]) {
       notesMap.set(n.id, n);
+    }
+    if (clientNotes && Array.isArray(clientNotes)) {
+      for (const cn of clientNotes) {
+        if (!cn || !cn.id) continue;
+        if (!notesMap.has(cn.id)) {
+          notesMap.set(cn.id, {
+            id: cn.id,
+            title: cn.title || 'Untitled Note',
+            content: cn.content || '',
+            summary: cn.summary || '',
+            isPinned: false,
+            updatedAt: new Date(),
+            createdAt: new Date(),
+          });
+        }
+      }
     }
     const scoredNotes = Array.from(notesMap.values()).map((note) => {
       let score = 0;
@@ -1550,6 +1570,7 @@ ${projectsContext}
     query: string,
     conversationId?: string,
     metadata?: Record<string, any>,
+    clientNotes?: Array<{ id: string; title: string; content: string; summary?: string }>,
   ): Promise<AiChatResult> {
     if (!query || query.trim().length === 0) {
       throw new BadRequestException('Message cannot be empty');
@@ -1603,7 +1624,7 @@ ${projectsContext}
     }
 
     // 2. Retrieve authoritative personal context across notes, meetings, voice notes, documents, and tasks
-    const personalContext = await this.retrieveUserPersonalContext(userId, query);
+    const personalContext = await this.retrieveUserPersonalContext(userId, query, clientNotes);
 
     // 3. Assemble LLM prompt
     const systemPrompt = `You are Mindora, a premier Executive AI Personal Assistant and Second Brain.
@@ -1740,7 +1761,7 @@ If no action is required, do NOT include the <<<ACTIONS>>> block.`;
             const parsedActions = JSON.parse(actionMatch[1].trim());
             if (Array.isArray(parsedActions)) {
               for (const act of parsedActions) {
-                const executed = await this.executeToolAction(userId, act.tool, act.parameters);
+                const executed = await this.executeToolAction(userId, act.tool, act.parameters, clientNotes);
                 executedActions.push(executed);
               }
             }
@@ -1849,6 +1870,7 @@ If no action is required, do NOT include the <<<ACTIONS>>> block.`;
     conversationId: string | undefined,
     metadata: Record<string, any> | undefined,
     sendEvent: (event: string, data: any) => void,
+    clientNotes?: Array<{ id: string; title: string; content: string; summary?: string }>,
   ): Promise<void> {
     if (!query || query.trim().length === 0) {
       sendEvent('error', { message: 'Message cannot be empty' });
@@ -1917,7 +1939,7 @@ If no action is required, do NOT include the <<<ACTIONS>>> block.`;
       message: 'Searching your saved notes, meetings & documents...',
     });
 
-    const personalContext = await this.retrieveUserPersonalContext(userId, query);
+    const personalContext = await this.retrieveUserPersonalContext(userId, query, clientNotes);
 
     // Stage 3: Thinking / Synthesizing
     sendEvent('status', {
@@ -2099,7 +2121,7 @@ If no action is required, do NOT include the <<<ACTIONS>>> block.`;
         const parsedActions = JSON.parse(actionMatch[1].trim());
         if (Array.isArray(parsedActions)) {
           for (const act of parsedActions) {
-            const executed = await this.executeToolAction(userId, act.tool, act.parameters);
+            const executed = await this.executeToolAction(userId, act.tool, act.parameters, clientNotes);
             executedActions.push(executed);
           }
         }
@@ -2192,6 +2214,7 @@ If no action is required, do NOT include the <<<ACTIONS>>> block.`;
     userId: string,
     toolName: string,
     params: any,
+    clientNotes?: any[],
   ): Promise<ExecutedToolAction> {
     try {
       switch (toolName) {
@@ -2307,20 +2330,42 @@ If no action is required, do NOT include the <<<ACTIONS>>> block.`;
         }
 
         case 'search_notes': {
-          const q = (params.query || '').toLowerCase();
-          const matches = await this.prisma.note.findMany({
-            where: {
-              userId,
-              isArchived: false,
-              deletedAt: null,
-              OR: [
-                { title: { contains: q, mode: 'insensitive' } },
-                { content: { contains: q, mode: 'insensitive' } },
-              ],
-            },
-            take: 6,
-            select: { id: true, title: true, summary: true },
-          });
+          const q = (params.query || '').toLowerCase().trim();
+          let matches: any[] = [];
+          try {
+            matches = await this.prisma.note.findMany({
+              where: {
+                userId,
+                isArchived: false,
+                deletedAt: null,
+                OR: [
+                  { title: { contains: q, mode: 'insensitive' } },
+                  { content: { contains: q, mode: 'insensitive' } },
+                ],
+              },
+              take: 6,
+              select: { id: true, title: true, summary: true },
+            });
+          } catch (e) {
+            console.warn('search_notes db notice:', e);
+          }
+
+          if (clientNotes && Array.isArray(clientNotes)) {
+            for (const cn of clientNotes) {
+              const t = (cn.title || '').toLowerCase();
+              const c = (cn.content || '').toLowerCase();
+              if (t.includes(q) || c.includes(q) || (q.length > 2 && t.split(/\s+/).some((w: string) => q.includes(w)))) {
+                if (!matches.some((m) => m.id === cn.id)) {
+                  matches.push({
+                    id: cn.id,
+                    title: cn.title || 'Untitled Note',
+                    summary: cn.summary || '',
+                  });
+                }
+              }
+            }
+          }
+
           return {
             tool: 'search_notes',
             parameters: params,
@@ -2331,12 +2376,19 @@ If no action is required, do NOT include the <<<ACTIONS>>> block.`;
         }
 
         case 'open_note': {
+          let resolvedId = params.noteId;
+          if (!resolvedId && params.title && clientNotes) {
+            const foundClient = clientNotes.find((n: any) =>
+              (n.title || '').toLowerCase().includes(params.title.toLowerCase()),
+            );
+            if (foundClient) resolvedId = foundClient.id;
+          }
           return {
             tool: 'open_note',
             parameters: params,
-            result: { noteId: params.noteId },
+            result: { noteId: resolvedId || params.noteId },
             success: true,
-            message: `Open note: ${params.noteId}`,
+            message: `Open note: ${resolvedId || params.noteId}`,
           };
         }
 

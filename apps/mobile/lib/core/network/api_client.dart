@@ -577,6 +577,15 @@ class ApiClient {
           'message': message,
           if (conversationId != null) 'conversationId': conversationId,
           if (metadata != null) 'metadata': metadata,
+          if (localNotes != null && localNotes.isNotEmpty)
+            'notes': localNotes
+                .map((n) => {
+                      'id': n.id,
+                      'title': n.title,
+                      'content': n.content,
+                      'summary': n.snippet,
+                    })
+                .toList(),
         },
       );
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -594,6 +603,7 @@ class ApiClient {
   Future<void> chatWithAssistantStream({
     required String message,
     String? conversationId,
+    List<NoteModel>? localNotes,
     Map<String, dynamic>? metadata,
     CancelToken? cancelToken,
     required void Function(String stage, String message) onStage,
@@ -609,6 +619,15 @@ class ApiClient {
           'message': message,
           if (conversationId != null) 'conversationId': conversationId,
           if (metadata != null) 'metadata': metadata,
+          if (localNotes != null && localNotes.isNotEmpty)
+            'notes': localNotes
+                .map((n) => {
+                      'id': n.id,
+                      'title': n.title,
+                      'content': n.content,
+                      'summary': n.snippet,
+                    })
+                .toList(),
         },
         options: Options(
           responseType: ResponseType.stream,

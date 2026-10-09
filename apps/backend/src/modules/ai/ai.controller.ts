@@ -148,10 +148,11 @@ export class AiController {
     @Body('message') message: string,
     @Body('conversationId') conversationId?: string,
     @Body('metadata') metadata?: Record<string, any>,
+    @Body('notes') notes?: Array<{ id: string; title: string; content: string; summary?: string }>,
     @CurrentUser('id') userId?: string,
   ) {
     const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
-    return this.aiService.chatWithTools(effectiveUserId, message, conversationId, metadata);
+    return this.aiService.chatWithTools(effectiveUserId, message, conversationId, metadata, notes);
   }
 
   @UseGuards(OptionalJwtAuthGuard)
@@ -161,6 +162,7 @@ export class AiController {
     @Body('message') message: string,
     @Body('conversationId') conversationId?: string,
     @Body('metadata') metadata?: Record<string, any>,
+    @Body('notes') notes?: Array<{ id: string; title: string; content: string; summary?: string }>,
     @CurrentUser('id') userId?: string,
   ) {
     const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
@@ -180,6 +182,7 @@ export class AiController {
         (event: string, data: any) => {
           res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
         },
+        notes,
       );
     } catch (err: any) {
       res.write(`event: error\ndata: ${JSON.stringify({ message: err?.message || 'Chat stream failed' })}\n\n`);

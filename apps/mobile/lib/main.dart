@@ -44,7 +44,7 @@ void main() {
       ApiClient.instance.setAuthToken(savedToken);
     } else {
       // Auto-initialize guest session so AI features are ready
-      ApiClient.instance.loginAsGuest();
+      await ApiClient.instance.loginAsGuest();
     }
   } catch (e) {
     debugPrint('Error loading auth token: $e');

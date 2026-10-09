@@ -691,6 +691,7 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
       await ApiClient.instance.chatWithAssistantStream(
         message: userText,
         conversationId: _currentConversationId,
+        localNotes: notes,
         metadata: metadata,
         cancelToken: _currentCancelToken,
         onStage: (stage, message) {
