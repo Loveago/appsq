@@ -807,7 +807,7 @@ export class AdminService {
         return {
           success: true,
           latencyMs,
-          message: `AssemblyAI Universal-3.5 Pro verified operational (${latencyMs}ms)`,
+          message: `AssemblyAI Universal-2 verified operational (${latencyMs}ms)`,
         };
       } else {
         const text = await res.text();

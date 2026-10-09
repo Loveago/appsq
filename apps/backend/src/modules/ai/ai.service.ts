@@ -1057,7 +1057,7 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
       throw new Error('No audio URL or buffer provided for transcription.');
     }
 
-    // Submit transcription job using universal speech model
+    // Submit transcription job using Universal-2 speech model
     const transcriptRes = await fetch('https://api.assemblyai.com/v2/transcript', {
       method: 'POST',
       headers: {
@@ -1066,7 +1066,7 @@ If the user is chatting, asking questions, or brainstorming, provide a brilliant
       },
       body: JSON.stringify({
         audio_url: finalAudioUrl,
-        speech_model: 'best',
+        speech_models: ['universal-2'],
         punctuate: true,
         format_text: true,
       }),

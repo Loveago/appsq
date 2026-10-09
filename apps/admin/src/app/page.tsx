@@ -1714,7 +1714,7 @@ export default function AdminDashboard() {
                       <div className="flex items-center gap-2">
                         <h3 className="text-sm font-bold text-white">AssemblyAI Audio Transcription Engine</h3>
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-800">
-                          universal-3-5-pro
+                          universal-2
                         </span>
                         {assemblyAiKey ? (
                           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800">
