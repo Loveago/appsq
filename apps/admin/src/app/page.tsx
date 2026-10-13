@@ -1312,25 +1312,55 @@ export default function AdminDashboard() {
           {/* ========================================================= */}
           {activeTab === 'users' && (
             <div className="space-y-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              {/* Header & Metric Summary */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400">
-                      <Users className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-black text-white tracking-tight">User Directory & Entitlements</h2>
-                      <p className="text-xs text-slate-400">Authoritative database control: manage subscriptions, quotas, and RBAC privileges</p>
-                    </div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                      <Users className="w-3 h-3 text-indigo-400" />
+                      Authoritative Directory
+                    </span>
+                    <span className="text-xs text-slate-500">• Real-Time RBAC & Quotas</span>
                   </div>
-                  <p className="text-xs text-slate-400">Authoritative database control: manage subscriptions, monitor usage quotas, grant trials, and manage account statuses</p>
+                  <h2 className="text-2xl font-extrabold text-white tracking-tight">User Directory & Entitlements</h2>
+                  <p className="text-xs text-slate-400">
+                    Manage subscriptions, inspect token quotas, grant trials, adjust RBAC permissions, and enforce security suspensions
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="px-3.5 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] font-mono text-purple-300 font-bold flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                    <span>{usersList.filter(u => u.plan === 'PRO' || u.subscriptionTier === 'PRO').length} Pro</span>
+                  </div>
+                  <div className="px-3.5 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] font-mono text-amber-300 font-bold">
+                    <span>{usersList.filter(u => u.plan === 'TRIAL').length} Trials</span>
+                  </div>
+                  <div className="px-3.5 py-1.5 rounded-xl bg-white/5 border border-white/10 text-[11px] font-mono text-slate-300">
+                    <span>{usersList.length} Total Loaded</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Filter & Live Search Bar */}
+              <div className="glass-panel border-white/10 rounded-[28px] p-4 shadow-xl backdrop-blur-2xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search by full name, email, or user ID..."
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSearchUsers()}
+                    className="w-full pl-10 pr-4 py-2 bg-[#05070D]/80 border border-white/10 rounded-2xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
+                  />
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
                   <select
                     value={userPlanFilter}
                     onChange={(e) => setUserPlanFilter(e.target.value)}
-                    className="px-3.5 py-2 glass-panel border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
+                    className="px-3.5 py-2 bg-[#05070D]/80 border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
                   >
                     <option value="ALL">All Plans</option>
                     <option value="PRO">Pro Subscribers</option>
@@ -1341,28 +1371,29 @@ export default function AdminDashboard() {
                   <select
                     value={userStatusFilter}
                     onChange={(e) => setUserStatusFilter(e.target.value)}
-                    className="px-3.5 py-2 glass-panel border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
+                    className="px-3.5 py-2 bg-[#05070D]/80 border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
                   >
                     <option value="ALL">All Statuses</option>
-                    <option value="ACTIVE">Active</option>
-                    <option value="SUSPENDED">Suspended</option>
+                    <option value="ACTIVE">Active Accounts</option>
+                    <option value="SUSPENDED">Suspended Only</option>
                   </select>
 
                   <select
                     value={userRoleFilter}
                     onChange={(e) => setUserRoleFilter(e.target.value)}
-                    className="px-3.5 py-2 glass-panel border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
+                    className="px-3.5 py-2 bg-[#05070D]/80 border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
                   >
                     <option value="ALL">All Roles</option>
-                    <option value="USER">User</option>
-                    <option value="ADMIN">Admin</option>
+                    <option value="USER">User Role</option>
+                    <option value="ADMIN">Admin Role</option>
                   </select>
 
                   <button
                     onClick={handleSearchUsers}
                     className="px-5 py-2 bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#EC4899] hover:opacity-95 text-white rounded-2xl text-xs font-bold shadow-lg shadow-purple-600/30 hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5"
                   >
-                    Filter
+                    <Filter className="w-3.5 h-3.5" />
+                    <span>Apply Filter</span>
                   </button>
                 </div>
               </div>
@@ -1373,13 +1404,13 @@ export default function AdminDashboard() {
                   <table className="w-full text-left text-xs text-slate-300">
                     <thead className="bg-[#05070D]/90 text-slate-400 font-bold uppercase text-[10px] tracking-wider border-b border-white/10">
                       <tr>
-                        <th className="py-3 px-4">User</th>
-                        <th className="py-3 px-4">Role</th>
-                        <th className="py-3 px-4">Plan & Entitlement</th>
-                        <th className="py-3 px-4">Content / Second Brain</th>
-                        <th className="py-3 px-4">Status</th>
-                        <th className="py-3 px-4">Registered</th>
-                        <th className="py-3 px-4 text-right">Actions</th>
+                        <th className="py-3.5 px-5">User</th>
+                        <th className="py-3.5 px-4">Role</th>
+                        <th className="py-3.5 px-4">Plan & Entitlement</th>
+                        <th className="py-3.5 px-4">Second Brain Usage</th>
+                        <th className="py-3.5 px-4">Status</th>
+                        <th className="py-3.5 px-4">Registered</th>
+                        <th className="py-3.5 px-5 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
@@ -1387,63 +1418,79 @@ export default function AdminDashboard() {
                         usersList.map((user) => {
                           const isPro = user.plan === 'PRO' || user.subscriptionTier === 'PRO';
                           const isTrial = user.plan === 'TRIAL';
+                          const initials = (user.fullName || user.email || 'U').slice(0, 2).toUpperCase();
+
                           return (
-                            <tr key={user.id} className="hover:bg-slate-900/50 transition-colors">
-                              <td className="py-3 px-4">
-                                <div className="font-semibold text-white">{user.fullName || 'User'}</div>
-                                <div className="text-slate-400 text-[11px] font-mono">{user.email}</div>
+                            <tr key={user.id} className="hover:bg-white/[0.02] transition-colors">
+                              <td className="py-3.5 px-5">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-purple-600/30 to-fuchsia-600/30 border border-purple-500/30 text-purple-200 flex items-center justify-center font-bold text-xs shadow-md">
+                                    {initials}
+                                  </div>
+                                  <div>
+                                    <div className="font-bold text-white text-xs">{user.fullName || 'User'}</div>
+                                    <div className="text-slate-400 text-[11px] font-mono">{user.email}</div>
+                                  </div>
+                                </div>
                               </td>
-                              <td className="py-3 px-4">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                                  user.role === 'ADMIN' ? 'bg-indigo-950 text-indigo-400 border border-indigo-800' : 'text-slate-400'
+                              <td className="py-3.5 px-4">
+                                <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-mono font-bold border ${
+                                  user.role === 'ADMIN' 
+                                    ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30' 
+                                    : 'bg-white/5 text-slate-400 border-white/10'
                                 }`}>
                                   {user.role}
                                 </span>
                               </td>
-                              <td className="py-3 px-4">
+                              <td className="py-3.5 px-4">
                                 {isPro ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-950 text-purple-300 border border-purple-800 flex items-center gap-1 w-max">
-                                    <Sparkles className="w-3 h-3 text-purple-400" /> PRO SUBSCRIBER
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-300 border border-purple-500/30 flex items-center gap-1.5 w-max shadow-sm">
+                                    <Sparkles className="w-3 h-3 text-purple-400 animate-spin" style={{ animationDuration: '4s' }} /> PRO SUBSCRIBER
                                   </span>
                                 ) : isTrial ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-800 flex items-center gap-1 w-max">
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30 flex items-center gap-1.5 w-max">
                                     TRIAL ({user.trialDaysRemaining ?? 7}d left)
                                   </span>
                                 ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800 text-slate-400">
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-medium bg-white/5 text-slate-400 border border-white/10">
                                     FREE TIER
                                   </span>
                                 )}
                               </td>
-                              <td className="py-3 px-4 font-mono text-slate-400">
-                                {user._count?.notes ?? 0} notes • {user._count?.tasks ?? 0} tasks
+                              <td className="py-3.5 px-4 font-mono text-slate-400 text-[11px]">
+                                <span className="text-white font-semibold">{user._count?.notes ?? 0}</span> notes • <span className="text-white font-semibold">{user._count?.tasks ?? 0}</span> tasks
                               </td>
-                              <td className="py-3 px-4">
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                              <td className="py-3.5 px-4">
+                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
                                   user.isSuspended || user.accountStatus === 'SUSPENDED'
-                                    ? 'bg-red-950 text-red-400 border border-red-800'
-                                    : 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                                    ? 'bg-red-500/10 text-red-400 border-red-500/30'
+                                    : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                                 }`}>
-                                  <span className={`w-1.5 h-1.5 rounded-full ${user.isSuspended ? 'bg-red-500' : 'bg-emerald-500'}`}></span>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${user.isSuspended ? 'bg-red-400' : 'bg-emerald-400 animate-pulse'}`}></span>
                                   {user.isSuspended || user.accountStatus === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE'}
                                 </span>
                               </td>
-                              <td className="py-3 px-4 text-slate-400 text-[11px]">
-                                {new Date(user.createdAt).toLocaleDateString()}
+                              <td className="py-3.5 px-4 text-slate-400 text-[11px] font-mono">
+                                {new Date(user.createdAt).toLocaleDateString(undefined, {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric'
+                                })}
                               </td>
-                              <td className="py-3 px-4 text-right space-x-2">
+                              <td className="py-3.5 px-5 text-right space-x-2">
                                 <button
                                   onClick={() => handleOpenUserDrawer(user)}
-                                  className="px-3 py-1.5 glass-panel glass-panel-hover text-white rounded-xl text-[11px] font-bold inline-flex items-center gap-1"
+                                  className="px-3.5 py-1.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-[11px] font-bold inline-flex items-center gap-1.5 border border-white/10 hover:border-purple-500/40 transition-all shadow-sm"
                                 >
-                                  Manage & Quotas
+                                  <Sliders className="w-3 h-3 text-purple-400" />
+                                  <span>Manage & Quotas</span>
                                 </button>
                                 <button
                                   onClick={() => handleToggleSuspend(user)}
-                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all border ${
                                     user.isSuspended || user.accountStatus === 'SUSPENDED'
-                                      ? 'bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-800'
-                                      : 'bg-red-950 hover:bg-red-900 text-red-300 border border-red-800'
+                                      ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                      : 'bg-red-500/10 hover:bg-red-500/20 text-red-300 border-red-500/30'
                                   }`}
                                 >
                                   {user.isSuspended || user.accountStatus === 'SUSPENDED' ? 'Unsuspend' : 'Suspend'}
@@ -1455,7 +1502,7 @@ export default function AdminDashboard() {
                       ) : (
                         <tr>
                           <td colSpan={7} className="py-16 text-center text-xs text-slate-500">
-                            No user accounts found in database.
+                            No user accounts found matching current query or filters.
                           </td>
                         </tr>
                       )}
