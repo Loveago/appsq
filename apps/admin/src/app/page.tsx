@@ -599,71 +599,103 @@ export default function AdminDashboard() {
   // ------------------------------------------
   if (!authToken) {
     return (
-      <div className="min-h-screen bg-[#0B0F19] flex items-center justify-center p-6 text-slate-100 font-sans">
-        <div className="w-full max-w-md bg-[#111827] border border-slate-800/80 rounded-3xl p-8 shadow-2xl space-y-6">
-          <div className="flex items-center gap-3.5 justify-center">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#7C3AED] to-[#6366F1] flex items-center justify-center text-white shadow-lg shadow-purple-600/30">
-              <BrainCircuit className="w-6 h-6" />
+      <div className="min-h-screen bg-[#05070D] flex items-center justify-center p-6 text-slate-100 font-sans relative overflow-hidden bg-mesh-glow">
+        {/* Animated background ambient spheres */}
+        <div className="absolute top-1/4 -left-20 w-96 h-96 bg-purple-600/20 rounded-full blur-[120px] pointer-events-none animate-pulse-slow"></div>
+        <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-pink-600/15 rounded-full blur-[120px] pointer-events-none animate-pulse-slow" style={{ animationDelay: "2s" }}></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-cyan-600/10 rounded-full blur-[140px] pointer-events-none"></div>
+
+        <div className="w-full max-w-md relative z-10">
+          {/* Glowing Aura Frame */}
+          <div className="glass-panel border-white/10 rounded-[32px] p-8 md:p-10 shadow-2xl shadow-purple-950/50 space-y-7 relative backdrop-blur-2xl">
+            {/* Top Brand Banner */}
+            <div className="flex flex-col items-center text-center space-y-3">
+              <div className="relative">
+                <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-[#7C3AED] via-[#A855F7] to-[#EC4899] flex items-center justify-center text-white shadow-xl shadow-purple-600/40 animate-glow">
+                  <BrainCircuit className="w-8 h-8" />
+                </div>
+                <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 border-2 border-[#05070D] flex items-center justify-center">
+                  <Sparkles className="w-2.5 h-2.5 text-white" />
+                </div>
+              </div>
+              <div>
+                <h1 className="text-2xl font-black text-white tracking-tight flex items-center justify-center gap-2">
+                  Mindora <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-purple-950/80 border border-purple-500/30 text-purple-300">HQ</span>
+                </h1>
+                <p className="text-xs text-slate-400 font-medium mt-1">Second Brain Operations Console</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight">Mindora</h1>
-              <p className="text-xs text-slate-400 font-medium">AI Notes Operations Console</p>
+
+            {/* Security Badge */}
+            <div className="p-3.5 bg-gradient-to-r from-purple-950/40 to-slate-900/60 rounded-2xl border border-purple-500/20 text-xs text-slate-300 flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400 shrink-0">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div className="leading-tight">
+                <div className="font-semibold text-white text-[11px]">Server-Side RBAC Guard</div>
+                <div className="text-[10px] text-slate-400">Restricted to Super Admin credentials</div>
+              </div>
+            </div>
+
+            {errorMsg && (
+              <div className="p-3.5 bg-red-950/60 border border-red-500/40 rounded-2xl text-xs text-red-200 flex items-center gap-2.5 animate-in fade-in">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                <span className="font-medium">{errorMsg}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-300">Admin Email</label>
+                <div className="relative">
+                  <input
+                    type="email"
+                    required
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    placeholder="admin@mindora.ai"
+                    className="w-full px-4 py-3 bg-[#080C16] border border-white/10 rounded-2xl text-white text-xs placeholder:text-slate-600 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-300">Password</label>
+                <div className="relative">
+                  <input
+                    type="password"
+                    required
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    className="w-full px-4 py-3 bg-[#080C16] border border-white/10 rounded-2xl text-white text-xs placeholder:text-slate-600 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all font-mono"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoggingIn}
+                className="w-full py-3.5 bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#EC4899] hover:opacity-95 text-white font-bold text-xs rounded-2xl transition-all flex items-center justify-center gap-2 shadow-xl shadow-purple-600/30 disabled:opacity-50 hover:shadow-purple-600/50 hover:scale-[1.01] active:scale-[0.99]"
+              >
+                {isLoggingIn ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Verifying Session...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Enter Command Center</span>
+                    <ArrowUpRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="text-center text-[11px] text-slate-500 font-mono">
+              Mindora AI Core • Edge v2.4
             </div>
           </div>
-
-          <div className="p-4 bg-slate-900/80 rounded-2xl border border-slate-800 text-xs text-slate-300 flex items-start gap-2.5">
-            <Lock className="w-4 h-4 text-[#7C3AED] shrink-0 mt-0.5" />
-            <span>Strict server-side Role-Based Access Control (RBAC). Only Super Admin and authorized personnel are permitted.</span>
-          </div>
-
-          {errorMsg && (
-            <div className="p-3 bg-red-950/60 border border-red-800 rounded-xl text-xs text-red-300 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 mb-1.5">Admin Email</label>
-              <input
-                type="email"
-                required
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="admin@mindora.ai"
-                className="w-full px-4 py-3 bg-[#0B0F19] border border-slate-800 rounded-xl text-white text-xs placeholder:text-slate-600 focus:outline-none focus:border-[#7C3AED] focus:ring-1 focus:ring-[#7C3AED] transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 mb-1.5">Password</label>
-              <input
-                type="password"
-                required
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full px-4 py-3 bg-[#0B0F19] border border-slate-800 rounded-xl text-white text-xs placeholder:text-slate-600 focus:outline-none focus:border-[#7C3AED] focus:ring-1 focus:ring-[#7C3AED] transition-all"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={isLoggingIn}
-              className="w-full py-3 bg-gradient-to-r from-[#7C3AED] to-[#6366F1] hover:opacity-95 text-white font-semibold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-600/30 disabled:opacity-50"
-            >
-              {isLoggingIn ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  Authenticating Server Token...
-                </>
-              ) : (
-                <>
-                  <span>Sign In to Admin Portal</span>
-                  <ChevronRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
-          </form>
         </div>
       </div>
     );
@@ -682,79 +714,120 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* TOP HEADER BAR */}
-      <header className="h-16 bg-[#0B0F19] border-b border-slate-800/80 px-6 flex items-center justify-between sticky top-0 z-40">
-        {/* Left: Brand Identity */}
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#7C3AED] to-[#6366F1] flex items-center justify-center text-white shadow-lg shadow-purple-600/30 shrink-0">
-            <BrainCircuit className="w-5 h-5" />
+      {/* TOP HEADER BAR - GLASSMORPHIC NEON */}
+      <header className="h-18 glass-panel border-b border-white/5 px-6 lg:px-8 flex items-center justify-between sticky top-0 z-40 backdrop-blur-2xl">
+        {/* Left: Brand Identity with live pulse indicator */}
+        <div className="flex items-center gap-3.5">
+          <div className="relative group cursor-pointer" onClick={() => setActiveTab("overview")}>
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#7C3AED] via-[#9333EA] to-[#EC4899] flex items-center justify-center text-white shadow-lg shadow-purple-600/30 group-hover:scale-105 transition-transform animate-glow">
+              <BrainCircuit className="w-5 h-5" />
+            </div>
+            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-[#05070D]"></span>
           </div>
           <div>
-            <div className="text-sm font-bold text-white tracking-tight leading-none">Mindora</div>
-            <div className="text-[10px] text-slate-400 font-medium tracking-wide mt-1">AI Notes Admin</div>
+            <div className="flex items-center gap-2">
+              <span className="text-base font-black text-white tracking-tight">Mindora</span>
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-300 border border-purple-500/30">
+                PRO HQ
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-400 font-medium tracking-wide">Autonomous Second Brain Console</div>
           </div>
         </div>
 
-        {/* Center: Search anything bar with shortcut */}
+        {/* Center: Omni Search & Quick Commands */}
         <div className="relative hidden md:flex items-center">
-          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3.5 pointer-events-none" />
+          <Search className="w-4 h-4 text-purple-400 absolute left-4 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search anything..."
+            placeholder="Search users, notes, entities, providers..."
             value={userSearch}
             onChange={(e) => setUserSearch(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                setActiveTab('users');
+              if (e.key === "Enter") {
+                setActiveTab("users");
                 handleSearchUsers();
               }
             }}
-            className="bg-[#111827] border border-slate-800/80 rounded-full pl-9 pr-14 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#7C3AED] w-72 lg:w-96 transition-all"
+            className="bg-[#080C16]/90 border border-white/10 rounded-full pl-11 pr-16 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 w-80 lg:w-[440px] transition-all shadow-inner"
           />
-          <div className="absolute right-3 flex items-center gap-0.5 pointer-events-none">
-            <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">⌘ K</span>
+          <div className="absolute right-3.5 flex items-center gap-1 pointer-events-none">
+            <span className="text-[10px] font-mono text-purple-300 bg-purple-950/80 px-2 py-0.5 rounded-md border border-purple-500/30">
+              ⌘ K
+            </span>
           </div>
         </div>
 
-        {/* Right: Notifications & User Profile */}
+        {/* Right: Quick Metrics Pill, Refresh, Notifications, Profile */}
         <div className="flex items-center gap-3">
+          {/* Live Sync Pulse Button */}
           <button
-            onClick={() => showToast('All background systems operational')}
-            className="w-9 h-9 rounded-full bg-[#111827] border border-slate-800/80 flex items-center justify-center text-slate-400 hover:text-white transition-all relative"
-            title="Notifications"
+            onClick={() => {
+              refreshData();
+              showToast("Command center synchronized with Neon DB");
+            }}
+            className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/40 hover:bg-purple-900/50 border border-purple-500/30 text-purple-300 text-xs font-semibold transition-all hover:scale-105 active:scale-95"
+            title="Refresh All Server Data"
           >
-            <Bell className="w-4 h-4" />
-            <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-[#0B0F19]"></span>
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+            <span className="text-[11px]">Sync Core</span>
           </button>
 
+          {/* Notifications Button */}
+          <button
+            onClick={() => showToast("Edge Gateway: 100% operational • 0 critical errors")}
+            className="w-10 h-10 rounded-2xl glass-panel hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-all relative group"
+            title="System Alerts"
+          >
+            <Bell className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+            <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-pink-500 ring-2 ring-[#05070D] animate-ping"></span>
+            <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-pink-500 ring-2 ring-[#05070D]"></span>
+          </button>
+
+          {/* Profile Dropdown */}
           <div className="relative">
             <button
               onClick={() => setShowProfileMenu(!showProfileMenu)}
-              className="bg-[#111827] border border-slate-800/80 rounded-full pl-1.5 pr-3 py-1 flex items-center gap-2.5 hover:border-slate-700 transition-all text-left"
+              className="glass-panel hover:bg-white/10 rounded-2xl pl-2 pr-3.5 py-1.5 flex items-center gap-2.5 border-white/10 hover:border-purple-500/40 transition-all text-left"
             >
-              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-sm">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-500 via-pink-500 to-amber-500 flex items-center justify-center text-xs font-black text-white shadow-md shadow-pink-500/30">
                 EA
               </div>
               <div className="hidden sm:block">
-                <div className="text-xs font-semibold text-white leading-tight">Emmanuel Ago</div>
-                <div className="text-[10px] text-slate-400 font-medium">Super Admin</div>
+                <div className="text-xs font-bold text-white leading-tight flex items-center gap-1.5">
+                  Emmanuel Ago <Sparkles className="w-3 h-3 text-amber-400 fill-amber-400" />
+                </div>
+                <div className="text-[10px] text-purple-400 font-mono font-medium">Super Admin</div>
               </div>
               <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden sm:block" />
             </button>
 
             {showProfileMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-[#111827] border border-slate-800 rounded-2xl p-1.5 shadow-2xl z-50 animate-in fade-in">
-                <div className="px-3 py-2 border-b border-slate-800 text-xs">
-                  <div className="font-semibold text-white">Emmanuel Ago</div>
-                  <div className="text-[10px] text-slate-400 truncate">admin@mindora.ai</div>
+              <div className="absolute right-0 mt-2 w-56 glass-dropdown rounded-2xl p-2 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2">
+                <div className="px-3 py-2.5 border-b border-white/10 text-xs">
+                  <div className="font-bold text-white">Emmanuel Ago</div>
+                  <div className="text-[11px] text-purple-400 font-mono truncate">admin@mindora.ai</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Authoritative Controller</div>
                 </div>
-                <button
-                  onClick={handleLogout}
-                  className="w-full mt-1 flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-950/40 rounded-xl transition-all"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  Sign Out
-                </button>
+                <div className="p-1 space-y-1">
+                  <button
+                    onClick={() => {
+                      setActiveTab("settings");
+                      setShowProfileMenu(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:text-white hover:bg-white/10 rounded-xl transition-all"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-purple-400" />
+                    Console Settings
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-950/40 rounded-xl transition-all font-semibold"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    Sign Out
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -797,58 +870,89 @@ export default function AdminDashboard() {
       {/* MAIN SHELL LAYOUT */}
       <div className="flex-1 flex overflow-hidden">
         {/* LEFT NAVIGATION SIDEBAR */}
-        <aside className="w-60 bg-[#0B0F19] border-r border-slate-800/80 p-3.5 flex flex-col justify-between shrink-0 hidden md:flex">
-          <div className="space-y-1">
-            {[
-              { id: 'overview', label: 'Dashboard', icon: Activity },
-              { id: 'users', label: 'Users', icon: Users },
-              { id: 'ai-providers', label: 'AI Providers', icon: BrainCircuit },
-              { id: 'notes', label: 'Notes & Content', icon: FileText },
-              { id: 'feature-flags', label: 'Feature Flags', icon: Flag },
-              { id: 'plans-limits', label: 'Rollouts', icon: Sliders },
-              { id: 'ads', label: 'Ad Network', icon: Radio },
-              { id: 'announcements', label: 'Broadcasts', icon: Megaphone },
-              { id: 'audit-logs', label: 'Audit Logs', icon: History },
-              { id: 'system-health', label: 'Health', icon: HardDrive },
-              { id: 'settings', label: 'Settings', icon: Settings },
-            ].map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    setActiveTab(item.id as Tab);
-                    setSelectedUser(null);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all ${
-                    isActive
-                      ? 'bg-gradient-to-r from-[#7C3AED] to-[#6366F1] text-white font-semibold shadow-md shadow-purple-600/30'
-                      : 'text-slate-400 hover:bg-[#111827] hover:text-slate-200 font-medium'
-                  }`}
-                >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-500'}`} />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
+        <aside className="w-64 glass-panel border-r border-white/5 p-4 flex flex-col justify-between shrink-0 hidden md:flex backdrop-blur-2xl">
+          <div className="space-y-6">
+            {/* Quick System Badge */}
+            <div className="px-3 py-2.5 rounded-2xl bg-gradient-to-r from-purple-950/40 via-slate-900/40 to-pink-950/30 border border-purple-500/20 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                <span className="text-[11px] font-mono font-bold text-slate-300">Live Server Engine</span>
+              </div>
+              <span className="text-[10px] font-mono text-purple-400 bg-purple-950/80 px-2 py-0.5 rounded-md border border-purple-500/30">
+                ACTIVE
+              </span>
+            </div>
+
+            {/* Navigation links */}
+            <div className="space-y-1">
+              {[
+                { id: "overview", label: "Dashboard HQ", icon: Activity, badge: "Live" },
+                { id: "users", label: "User Directory", icon: Users, badge: metrics?.users?.total ? String(metrics.users.total) : undefined },
+                { id: "ai-providers", label: "AI Gateways", icon: BrainCircuit, badge: "Hot-Swap" },
+                { id: "notes", label: "Content & Brain", icon: FileText, badge: "Moderation" },
+                { id: "feature-flags", label: "Feature Flags", icon: Flag, badge: "Dynamic" },
+                { id: "plans-limits", label: "Plans & Quotas", icon: Sliders, badge: "Rules" },
+                { id: "ads", label: "Monetization & Ads", icon: Radio, badge: "AdMob" },
+                { id: "announcements", label: "Broadcast Push", icon: Megaphone, badge: undefined },
+                { id: "audit-logs", label: "Audit Stream", icon: History, badge: undefined },
+                { id: "system-health", label: "System Health", icon: HardDrive, badge: "100%" },
+                { id: "settings", label: "Platform Setup", icon: Settings, badge: undefined },
+              ].map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id as Tab);
+                      setSelectedUser(null);
+                    }}
+                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs transition-all group ${
+                      isActive
+                        ? "bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#EC4899] text-white font-bold shadow-lg shadow-purple-600/30 scale-[1.02]"
+                        : "text-slate-400 hover:bg-white/5 hover:text-white font-medium"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon className={`w-4 h-4 transition-transform group-hover:scale-110 ${isActive ? "text-white" : "text-slate-400 group-hover:text-purple-400"}`} />
+                      <span>{item.label}</span>
+                    </div>
+                    {item.badge && (
+                      <span className={`text-[9px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                        isActive
+                          ? "bg-white/20 text-white"
+                          : "bg-slate-900/90 text-purple-300 border border-purple-500/20 group-hover:border-purple-500/40"
+                      }`}>
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Bottom Left System Healthy Widget */}
-          <div className="bg-[#111827] border border-slate-800/80 rounded-2xl p-3 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-cyan-950/80 border border-cyan-800/60 flex items-center justify-center text-cyan-400 shadow-sm shadow-cyan-500/20">
-                <Zap className="w-4 h-4" />
+          {/* Bottom Diagnostics Card */}
+          <div className="glass-panel p-3.5 rounded-2xl border-white/5 space-y-2.5 bg-gradient-to-br from-[#0c1222] to-[#121930]">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                  <Zap className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white leading-tight">Neon AWS Pool</div>
+                  <div className="text-[10px] text-emerald-400 font-mono">18ms latency</div>
+                </div>
               </div>
-              <div>
-                <div className="text-xs font-bold text-white leading-tight">System Healthy</div>
-                <div className="text-[10px] text-slate-400">All services operational</div>
-              </div>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             </div>
-            {/* Waveform indicator */}
-            <svg className="w-7 h-4 text-cyan-400 stroke-current shrink-0" fill="none" viewBox="0 0 24 12" strokeWidth="2.5">
-              <path d="M0 6h4l2-4 3 8 3-8 2 4h10" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+              <div className="bg-gradient-to-r from-cyan-500 to-purple-500 h-full w-[94%] rounded-full animate-pulse-slow"></div>
+            </div>
+            <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+              <span>99.99% Uptime</span>
+              <span className="text-purple-400">Edge v2.4</span>
+            </div>
           </div>
         </aside>
 
@@ -865,443 +969,330 @@ export default function AdminDashboard() {
           )}
 
           {/* ========================================================= */}
-          {/* 1. EXECUTIVE DASHBOARD TAB (EXACT MATCH TO DESIGN) */}
-          {/* ========================================================= */}
-          {activeTab === 'overview' && (
-            <div className="space-y-6">
-              {/* Top Greeting & Live Status Header Banner */}
-              <div className="bg-gradient-to-r from-[#111827] via-[#111827] to-[#1E1B4B]/60 border border-slate-800/80 rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative overflow-hidden">
-                <div className="space-y-1 relative z-10">
-                  <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-                    Good morning, Emmanuel 👋
-                  </h1>
-                  <p className="text-xs text-slate-400">
-                    Here's what's happening with your AI Notes app today.
-                  </p>
-                </div>
+          {/* 1. EXECUTIVE DASHBOARD TAB - SEXY NEON BENTO REDESIGN */}
+          {activeTab === "overview" && (
+            <div className="space-y-7 animate-in fade-in duration-300">
+              {/* Top Hero Banner with Dynamic Gradient Aura */}
+              <div className="relative rounded-[32px] p-7 md:p-9 overflow-hidden glass-panel border-white/10 shadow-2xl shadow-purple-950/40 bg-gradient-to-r from-[#0C1222]/95 via-[#131B33]/90 to-[#1A163B]/90">
+                <div className="absolute top-0 right-0 w-[420px] h-full bg-gradient-to-l from-purple-600/20 via-pink-600/15 to-transparent pointer-events-none blur-3xl"></div>
+                <div className="absolute -bottom-8 -left-8 w-48 h-48 bg-cyan-600/15 rounded-full pointer-events-none blur-2xl"></div>
 
-                <div className="flex items-center gap-2.5 relative z-10">
-                  <div className="bg-[#111827] border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs text-slate-300 font-medium flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                  <div className="space-y-2">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs font-semibold">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Live Intelligence Stream</span>
+                    </div>
+                    <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight">
+                      Good morning, <span className="gradient-text-vibrant">Emmanuel</span> 👋
+                    </h1>
+                    <p className="text-xs md:text-sm text-slate-300 max-w-xl font-normal leading-relaxed">
+                      All Mindora second brain services, pgvector embeddings, and audio transcription engines are online and operating normally.
+                    </p>
                   </div>
-                  <div className="bg-emerald-950/60 border border-emerald-800/60 text-emerald-400 px-3.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span>All Systems Online</span>
+
+                  {/* Hero Right Action Badges */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="glass-panel px-4 py-2.5 rounded-2xl border-white/10 flex items-center gap-2 text-xs font-mono text-slate-300">
+                      <Calendar className="w-4 h-4 text-purple-400" />
+                      <span>{new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                    </div>
+
+                    <div className="px-4 py-2.5 rounded-2xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 text-xs font-mono font-bold flex items-center gap-2 shadow-lg shadow-emerald-950/40">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span>All Systems Operational</span>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        refreshData();
+                        showToast("Overview metrics refreshed");
+                      }}
+                      className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#EC4899] text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-purple-600/30 hover:opacity-95 hover:scale-105 active:scale-95 transition-all"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+                      <span>Sync</span>
+                    </button>
                   </div>
                 </div>
-
-                {/* Subtle background glow */}
-                <div className="absolute -top-12 -right-12 w-48 h-48 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
               </div>
 
-              {/* Top Bento Row: 4 Metric Cards + Keep Growing Banner */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* 1. Total Registered */}
-                <div className="bg-[#111827] border border-slate-800/80 p-5 rounded-2xl shadow-sm space-y-4 flex flex-col justify-between">
+              {/* Bento Grid Row 1: 4 Sexy Stat Cards with Hover Glow */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                {/* 1. Total Registered Users */}
+                <div
+                  onClick={() => setActiveTab("users")}
+                  className="glass-panel glass-panel-hover p-6 rounded-[28px] border-white/10 flex flex-col justify-between space-y-4 cursor-pointer relative overflow-hidden group"
+                >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-400">Total Registered</span>
-                    <div className="w-8 h-8 rounded-xl bg-indigo-950/70 border border-indigo-900/60 flex items-center justify-center text-indigo-400">
-                      <Users className="w-4 h-4" />
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Registered Brains</span>
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform">
+                      <Users className="w-5 h-5" />
                     </div>
                   </div>
                   <div>
-                    <div className="text-3xl font-extrabold text-white">
+                    <div className="text-4xl font-black text-white tracking-tight">
                       {metrics?.users?.total ?? 47}
                     </div>
-                    <div className="text-xs text-emerald-400 font-medium mt-1 flex items-center gap-1">
-                      <span>↑ {metrics?.users?.activeToday ?? 47} active in last 24h</span>
+                    <div className="text-xs text-emerald-400 font-semibold mt-1.5 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                      <span>{metrics?.users?.activeToday ?? 47} active today</span>
                     </div>
                   </div>
                   {/* Purple Sparkline Wave */}
                   <div className="pt-2">
-                    <svg className="w-full h-8 text-[#7C3AED]" fill="none" viewBox="0 0 100 24" stroke="currentColor" strokeWidth="2.5">
+                    <svg className="w-full h-9 text-[#A855F7]" fill="none" viewBox="0 0 100 24" stroke="currentColor" strokeWidth="2.5">
                       <path d="M0 16 Q20 22 40 12 T80 8 T100 14" strokeLinecap="round" />
                     </svg>
                   </div>
                 </div>
 
-                {/* 2. Pro Monthly Revenue */}
-                <div className="bg-[#111827] border border-slate-800/80 p-5 rounded-2xl shadow-sm space-y-4 flex flex-col justify-between">
+                {/* 2. Monthly Revenue */}
+                <div
+                  onClick={() => setActiveTab("plans-limits")}
+                  className="glass-panel glass-panel-hover p-6 rounded-[28px] border-white/10 flex flex-col justify-between space-y-4 cursor-pointer relative overflow-hidden group"
+                >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-400">Pro Monthly Revenue</span>
-                    <div className="w-8 h-8 rounded-xl bg-purple-950/70 border border-purple-900/60 flex items-center justify-center text-purple-400">
-                      <CreditCard className="w-4 h-4" />
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Monthly MRR</span>
+                    <div className="w-10 h-10 rounded-2xl bg-pink-500/10 border border-pink-500/30 flex items-center justify-center text-pink-400 group-hover:scale-110 transition-transform">
+                      <CreditCard className="w-5 h-5" />
                     </div>
                   </div>
                   <div>
-                    <div className="text-3xl font-extrabold text-white">
-                      ${metrics?.revenue?.mrr ? metrics.revenue.mrr.toFixed(2) : '4.99'}
+                    <div className="text-4xl font-black text-white tracking-tight">
+                      ${metrics?.revenue?.mrr ? metrics.revenue.mrr.toFixed(2) : "4.99"}
                     </div>
-                    <div className="text-xs text-slate-400 font-medium mt-1">
-                      {metrics?.users?.pro ?? 1} pro subs ({metrics?.users?.conversionRate ?? '2.1%'} conversion)
+                    <div className="text-xs text-pink-400 font-semibold mt-1.5">
+                      {metrics?.users?.pro ?? 1} Pro subs ({metrics?.users?.conversionRate ?? "2.1%"} conversion)
                     </div>
                   </div>
-                  {/* Blue mini bar chart sparkline */}
-                  <div className="pt-2 flex items-end justify-between h-8 gap-1 px-1">
-                    {[40, 60, 45, 80, 50, 70, 90, 65, 85, 95, 75, 100].map((h, i) => (
+                  {/* Mini animated pink/purple bars */}
+                  <div className="pt-2 flex items-end justify-between h-9 gap-1.5 px-1">
+                    {[35, 60, 45, 80, 50, 75, 95, 65, 85, 100, 80, 95].map((h, i) => (
                       <div
                         key={i}
-                        className="w-1.5 bg-[#6366F1] rounded-t-sm"
-                        style={{ height: `${h * 0.28}px`, opacity: i > 8 ? 1 : 0.6 }}
+                        className="w-1.5 bg-gradient-to-t from-purple-500 to-pink-500 rounded-t-sm transition-all"
+                        style={{ height: `${h * 0.32}px`, opacity: i > 7 ? 1 : 0.55 }}
                       />
                     ))}
                   </div>
                 </div>
 
-                {/* 3. AI Tokens Consumed */}
-                <div className="bg-[#111827] border border-slate-800/80 p-5 rounded-2xl shadow-sm space-y-4 flex flex-col justify-between">
+                {/* 3. AI Tokens Processed */}
+                <div
+                  onClick={() => setActiveTab("ai-providers")}
+                  className="glass-panel glass-panel-hover p-6 rounded-[28px] border-white/10 flex flex-col justify-between space-y-4 cursor-pointer relative overflow-hidden group"
+                >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-400">AI Tokens Consumed</span>
-                    <div className="w-8 h-8 rounded-xl bg-cyan-950/70 border border-cyan-900/60 flex items-center justify-center text-cyan-400">
-                      <Cpu className="w-4 h-4" />
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">AI Tokens Consumed</span>
+                    <div className="w-10 h-10 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 group-hover:scale-110 transition-transform">
+                      <Cpu className="w-5 h-5" />
                     </div>
                   </div>
                   <div>
-                    <div className="text-3xl font-extrabold text-white">
-                      {metrics?.ai?.totalTokens ? Math.round(metrics.ai.totalTokens / 1000) + 'k' : '0k'}
+                    <div className="text-4xl font-black text-white tracking-tight">
+                      {metrics?.ai?.totalTokens ? Math.round(metrics.ai.totalTokens / 1000) + "k" : "12.8k"}
                     </div>
-                    <div className="text-xs text-slate-400 font-medium mt-1">
-                      Est. cost: $0.00
+                    <div className="text-xs text-cyan-400 font-semibold mt-1.5">
+                      ModelFlare Gateway • 100% routed
                     </div>
                   </div>
-                  {/* Cyan Sparkline Wave */}
+                  {/* Cyan Wave */}
                   <div className="pt-2">
-                    <svg className="w-full h-8 text-[#22D3EE]" fill="none" viewBox="0 0 100 24" stroke="currentColor" strokeWidth="2.5">
+                    <svg className="w-full h-9 text-[#06B6D4]" fill="none" viewBox="0 0 100 24" stroke="currentColor" strokeWidth="2.5">
                       <path d="M0 18 Q25 24 50 14 T75 6 T100 12" strokeLinecap="round" />
                     </svg>
                   </div>
                 </div>
 
-                {/* 4. Second Brain Entities */}
-                <div className="bg-[#111827] border border-slate-800/80 p-5 rounded-2xl shadow-sm space-y-4 flex flex-col justify-between">
+                {/* 4. Total Content & Brain Entities */}
+                <div
+                  onClick={() => setActiveTab("notes")}
+                  className="glass-panel glass-panel-hover p-6 rounded-[28px] border-white/10 flex flex-col justify-between space-y-4 cursor-pointer relative overflow-hidden group"
+                >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-400">Second Brain Entities</span>
-                    <div className="w-8 h-8 rounded-xl bg-violet-950/70 border border-violet-900/60 flex items-center justify-center text-violet-400">
-                      <BrainCircuit className="w-4 h-4" />
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Brain Artifacts</span>
+                    <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform">
+                      <BrainCircuit className="w-5 h-5" />
                     </div>
                   </div>
                   <div>
-                    <div className="text-3xl font-extrabold text-white">
-                      {(metrics?.content?.notes ?? 0) + (metrics?.content?.meetings ?? 0) + (metrics?.content?.tasks ?? 0)}
+                    <div className="text-4xl font-black text-white tracking-tight">
+                      {(metrics?.product?.notes ?? metrics?.content?.notes ?? 0) + (metrics?.product?.meetings ?? metrics?.content?.meetings ?? 0) + (metrics?.product?.tasks ?? metrics?.content?.tasks ?? 0)}
                     </div>
-                    <div className="text-xs text-slate-400 font-medium mt-1">
-                      {metrics?.content?.notes ?? 0} notes • {metrics?.content?.meetings ?? 0} meetings • {metrics?.content?.tasks ?? 0} tasks
+                    <div className="text-xs text-amber-300 font-semibold mt-1.5 truncate">
+                      {metrics?.product?.notes ?? metrics?.content?.notes ?? 0} notes • {metrics?.product?.meetings ?? metrics?.content?.meetings ?? 0} meetings • {metrics?.product?.tasks ?? metrics?.content?.tasks ?? 0} tasks
                     </div>
                   </div>
-                  {/* Magenta Sparkline Wave */}
+                  {/* Magenta Wave */}
                   <div className="pt-2">
-                    <svg className="w-full h-8 text-[#D946EF]" fill="none" viewBox="0 0 100 24" stroke="currentColor" strokeWidth="2.5">
+                    <svg className="w-full h-9 text-[#F59E0B]" fill="none" viewBox="0 0 100 24" stroke="currentColor" strokeWidth="2.5">
                       <path d="M0 14 Q30 8 60 18 T100 10" strokeLinecap="round" />
                     </svg>
                   </div>
                 </div>
               </div>
 
-              {/* Middle Row: Revenue Overview, Recent Activity, and Quick Actions */}
+              {/* Bento Row 2: Revenue Trend Area Chart + Recent Live Events + Quick Action Matrix */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {/* Revenue Overview (5 Columns) */}
-                <div className="lg:col-span-5 bg-[#111827] border border-slate-800/80 rounded-2xl p-6 shadow-sm flex flex-col justify-between space-y-4">
+                {/* Revenue Overview Chart (5 Cols) */}
+                <div className="lg:col-span-5 glass-panel p-6 rounded-[30px] border-white/10 space-y-5 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-2 bg-purple-950/70 text-purple-400 rounded-xl border border-purple-900/60">
-                        <TrendingUp className="w-4 h-4" />
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-purple-500/10 text-purple-400 rounded-2xl border border-purple-500/20">
+                        <TrendingUp className="w-5 h-5" />
                       </div>
                       <div>
-                        <h3 className="text-sm font-bold text-white">Revenue Overview</h3>
-                        <p className="text-[11px] text-slate-400">Monthly revenue from pro subscriptions</p>
+                        <h3 className="text-sm font-bold text-white">MRR Growth Trajectory</h3>
+                        <p className="text-[11px] text-slate-400">Pro subscription renewals and new converts</p>
                       </div>
                     </div>
-                    <div className="bg-[#0B0F19] border border-slate-800 text-[11px] text-slate-300 px-2.5 py-1 rounded-xl">
-                      Last 30 days
+                    <div className="glass-panel border-white/10 text-[11px] font-mono text-purple-300 px-3 py-1 rounded-xl">
+                      Last 30 Days
                     </div>
                   </div>
 
-                  {/* Visual Spline Area Chart with Tooltip Pin */}
+                  {/* SVG Gradient Spline Chart */}
                   <div className="relative pt-6 pb-2">
-                    {/* Tooltip callout badge on peak */}
-                    <div className="absolute top-2 left-[58%] -translate-x-1/2 bg-[#0B0F19] border border-slate-700 text-[10px] text-white px-2.5 py-1 rounded-lg shadow-xl flex flex-col items-center z-10">
-                      <span className="text-slate-400 text-[9px]">Oct 18</span>
-                      <span className="font-bold text-purple-300">$4.99</span>
+                    {/* Floating callout pin */}
+                    <div className="absolute top-2 left-[62%] -translate-x-1/2 glass-dropdown text-[10px] text-white px-3 py-1.5 rounded-xl flex flex-col items-center z-10 animate-bounce">
+                      <span className="text-slate-400 text-[9px] font-mono">Oct Peak</span>
+                      <span className="font-black text-pink-300 font-mono">${metrics?.revenue?.mrr ? metrics.revenue.mrr.toFixed(2) : "4.99"}</span>
                     </div>
 
-                    <svg className="w-full h-36 overflow-visible" viewBox="0 0 300 100" preserveAspectRatio="none">
+                    <svg className="w-full h-40 overflow-visible" viewBox="0 0 300 100" preserveAspectRatio="none">
                       <defs>
-                        <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#7C3AED" stopOpacity="0.4" />
+                        <linearGradient id="sexyRevenueGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#EC4899" stopOpacity="0.45" />
+                          <stop offset="50%" stopColor="#7C3AED" stopOpacity="0.2" />
                           <stop offset="100%" stopColor="#7C3AED" stopOpacity="0.0" />
                         </linearGradient>
                       </defs>
-                      {/* Grid lines */}
-                      <line x1="0" y1="20" x2="300" y2="20" stroke="#1E293B" strokeDasharray="3 3" />
-                      <line x1="0" y1="50" x2="300" y2="50" stroke="#1E293B" strokeDasharray="3 3" />
-                      <line x1="0" y1="80" x2="300" y2="80" stroke="#1E293B" strokeDasharray="3 3" />
-                      
-                      {/* Area Fill */}
+                      <line x1="0" y1="20" x2="300" y2="20" stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+                      <line x1="0" y1="55" x2="300" y2="55" stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+                      <line x1="0" y1="85" x2="300" y2="85" stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+
                       <path
-                        d="M0 80 Q30 82 60 70 T120 72 T180 35 T240 68 T300 65 L300 95 L0 95 Z"
-                        fill="url(#revenueGradient)"
+                        d="M0 80 Q30 82 60 70 T120 72 T180 32 T240 65 T300 62 L300 95 L0 95 Z"
+                        fill="url(#sexyRevenueGrad)"
                       />
-                      {/* Curve Stroke */}
                       <path
-                        d="M0 80 Q30 82 60 70 T120 72 T180 35 T240 68 T300 65"
+                        d="M0 80 Q30 82 60 70 T120 72 T180 32 T240 65 T300 62"
                         fill="none"
-                        stroke="#A855F7"
-                        strokeWidth="3"
+                        stroke="#EC4899"
+                        strokeWidth="3.5"
                         strokeLinecap="round"
                       />
-                      {/* Peak Glowing Point */}
-                      <circle cx="180" cy="35" r="5" fill="#FFFFFF" stroke="#7C3AED" strokeWidth="3" className="animate-pulse" />
+                      <circle cx="180" cy="32" r="6" fill="#FFFFFF" stroke="#A855F7" strokeWidth="4" className="animate-pulse" />
                     </svg>
 
-                    {/* X-axis labels */}
                     <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-2">
                       <span>Oct 1</span>
-                      <span>Oct 5</span>
-                      <span>Oct 10</span>
+                      <span>Oct 8</span>
                       <span>Oct 15</span>
-                      <span>Oct 20</span>
-                      <span>Oct 25</span>
+                      <span>Oct 22</span>
+                      <span>Oct 30</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Recent Activity (4 Columns) */}
-                <div className="lg:col-span-4 bg-[#111827] border border-slate-800/80 rounded-2xl p-6 shadow-sm flex flex-col justify-between space-y-4">
+                {/* Real-time Activity Feed (4 Cols) */}
+                <div className="lg:col-span-4 glass-panel p-6 rounded-[30px] border-white/10 space-y-4 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-white">Recent Activity</h3>
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-pink-500/10 text-pink-400">
+                        <Activity className="w-4 h-4" />
+                      </div>
+                      <h3 className="text-sm font-bold text-white">Live Activity Stream</h3>
+                    </div>
                     <button
-                      onClick={() => setActiveTab('audit-logs')}
-                      className="text-xs font-semibold text-[#6366F1] hover:text-indigo-400 transition-colors"
+                      onClick={() => setActiveTab("audit-logs")}
+                      className="text-xs font-bold text-purple-400 hover:text-purple-300 transition-colors"
                     >
-                      View All →
+                      Audit Trail →
                     </button>
                   </div>
 
                   <div className="space-y-3">
                     {[
                       {
-                        title: 'New user registered',
-                        desc: usersList[0]?.email || 'test_member_alpha@mindora.ai',
-                        time: '11:08 AM',
+                        title: "User Authenticated",
+                        desc: usersList[0]?.email || "alpha_member@mindora.ai",
+                        time: "Just now",
                         icon: Users,
-                        color: 'bg-purple-950/80 text-purple-400 border-purple-900',
+                        badgeBg: "bg-purple-500/10 text-purple-400 border-purple-500/20",
                       },
                       {
-                        title: 'AI provider updated',
-                        desc: 'OpenAI gateway configured',
-                        time: '09:42 AM',
+                        title: "AI Gateway Hot-Swap",
+                        desc: "ModelFlare universal-2 ready",
+                        time: "4m ago",
                         icon: BrainCircuit,
-                        color: 'bg-cyan-950/80 text-cyan-400 border-cyan-900',
+                        badgeBg: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
                       },
                       {
-                        title: 'New subscription',
-                        desc: 'Pro plan - $4.99',
-                        time: '08:15 AM',
+                        title: "Pro Subscription Active",
+                        desc: "Full unconstrained second brain",
+                        time: "21m ago",
                         icon: CreditCard,
-                        color: 'bg-amber-950/80 text-amber-400 border-amber-900',
+                        badgeBg: "bg-pink-500/10 text-pink-400 border-pink-500/20",
                       },
                       {
-                        title: 'System health check',
-                        desc: 'All services operational',
-                        time: '06:03 AM',
-                        icon: CheckCircle2,
-                        color: 'bg-emerald-950/80 text-emerald-400 border-emerald-900',
+                        title: "AssemblyAI Diarization",
+                        desc: "Speech-to-text pipeline verified",
+                        time: "1h ago",
+                        icon: Mic,
+                        badgeBg: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
                       },
                     ].map((act, i) => {
                       const Icon = act.icon;
                       return (
-                        <div key={i} className="flex items-center justify-between text-xs">
+                        <div key={i} className="flex items-center justify-between text-xs p-2.5 rounded-2xl glass-panel-hover">
                           <div className="flex items-center gap-3">
-                            <div className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 ${act.color}`}>
+                            <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${act.badgeBg}`}>
                               <Icon className="w-4 h-4" />
                             </div>
                             <div>
-                              <div className="font-semibold text-white leading-tight">{act.title}</div>
+                              <div className="font-bold text-white leading-tight">{act.title}</div>
                               <div className="text-[11px] text-slate-400 truncate max-w-[170px]">{act.desc}</div>
                             </div>
                           </div>
-                          <span className="text-[10px] text-slate-500 font-mono shrink-0">{act.time}</span>
+                          <span className="text-[10px] text-purple-400 font-mono shrink-0">{act.time}</span>
                         </div>
                       );
                     })}
                   </div>
                 </div>
 
-                {/* Quick Actions (3 Columns) */}
-                <div className="lg:col-span-3 bg-[#111827] border border-slate-800/80 rounded-2xl p-6 shadow-sm flex flex-col justify-between space-y-4">
+                {/* Quick Action Matrix (3 Cols) */}
+                <div className="lg:col-span-3 glass-panel p-6 rounded-[30px] border-white/10 space-y-4 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-indigo-400" />
-                      Quick Actions
+                      <Sparkles className="w-4 h-4 text-purple-400" />
+                      Quick Controls
                     </h3>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2.5">
                     {[
-                      { label: 'Manage Users', icon: Users, tab: 'users' },
-                      { label: 'Configure AI', icon: BrainCircuit, tab: 'ai-providers' },
-                      { label: 'Feature Flags', icon: Flag, tab: 'feature-flags' },
-                      { label: 'Send Broadcast', icon: Send, tab: 'announcements' },
-                      { label: 'View Logs', icon: FileText, tab: 'audit-logs' },
-                      { label: 'System Health', icon: ShieldCheck, tab: 'system-health' },
+                      { label: "User Access", icon: Users, tab: "users", color: "text-purple-400" },
+                      { label: "AI Gateways", icon: BrainCircuit, tab: "ai-providers", color: "text-pink-400" },
+                      { label: "Content Store", icon: FileText, tab: "notes", color: "text-cyan-400" },
+                      { label: "Feature Flags", icon: Flag, tab: "feature-flags", color: "text-amber-400" },
+                      { label: "Ad Network", icon: Radio, tab: "ads", color: "text-emerald-400" },
+                      { label: "Push Broadcast", icon: Send, tab: "announcements", color: "text-indigo-400" },
                     ].map((btn, i) => {
                       const Icon = btn.icon;
                       return (
                         <button
                           key={i}
                           onClick={() => setActiveTab(btn.tab as Tab)}
-                          className="p-3 bg-[#0B0F19] hover:bg-slate-900 border border-slate-800/80 hover:border-slate-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 transition-all group"
+                          className="p-3.5 rounded-2xl glass-panel glass-panel-hover flex flex-col items-center justify-center text-center gap-2 transition-all group"
                         >
-                          <Icon className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
-                          <span className="text-[11px] font-medium text-slate-300 group-hover:text-white">
+                          <Icon className={`w-5 h-5 ${btn.color} group-hover:scale-110 transition-transform`} />
+                          <span className="text-[11px] font-bold text-slate-200 group-hover:text-white">
                             {btn.label}
                           </span>
                         </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Bottom Row: Live Administrative Audit Stream, AI Gateway Routing, and Top Features Usage */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {/* Live Administrative Audit Stream (5 Columns) */}
-                <div className="lg:col-span-5 bg-[#111827] border border-slate-800/80 rounded-2xl p-6 shadow-sm space-y-4 flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-2 bg-indigo-950/70 text-indigo-400 rounded-xl border border-indigo-900/60">
-                        <ShieldCheck className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-white">Live Administrative Audit Stream</h3>
-                        <p className="text-[11px] text-slate-400">Verifiable server-side logging of all operational actions</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setActiveTab('audit-logs')}
-                      className="text-xs font-semibold text-[#6366F1] hover:text-indigo-400 transition-colors"
-                    >
-                      View All →
-                    </button>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs font-mono">
-                      <thead className="text-[10px] uppercase text-slate-500 border-b border-slate-800">
-                        <tr>
-                          <th className="pb-2">TIME</th>
-                          <th className="pb-2">USER</th>
-                          <th className="pb-2">ACTION</th>
-                          <th className="pb-2">DETAILS</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/60 text-[11px]">
-                        {[
-                          { time: '11:08', user: 'admin@mindora.ai', action: 'OVERRIDE_USER_PLAN', details: 'test_member_alpha → pro' },
-                          { time: '09:42', user: 'system', action: 'UPDATE_AI_PROVIDER', details: 'OpenAI gateway configured' },
-                          { time: '08:15', user: 'admin@mindora.ai', action: 'CREATE_SUBSCRIPTION', details: 'pro - $4.99' },
-                          { time: '06:03', user: 'system', action: 'HEALTH_CHECK', details: 'all services ok' },
-                          { time: '04:21', user: 'admin@mindora.ai', action: 'UPDATE_FEATURE_FLAG', details: 'new-notes-ui → enabled' },
-                        ].map((row, i) => (
-                          <tr key={i} className="hover:bg-slate-900/50">
-                            <td className="py-2.5 text-slate-400 flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                              {row.time}
-                            </td>
-                            <td className="py-2.5 text-slate-300 truncate max-w-[100px]">{row.user}</td>
-                            <td className="py-2.5">
-                              <span className="bg-slate-900 px-2 py-0.5 rounded text-[10px] text-indigo-300 border border-slate-800">
-                                {row.action}
-                              </span>
-                            </td>
-                            <td className="py-2.5 text-slate-400 truncate max-w-[120px]">{row.details}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* AI Gateway Routing (4 Columns) */}
-                <div className="lg:col-span-4 bg-[#111827] border border-slate-800/80 rounded-2xl p-6 shadow-sm flex flex-col justify-between space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 bg-purple-950/70 text-purple-400 rounded-xl border border-purple-900/60">
-                        <BrainCircuit className="w-4 h-4" />
-                      </div>
-                      <h3 className="text-sm font-bold text-white">AI Gateway Routing</h3>
-                    </div>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800">
-                      ● Configured
-                    </span>
-                  </div>
-
-                  <div className="space-y-2 text-xs">
-                    <div className="flex justify-between items-center p-2.5 bg-[#0B0F19] rounded-xl border border-slate-800/80">
-                      <span className="text-slate-400">Active Providers</span>
-                      <span className="font-semibold text-white font-mono">{aiProviders.length || 1} configured</span>
-                    </div>
-                    <div className="flex justify-between items-center p-2.5 bg-[#0B0F19] rounded-xl border border-slate-800/80">
-                      <span className="text-slate-400">Primary Provider</span>
-                      <span className="font-semibold text-white font-mono">{metrics?.ai?.primaryProvider || 'OpenAI-Compatible Gateway'}</span>
-                    </div>
-                    <div className="flex justify-between items-center p-2.5 bg-[#0B0F19] rounded-xl border border-slate-800/80">
-                      <span className="text-slate-400">Chat & Reasoning</span>
-                      <span className="font-mono text-purple-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                        gpt-4o-mini
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center p-2.5 bg-[#0B0F19] rounded-xl border border-slate-800/80">
-                      <span className="text-slate-400">Audio Transcription</span>
-                      <span className="font-mono text-emerald-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                        whisper-1
-                      </span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => setActiveTab('ai-providers')}
-                    className="w-full py-2.5 bg-gradient-to-r from-[#7C3AED] to-[#6366F1] hover:opacity-95 text-white text-xs font-semibold rounded-xl transition-all shadow-md shadow-purple-600/20"
-                  >
-                    Configure Providers & Hot-Swap →
-                  </button>
-                </div>
-
-                {/* Top Features Usage (3 Columns) */}
-                <div className="lg:col-span-3 bg-[#111827] border border-slate-800/80 rounded-2xl p-6 shadow-sm flex flex-col justify-between space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-white">Top Features Usage</h3>
-                    <div className="bg-[#0B0F19] border border-slate-800 text-[10px] text-slate-300 px-2 py-0.5 rounded-lg">
-                      Last 7 days
-                    </div>
-                  </div>
-
-                  <div className="space-y-3.5">
-                    {[
-                      { name: 'Notes Created', val: '1.2k', pct: 42, icon: FileText, color: 'bg-purple-500' },
-                      { name: 'Voice Notes', val: '856', pct: 28, icon: Mic, color: 'bg-cyan-500' },
-                      { name: 'Tasks', val: '421', pct: 15, icon: CheckSquare, color: 'bg-emerald-500' },
-                      { name: 'Meetings', val: '312', pct: 10, icon: Video, color: 'bg-amber-500' },
-                      { name: 'Search', val: '187', pct: 5, icon: Search, color: 'bg-rose-500' },
-                    ].map((feat, i) => {
-                      const Icon = feat.icon;
-                      return (
-                        <div key={i} className="space-y-1.5">
-                          <div className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-2">
-                              <Icon className="w-3.5 h-3.5 text-slate-400" />
-                              <span className="text-slate-300 font-medium">{feat.name}</span>
-                            </div>
-                            <span className="font-mono text-slate-400 text-[11px]">{feat.val}</span>
-                          </div>
-                          <div className="h-1.5 w-full bg-[#0B0F19] rounded-full overflow-hidden">
-                            <div
-                              className={`h-full ${feat.color} rounded-full`}
-                              style={{ width: `${feat.pct}%` }}
-                            />
-                          </div>
-                        </div>
                       );
                     })}
                   </div>
@@ -1363,7 +1354,7 @@ export default function AdminDashboard() {
               </div>
 
               {/* Users Table */}
-              <div className="bg-[#111827] border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+              <div className="glass-panel border-white/10 rounded-[30px] overflow-hidden shadow-2xl backdrop-blur-2xl">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs text-slate-300">
                     <thead className="bg-[#0B0F19] text-slate-400 font-semibold uppercase text-[10px] tracking-wider border-b border-slate-800">
@@ -1462,7 +1453,7 @@ export default function AdminDashboard() {
               {/* User Drawer / Modal */}
               {selectedUser && (
                 <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/70 backdrop-blur-sm animate-in fade-in">
-                  <div className="w-full max-w-xl h-full bg-[#0B0F19] border-l border-slate-800 p-6 md:p-8 overflow-y-auto space-y-6 flex flex-col shadow-2xl">
+                  <div className="w-full max-w-xl h-full glass-panel border-l border-white/15 p-6 md:p-8 overflow-y-auto space-y-6 flex flex-col shadow-2xl backdrop-blur-3xl bg-[#080C16]/95">
                     <div className="flex items-center justify-between pb-4 border-b border-slate-800">
                       <div>
                         <div className="text-xs uppercase font-mono font-bold text-indigo-400">Account Control & Quotas</div>
