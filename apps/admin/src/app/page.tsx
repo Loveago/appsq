@@ -1308,7 +1308,15 @@ export default function AdminDashboard() {
             <div className="space-y-6">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-white tracking-tight">User Directory & Entitlements</h2>
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-black text-white tracking-tight">User Directory & Entitlements</h2>
+                      <p className="text-xs text-slate-400">Authoritative database control: manage subscriptions, quotas, and RBAC privileges</p>
+                    </div>
+                  </div>
                   <p className="text-xs text-slate-400">Authoritative database control: manage subscriptions, monitor usage quotas, grant trials, and manage account statuses</p>
                 </div>
 
@@ -1316,7 +1324,7 @@ export default function AdminDashboard() {
                   <select
                     value={userPlanFilter}
                     onChange={(e) => setUserPlanFilter(e.target.value)}
-                    className="px-3 py-2 bg-[#111827] border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-[#7C3AED]"
+                    className="px-3.5 py-2 glass-panel border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
                   >
                     <option value="ALL">All Plans</option>
                     <option value="PRO">Pro Subscribers</option>
@@ -1327,7 +1335,7 @@ export default function AdminDashboard() {
                   <select
                     value={userStatusFilter}
                     onChange={(e) => setUserStatusFilter(e.target.value)}
-                    className="px-3 py-2 bg-[#111827] border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-[#7C3AED]"
+                    className="px-3.5 py-2 glass-panel border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
                   >
                     <option value="ALL">All Statuses</option>
                     <option value="ACTIVE">Active</option>
@@ -1337,7 +1345,7 @@ export default function AdminDashboard() {
                   <select
                     value={userRoleFilter}
                     onChange={(e) => setUserRoleFilter(e.target.value)}
-                    className="px-3 py-2 bg-[#111827] border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-[#7C3AED]"
+                    className="px-3.5 py-2 glass-panel border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
                   >
                     <option value="ALL">All Roles</option>
                     <option value="USER">User</option>
@@ -1346,7 +1354,7 @@ export default function AdminDashboard() {
 
                   <button
                     onClick={handleSearchUsers}
-                    className="px-4 py-2 bg-gradient-to-r from-[#7C3AED] to-[#6366F1] text-white rounded-xl text-xs font-semibold shadow-md shadow-purple-600/20"
+                    className="px-5 py-2 bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#EC4899] hover:opacity-95 text-white rounded-2xl text-xs font-bold shadow-lg shadow-purple-600/30 hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5"
                   >
                     Filter
                   </button>
@@ -1357,7 +1365,7 @@ export default function AdminDashboard() {
               <div className="glass-panel border-white/10 rounded-[30px] overflow-hidden shadow-2xl backdrop-blur-2xl">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs text-slate-300">
-                    <thead className="bg-[#0B0F19] text-slate-400 font-semibold uppercase text-[10px] tracking-wider border-b border-slate-800">
+                    <thead className="bg-[#05070D]/90 text-slate-400 font-bold uppercase text-[10px] tracking-wider border-b border-white/10">
                       <tr>
                         <th className="py-3 px-4">User</th>
                         <th className="py-3 px-4">Role</th>
@@ -1368,7 +1376,7 @@ export default function AdminDashboard() {
                         <th className="py-3 px-4 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800/80">
+                    <tbody className="divide-y divide-white/5">
                       {usersList.length > 0 ? (
                         usersList.map((user) => {
                           const isPro = user.plan === 'PRO' || user.subscriptionTier === 'PRO';
@@ -1420,7 +1428,7 @@ export default function AdminDashboard() {
                               <td className="py-3 px-4 text-right space-x-2">
                                 <button
                                   onClick={() => handleOpenUserDrawer(user)}
-                                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-[11px] font-semibold"
+                                  className="px-3 py-1.5 glass-panel glass-panel-hover text-white rounded-xl text-[11px] font-bold inline-flex items-center gap-1"
                                 >
                                   Manage & Quotas
                                 </button>
@@ -1461,13 +1469,13 @@ export default function AdminDashboard() {
                       </div>
                       <button
                         onClick={() => setSelectedUser(null)}
-                        className="p-2 text-slate-400 hover:text-white rounded-xl bg-slate-900 border border-slate-800"
+                        className="p-2 text-slate-400 hover:text-white rounded-2xl glass-panel hover:bg-white/10 border-white/10 transition-all"
                       >
                         ✕
                       </button>
                     </div>
 
-                    <div className="bg-[#111827] border border-slate-800 p-4 rounded-2xl space-y-2">
+                    <div className="glass-panel border-white/10 p-5 rounded-3xl space-y-3 shadow-lg">
                       <div className="grid grid-cols-2 gap-3 text-xs">
                         <div>
                           <span className="text-slate-500 block">Email Address:</span>
@@ -1490,7 +1498,7 @@ export default function AdminDashboard() {
                       </div>
                     </div>
 
-                    <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl space-y-4">
+                    <div className="glass-panel border-white/10 p-5 rounded-3xl space-y-4 shadow-lg">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Plan & Entitlement Controls</span>
                         <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
@@ -1505,7 +1513,7 @@ export default function AdminDashboard() {
                             <select
                               value={editPlan}
                               onChange={(e) => setEditPlan(e.target.value as any)}
-                              className="w-full px-3 py-2 bg-[#0B0F19] border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-[#7C3AED]"
+                              className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
                             >
                               <option value="PRO">PRO Subscription</option>
                               <option value="TRIAL">7-Day Free Trial</option>
@@ -1518,7 +1526,7 @@ export default function AdminDashboard() {
                               type="number"
                               value={editDurationDays}
                               onChange={(e) => setEditDurationDays(Number(e.target.value))}
-                              className="w-full px-3 py-2 bg-[#0B0F19] border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-[#7C3AED]"
+                              className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
                             />
                           </div>
                         </div>
@@ -1574,7 +1582,7 @@ export default function AdminDashboard() {
                       </div>
                     </div>
 
-                    <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl space-y-4">
+                    <div className="glass-panel border-white/10 p-5 rounded-3xl space-y-4 shadow-lg">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Current Month Usage</span>
                         <button
@@ -1590,7 +1598,7 @@ export default function AdminDashboard() {
                       ) : (
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                            <div className="bg-[#0B0F19] p-3 rounded-xl border border-slate-800">
+                            <div className="glass-panel p-3.5 rounded-2xl border-white/10 flex flex-col justify-between">
                               <div className="text-[10px] uppercase font-bold text-slate-500">AI Tokens</div>
                               <div className="text-base font-bold text-white mt-1">
                                 {(selectedUserDetails?.user?.monthlyAiTokensUsed ?? selectedUser?.monthlyAiTokensUsed ?? selectedUserUsage?.breakdown?.AI_TOKEN ?? 0).toLocaleString()}
@@ -1599,7 +1607,7 @@ export default function AdminDashboard() {
                                 / {(planLimitsConfig[selectedUser?.plan || 'FREE']?.aiTokens ?? 10000).toLocaleString()}
                               </div>
                             </div>
-                            <div className="bg-[#0B0F19] p-3 rounded-xl border border-slate-800">
+                            <div className="glass-panel p-3.5 rounded-2xl border-white/10 flex flex-col justify-between">
                               <div className="text-[10px] uppercase font-bold text-slate-500">Audio Mins</div>
                               <div className="text-base font-bold text-white mt-1">
                                 {Math.round(((selectedUserUsage?.breakdown?.TRANSCRIPTION ?? 0) + (selectedUserUsage?.breakdown?.MEETING_TRANSCRIPTION ?? 0)) / 60)}m
@@ -1608,7 +1616,7 @@ export default function AdminDashboard() {
                                 / {planLimitsConfig[selectedUser?.plan || 'FREE']?.transcriptionMinutes ?? 30}m
                               </div>
                             </div>
-                            <div className="bg-[#0B0F19] p-3 rounded-xl border border-slate-800">
+                            <div className="glass-panel p-3.5 rounded-2xl border-white/10 flex flex-col justify-between">
                               <div className="text-[10px] uppercase font-bold text-slate-500">Doc Scans</div>
                               <div className="text-base font-bold text-white mt-1">
                                 {selectedUserUsage?.breakdown?.DOCUMENT_SCAN ?? 0}
@@ -1617,7 +1625,7 @@ export default function AdminDashboard() {
                                 / {planLimitsConfig[selectedUser?.plan || 'FREE']?.documentScans ?? 10}
                               </div>
                             </div>
-                            <div className="bg-[#0B0F19] p-3 rounded-xl border border-slate-800">
+                            <div className="glass-panel p-3.5 rounded-2xl border-white/10 flex flex-col justify-between">
                               <div className="text-[10px] uppercase font-bold text-slate-500">Meeting Mode</div>
                               <div className={`text-xs font-bold mt-2 ${
                                 (selectedUser?.plan === 'PRO' || selectedUser?.plan === 'TRIAL' || planLimitsConfig[selectedUser?.plan || 'FREE']?.meetingMode)
@@ -1634,7 +1642,7 @@ export default function AdminDashboard() {
                       )}
                     </div>
 
-                    <div className="border border-red-950/80 bg-red-950/20 p-4 rounded-2xl space-y-3">
+                    <div className="border border-red-500/30 bg-red-950/30 p-5 rounded-3xl space-y-3 backdrop-blur-md">
                       <div className="text-xs font-bold text-red-400 uppercase tracking-wider">Administrative Actions</div>
                       <div className="flex gap-2">
                         <button
@@ -1664,7 +1672,15 @@ export default function AdminDashboard() {
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-white tracking-tight">Plan Entitlements & Usage Limits</h2>
+                  <div className="flex items-center gap-2.5">
+                  <div className="p-2.5 rounded-2xl bg-purple-500/10 border border-purple-500/30 text-purple-400">
+                    <Sliders className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-white tracking-tight">Plan Entitlements & Usage Limits</h2>
+                    <p className="text-xs text-slate-400">Authoritative server-side quotas: configure monthly token allowances, transcription budgets, scan quotas, and Meeting Mode access</p>
+                  </div>
+                </div>
                   <p className="text-xs text-slate-400">
                     Authoritative server-side quotas: configure monthly token allowances, transcription budgets, scan quotas, and Meeting Mode access.
                   </p>
@@ -1672,7 +1688,7 @@ export default function AdminDashboard() {
                 <button
                   onClick={handleSavePlanLimits}
                   disabled={isSavingPlanLimits}
-                  className="px-4 py-2 bg-gradient-to-r from-[#7C3AED] to-[#6366F1] text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-md shadow-purple-600/20 disabled:opacity-50"
+                  className="px-5 py-2.5 bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#EC4899] hover:opacity-95 text-white rounded-2xl text-xs font-bold flex items-center gap-2 shadow-xl shadow-purple-600/30 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isSavingPlanLimits ? 'animate-spin' : ''}`} />
                   <span>{isSavingPlanLimits ? 'Saving to Database...' : 'Save Plan Limits'}</span>
@@ -1693,7 +1709,7 @@ export default function AdminDashboard() {
                   return (
                     <div
                       key={tierKey}
-                      className="bg-[#111827] border border-slate-800 rounded-2xl p-6 shadow-sm space-y-5 flex flex-col justify-between"
+                      className="glass-panel glass-panel-hover border-white/10 rounded-[32px] p-7 shadow-xl space-y-5 flex flex-col justify-between backdrop-blur-2xl"
                     >
                       <div className="space-y-4">
                         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
@@ -1731,7 +1747,7 @@ export default function AdminDashboard() {
                                   },
                                 })
                               }
-                              className="w-full px-3.5 py-2 bg-[#0B0F19] border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-[#7C3AED] font-mono"
+                              className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-mono transition-all"
                             />
                             <p className="text-[10px] text-slate-500 mt-1">Tracks prompt tokens + completion tokens for ModelFlare AI.</p>
                           </div>
@@ -1756,7 +1772,7 @@ export default function AdminDashboard() {
                                   },
                                 })
                               }
-                              className="w-full px-3.5 py-2 bg-[#0B0F19] border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-[#7C3AED] font-mono"
+                              className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-mono transition-all"
                             />
                             <p className="text-[10px] text-slate-500 mt-1">AssemblyAI quota. (Voice recording always remains active).</p>
                           </div>
@@ -1781,7 +1797,7 @@ export default function AdminDashboard() {
                                   },
                                 })
                               }
-                              className="w-full px-3.5 py-2 bg-[#0B0F19] border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-[#7C3AED] font-mono"
+                              className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-mono transition-all"
                             />
                             <p className="text-[10px] text-slate-500 mt-1">Monthly document OCR & image ingestion count.</p>
                           </div>
@@ -1833,12 +1849,20 @@ export default function AdminDashboard() {
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-white tracking-tight">AI Provider Hot-Swap Gateway</h2>
+                  <div className="flex items-center gap-2.5">
+                  <div className="p-2.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                    <BrainCircuit className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-white tracking-tight">AI Provider Hot-Swap Gateway</h2>
+                    <p className="text-xs text-slate-400">Configure multi-provider fallbacks, test real endpoint latency, and change active models without redeploying</p>
+                  </div>
+                </div>
                   <p className="text-xs text-slate-400">Configure multi-provider fallbacks, test real endpoint latency, and change active models without redeploying</p>
                 </div>
                 <button
                   onClick={() => setIsEditingProvider(true)}
-                  className="px-3.5 py-2 bg-gradient-to-r from-[#7C3AED] to-[#6366F1] text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-purple-600/20"
+                  className="px-5 py-2.5 bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#EC4899] hover:opacity-95 text-white rounded-2xl text-xs font-bold flex items-center gap-1.5 shadow-xl shadow-purple-600/30 hover:scale-105 active:scale-95 transition-all"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   Add New Provider
@@ -1846,7 +1870,7 @@ export default function AdminDashboard() {
               </div>
 
               {/* AssemblyAI Config Card */}
-              <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+              <div className="glass-panel border-white/10 rounded-[32px] p-7 shadow-xl space-y-5 backdrop-blur-2xl">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="p-2.5 rounded-xl bg-purple-950/80 border border-purple-800 text-purple-400">
@@ -1882,7 +1906,7 @@ export default function AdminDashboard() {
                       value={assemblyAiKey}
                       onChange={(e) => setAssemblyAiKey(e.target.value)}
                       placeholder="Paste AssemblyAI API Key..."
-                      className="flex-1 px-3.5 py-2.5 bg-[#0B0F19] border border-slate-800 rounded-xl text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-[#7C3AED]"
+                      className="flex-1 px-4 py-3 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
                     />
                     <button
                       type="submit"
@@ -1922,7 +1946,7 @@ export default function AdminDashboard() {
                   aiProviders.map((prov) => (
                     <div
                       key={prov.id}
-                      className="bg-[#111827] border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4"
+                      className="glass-panel glass-panel-hover border-white/10 rounded-[28px] p-6 shadow-lg space-y-4 backdrop-blur-2xl"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -1976,7 +2000,7 @@ export default function AdminDashboard() {
               {/* Provider Modal Form */}
               {isEditingProvider && (
                 <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4 backdrop-blur-sm">
-                  <div className="w-full max-w-lg bg-[#111827] border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-5">
+                  <div className="w-full max-w-lg glass-panel border-white/15 rounded-[32px] p-8 shadow-2xl space-y-6 backdrop-blur-3xl bg-[#080C16]/95">
                     <div className="flex items-center justify-between">
                       <h3 className="text-base font-bold text-white">Add OpenAI-Compatible Provider</h3>
                       <button onClick={() => setIsEditingProvider(false)} className="text-slate-500 hover:text-white">✕</button>
@@ -1991,7 +2015,7 @@ export default function AdminDashboard() {
                           value={providerForm.name}
                           onChange={(e) => setProviderForm({ ...providerForm, name: e.target.value })}
                           placeholder="e.g. OpenAI / ModelFlare / Groq"
-                          className="w-full px-3 py-2 bg-[#0B0F19] border border-slate-800 rounded-xl text-white text-xs focus:outline-none"
+                          className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-white text-xs focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-mono transition-all"
                         />
                       </div>
                       <div>
@@ -2002,7 +2026,7 @@ export default function AdminDashboard() {
                           value={providerForm.baseUrl}
                           onChange={(e) => setProviderForm({ ...providerForm, baseUrl: e.target.value })}
                           placeholder="https://api.openai.com/v1"
-                          className="w-full px-3 py-2 bg-[#0B0F19] border border-slate-800 rounded-xl text-white text-xs focus:outline-none"
+                          className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-white text-xs focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-mono transition-all"
                         />
                       </div>
                       <div>
@@ -2013,7 +2037,7 @@ export default function AdminDashboard() {
                           value={providerForm.apiKey}
                           onChange={(e) => setProviderForm({ ...providerForm, apiKey: e.target.value })}
                           placeholder="sk-..."
-                          className="w-full px-3 py-2 bg-[#0B0F19] border border-slate-800 rounded-xl text-white text-xs focus:outline-none"
+                          className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-white text-xs focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-mono transition-all"
                         />
                       </div>
                       <div className="flex gap-3">
@@ -2281,7 +2305,7 @@ export default function AdminDashboard() {
                 <p className="text-xs text-slate-400">Control feature rollout percentages, Pro gating, and live toggles without App Store updates</p>
               </div>
 
-              <div className="bg-[#111827] border border-slate-800 rounded-2xl divide-y divide-slate-800 overflow-hidden">
+              <div className="glass-panel border-white/10 rounded-[30px] divide-y divide-white/5 overflow-hidden shadow-2xl backdrop-blur-2xl">
                 {featureFlags.length > 0 ? (
                   featureFlags.map((flag) => (
                     <div key={flag.key} className="p-4 flex items-center justify-between">
@@ -2436,7 +2460,7 @@ export default function AdminDashboard() {
                 <p className="text-xs text-slate-400">Send system messages, release updates, and promotions directly to mobile clients</p>
               </div>
 
-              <form onSubmit={handleCreateAnnouncement} className="bg-[#111827] border border-slate-800 rounded-2xl p-6 space-y-4">
+              <form onSubmit={handleCreateAnnouncement} className="glass-panel border-white/10 rounded-[32px] p-7 space-y-5 shadow-2xl backdrop-blur-2xl">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <input
                     type="text"
@@ -2444,12 +2468,12 @@ export default function AdminDashboard() {
                     placeholder="Announcement Title"
                     value={newAnnouncement.title}
                     onChange={(e) => setNewAnnouncement({ ...newAnnouncement, title: e.target.value })}
-                    className="px-3.5 py-2.5 bg-[#0B0F19] border border-slate-800 rounded-xl text-xs text-white focus:outline-none"
+                    className="px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
                   />
                   <select
                     value={newAnnouncement.targetTier}
                     onChange={(e) => setNewAnnouncement({ ...newAnnouncement, targetTier: e.target.value })}
-                    className="px-3.5 py-2.5 bg-[#0B0F19] border border-slate-800 rounded-xl text-xs text-white focus:outline-none"
+                    className="px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
                   >
                     <option value="ALL">All Users</option>
                     <option value="FREE">Free Tier Only</option>
@@ -2462,11 +2486,11 @@ export default function AdminDashboard() {
                   placeholder="Broadcast message..."
                   value={newAnnouncement.message}
                   onChange={(e) => setNewAnnouncement({ ...newAnnouncement, message: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-[#0B0F19] border border-slate-800 rounded-xl text-xs text-white focus:outline-none"
+                  className="w-full px-4 py-3 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
                 />
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-gradient-to-r from-[#7C3AED] to-[#6366F1] text-white rounded-xl text-xs font-semibold"
+                  className="px-6 py-2.5 bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#EC4899] hover:opacity-95 text-white rounded-2xl text-xs font-bold shadow-xl shadow-purple-600/30 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
                 >
                   Send Announcement
                 </button>
@@ -2484,7 +2508,7 @@ export default function AdminDashboard() {
                 <p className="text-xs text-slate-400">Tamper-evident log of all admin operations and compliance records</p>
               </div>
 
-              <div className="bg-[#111827] border border-slate-800 rounded-2xl overflow-hidden">
+              <div className="glass-panel border-white/10 rounded-[30px] overflow-hidden shadow-2xl backdrop-blur-2xl">
                 <table className="w-full text-left text-xs font-mono">
                   <thead className="bg-[#0B0F19] text-[10px] uppercase text-slate-500 border-b border-slate-800">
                     <tr>
@@ -2528,7 +2552,7 @@ export default function AdminDashboard() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl">
+                <div className="glass-panel glass-panel-hover border-white/10 p-6 rounded-[28px] shadow-lg flex flex-col justify-between backdrop-blur-2xl">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-400">PostgreSQL (Neon AWS)</span>
                     <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
@@ -2536,7 +2560,7 @@ export default function AdminDashboard() {
                   <div className="text-lg font-bold text-white mt-2">Operational</div>
                   <p className="text-[10px] text-slate-500 mt-1">Pool active, latency ~18ms</p>
                 </div>
-                <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl">
+                <div className="glass-panel glass-panel-hover border-white/10 p-6 rounded-[28px] shadow-lg flex flex-col justify-between backdrop-blur-2xl">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-400">Vercel API Gateway</span>
                     <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
@@ -2544,7 +2568,7 @@ export default function AdminDashboard() {
                   <div className="text-lg font-bold text-white mt-2">Operational</div>
                   <p className="text-[10px] text-slate-500 mt-1">Edge regions active</p>
                 </div>
-                <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl">
+                <div className="glass-panel glass-panel-hover border-white/10 p-6 rounded-[28px] shadow-lg flex flex-col justify-between backdrop-blur-2xl">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-400">AI Gateway (ModelFlare)</span>
                     <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
@@ -2568,7 +2592,7 @@ export default function AdminDashboard() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* 1. Infrastructure Overview */}
-                <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 space-y-4 text-xs">
+                <div className="glass-panel border-white/10 rounded-[32px] p-7 space-y-5 shadow-2xl backdrop-blur-2xl text-xs">
                   <div className="flex items-center justify-between pb-3 border-b border-slate-800">
                     <span className="font-bold text-white uppercase tracking-wider">Deployment Topology</span>
                     <span className="px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono text-[10px]">
@@ -2597,7 +2621,7 @@ export default function AdminDashboard() {
                 </div>
 
                 {/* 2. Platform Operations & Maintenance Controls */}
-                <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 space-y-4 text-xs">
+                <div className="glass-panel border-white/10 rounded-[32px] p-7 space-y-5 shadow-2xl backdrop-blur-2xl text-xs">
                   <div className="flex items-center justify-between pb-3 border-b border-slate-800">
                     <span className="font-bold text-white uppercase tracking-wider">System Controls</span>
                     <span className={`px-2.5 py-0.5 rounded-full font-mono text-[10px] ${
