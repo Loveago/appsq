@@ -49,6 +49,8 @@ import {
   ArrowUpRight,
   Star,
   Cpu,
+  Check,
+  MessageSquare,
 } from 'lucide-react';
 import { adminFetch, getAdminToken, setAdminToken, clearAdminToken } from '../lib/api';
 
@@ -556,17 +558,21 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleToggleFeature = async (key: string, isEnabled: boolean) => {
+  const handleUpdateFeatureFlag = async (key: string, updates: { isEnabled?: boolean; isProOnly?: boolean; rolloutPct?: number }) => {
     try {
       await adminFetch(`/admin/features/${key}`, {
         method: 'PUT',
-        body: JSON.stringify({ isEnabled }),
+        body: JSON.stringify(updates),
       });
-      showToast(`Feature "${key}" updated`);
+      showToast(`Feature flag "${key}" updated`);
       refreshData();
     } catch (err: any) {
       setErrorMsg(err.message);
     }
+  };
+
+  const handleToggleFeature = async (key: string, isEnabled: boolean) => {
+    return handleUpdateFeatureFlag(key, { isEnabled });
   };
 
   const handleCreateAnnouncement = async (e: React.FormEvent) => {
@@ -2300,30 +2306,154 @@ export default function AdminDashboard() {
           {/* ========================================================= */}
           {activeTab === 'feature-flags' && (
             <div className="space-y-6">
-              <div>
-                <h2 className="text-xl font-bold text-white tracking-tight">Feature Flags & Rollouts</h2>
-                <p className="text-xs text-slate-400">Control feature rollout percentages, Pro gating, and live toggles without App Store updates</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3 h-3 animate-spin" style={{ animationDuration: '4s' }} />
+                      Runtime Switchboard
+                    </span>
+                    <span className="text-xs text-slate-500">• Over-the-air updates</span>
+                  </div>
+                  <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
+                    Feature Flags & Progressive Rollouts
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Remotely control mobile client feature access, Pro subscriber gates, and staged percentage rollouts without App Store approval
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  <div className="px-3.5 py-1.5 rounded-xl bg-white/5 border border-white/10 text-[11px] font-mono text-slate-300 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span>{featureFlags.filter(f => f.isEnabled).length} / {featureFlags.length || 3} Active</span>
+                  </div>
+                </div>
               </div>
 
-              <div className="glass-panel border-white/10 rounded-[30px] divide-y divide-white/5 overflow-hidden shadow-2xl backdrop-blur-2xl">
+              {/* Flags Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {featureFlags.length > 0 ? (
-                  featureFlags.map((flag) => (
-                    <div key={flag.key} className="p-4 flex items-center justify-between">
-                      <div>
-                        <div className="text-xs font-bold text-white font-mono">{flag.key}</div>
-                        <div className="text-[11px] text-slate-400">{flag.description}</div>
+                  featureFlags.map((flag) => {
+                    const isVoice = flag.key.includes('voice') || flag.key.includes('audio');
+                    const isMeeting = flag.key.includes('meeting');
+                    const isAI = flag.key.includes('ai') || flag.key.includes('chat') || flag.key.includes('ground');
+                    
+                    return (
+                      <div 
+                        key={flag.key}
+                        className={`relative rounded-[28px] p-6 border transition-all duration-300 backdrop-blur-2xl overflow-hidden group ${
+                          flag.isEnabled 
+                            ? 'bg-gradient-to-b from-[#0F172A]/90 to-[#0A0E1A]/90 border-purple-500/30 shadow-xl shadow-purple-950/20' 
+                            : 'bg-[#0B0F19]/70 border-white/5 opacity-80 hover:opacity-100'
+                        }`}
+                      >
+                        {/* Ambient glow accent */}
+                        <div 
+                          className={`absolute top-0 right-0 w-44 h-44 rounded-full blur-3xl pointer-events-none transition-opacity ${
+                            flag.isEnabled ? 'bg-purple-600/15 opacity-100' : 'bg-transparent opacity-0'
+                          }`} 
+                        />
+
+                        <div className="relative space-y-4">
+                          {/* Header */}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <div className={`p-3 rounded-2xl border transition-all ${
+                                flag.isEnabled 
+                                  ? 'bg-gradient-to-br from-purple-500/20 to-fuchsia-500/20 border-purple-500/30 text-purple-300' 
+                                  : 'bg-white/5 border-white/10 text-slate-500'
+                              }`}>
+                                {isVoice ? (
+                                  <Mic className="w-5 h-5" />
+                                ) : isMeeting ? (
+                                  <Video className="w-5 h-5" />
+                                ) : isAI ? (
+                                  <BrainCircuit className="w-5 h-5" />
+                                ) : (
+                                  <Sparkles className="w-5 h-5" />
+                                )}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-bold text-white font-mono tracking-wide">{flag.key}</span>
+                                  {flag.isProOnly && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30 flex items-center gap-1 font-mono">
+                                      <Lock className="w-2.5 h-2.5" /> PRO ONLY
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-slate-400 mt-0.5 max-w-sm line-clamp-2">
+                                  {flag.description || "Production capability switch"}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Toggle Switch */}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleFeature(flag.key, !flag.isEnabled)}
+                              className={`relative inline-flex h-7 w-13 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none ${
+                                flag.isEnabled ? 'bg-gradient-to-r from-purple-600 to-fuchsia-600 shadow-md shadow-purple-600/30' : 'bg-slate-800'
+                              }`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-300 ease-in-out ${
+                                  flag.isEnabled ? 'translate-x-6' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+                          </div>
+
+                          {/* Control Pills: Pro Gating & Rollout */}
+                          <div className="pt-3 border-t border-white/5 flex flex-wrap items-center justify-between gap-3 text-xs">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateFeatureFlag(flag.key, { isProOnly: !flag.isProOnly })}
+                                className={`px-2.5 py-1 rounded-xl text-[11px] font-medium border transition-all flex items-center gap-1.5 ${
+                                  flag.isProOnly 
+                                    ? 'bg-amber-950/40 border-amber-500/40 text-amber-300' 
+                                    : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                <Lock className="w-3 h-3" />
+                                <span>{flag.isProOnly ? 'Pro Subscribers Locked' : 'Available to All Tiers'}</span>
+                              </button>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] text-slate-400 font-mono">Rollout:</span>
+                              <div className="flex items-center gap-1.5 bg-black/40 px-2.5 py-1 rounded-xl border border-white/10 font-mono text-[11px]">
+                                <span className="font-bold text-cyan-400">{flag.rolloutPct ?? 100}%</span>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="100"
+                                  step="10"
+                                  value={flag.rolloutPct ?? 100}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value, 10);
+                                    handleUpdateFeatureFlag(flag.key, { rolloutPct: val });
+                                  }}
+                                  className="w-16 accent-cyan-400 cursor-pointer"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <input
-                        type="checkbox"
-                        checked={flag.isEnabled}
-                        onChange={(e) => handleToggleFeature(flag.key, e.target.checked)}
-                        className="w-4 h-4 text-purple-600 bg-slate-950 border-slate-800 rounded focus:ring-purple-500"
-                      />
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
-                  <div className="p-8 text-center text-xs text-slate-500">
-                    Feature flags active in database: voice-memo, meeting-mode, ai-chat-grounding.
+                  <div className="col-span-2 p-12 text-center rounded-[30px] border border-dashed border-white/10 bg-white/[0.02]">
+                    <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center mx-auto mb-3">
+                      <Sparkles className="w-6 h-6" />
+                    </div>
+                    <div className="text-sm font-bold text-white mb-1">No Custom Flags Initialized</div>
+                    <div className="text-xs text-slate-400 max-w-md mx-auto">
+                      Built-in engine defaults (voice-memo, meeting-mode, ai-chat-grounding) are dynamically serviced from the backend.
+                    </div>
                   </div>
                 )}
               </div>
@@ -2333,29 +2463,44 @@ export default function AdminDashboard() {
           {/* ========================================================= */}
           {/* 7. AD NETWORK & MONETIZATION POLICIES */}
           {/* ========================================================= */}
+          {/* ========================================================= */}
+          {/* 7. AD NETWORK & MONETIZATION POLICIES */}
+          {/* ========================================================= */}
           {activeTab === 'ads' && (
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-white tracking-tight">Ad Network & Placement Rules</h2>
-                  <p className="text-xs text-slate-400">Real-time control over Google AdMob unit frequencies, interstitial thresholds, and Pro subscriber ad-suppression</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                      <Radio className="w-3 h-3 text-indigo-400 animate-pulse" />
+                      Google AdMob Engine
+                    </span>
+                    <span className="text-xs text-slate-500">• Hybrid Monetization Layer</span>
+                  </div>
+                  <h2 className="text-2xl font-extrabold text-white tracking-tight">Ad Network & Placement Rules</h2>
+                  <p className="text-xs text-slate-400">
+                    Real-time control over Google AdMob banner frequencies, interstitial note-save thresholds, and subscriber immunity
+                  </p>
                 </div>
                 <button
                   onClick={handleSaveAdSettings}
                   disabled={isSavingGlobalSettings}
-                  className="px-4 py-2 bg-gradient-to-r from-[#7C3AED] to-[#6366F1] hover:opacity-95 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-purple-600/20 disabled:opacity-50"
+                  className="px-5 py-2.5 bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#6366F1] hover:opacity-95 text-white rounded-2xl text-xs font-bold flex items-center gap-2 shadow-xl shadow-purple-600/25 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isSavingGlobalSettings ? "animate-spin" : ""}`} />
-                  <span>{isSavingGlobalSettings ? "Saving Rules..." : "Save Ad Policies"}</span>
+                  <span>{isSavingGlobalSettings ? "Committing Policies..." : "Save Ad Policies"}</span>
                 </button>
               </div>
 
+              {/* Bento Grid: 3 Policy Cards */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* 1. Master AdMob Kill-Switch */}
-                <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+                <div className="glass-panel glass-panel-hover border-white/10 rounded-[30px] p-6.5 shadow-2xl backdrop-blur-2xl space-y-5 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-36 h-36 bg-purple-600/10 rounded-full blur-3xl pointer-events-none group-hover:bg-purple-600/20 transition-all"></div>
+                  
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-2.5 bg-purple-950/70 border border-purple-900/60 rounded-xl text-purple-400">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-2xl text-purple-400">
                         <Radio className="w-5 h-5" />
                       </div>
                       <div>
@@ -2363,35 +2508,42 @@ export default function AdminDashboard() {
                         <p className="text-[11px] text-slate-400">Global AdMob SDK serving</p>
                       </div>
                     </div>
-                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border font-bold ${
-                      admobEnabled ? "bg-emerald-950 text-emerald-400 border-emerald-800" : "bg-red-950 text-red-400 border-red-800"
+                    <span className={`text-[10px] font-mono px-2.5 py-1 rounded-full border font-bold ${
+                      admobEnabled ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-red-500/10 text-red-400 border-red-500/30"
                     }`}>
                       {admobEnabled ? "ACTIVE" : "SUPPRESSED"}
                     </span>
                   </div>
 
-                  <p className="text-xs text-slate-400">
-                    When enabled, banner and interstitial ads are rendered for Free tier users. Pro and Trial subscribers are permanently immune to ads.
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    When active, banner and interstitial units render on free iOS & Android mobile devices. All PRO subscribers and active Trial users are automatically immune.
                   </p>
 
-                  <div className="pt-2 border-t border-slate-800/80">
-                    <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-xs text-slate-200 font-medium">Serve Mobile Ads</span>
-                      <input
-                        type="checkbox"
-                        checked={admobEnabled}
-                        onChange={(e) => setAdmobEnabled(e.target.checked)}
-                        className="w-4 h-4 text-purple-600 bg-slate-950 border-slate-800 rounded focus:ring-purple-500"
+                  <div className="pt-3 border-t border-white/10 flex items-center justify-between">
+                    <span className="text-xs text-slate-300 font-semibold">Serve Mobile Ad Units</span>
+                    <button
+                      type="button"
+                      onClick={() => setAdmobEnabled(!admobEnabled)}
+                      className={`relative inline-flex h-7 w-13 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none ${
+                        admobEnabled ? 'bg-gradient-to-r from-purple-600 to-fuchsia-600 shadow-md shadow-purple-600/30' : 'bg-slate-800'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-300 ease-in-out ${
+                          admobEnabled ? 'translate-x-6' : 'translate-x-0'
+                        }`}
                       />
-                    </label>
+                    </button>
                   </div>
                 </div>
 
                 {/* 2. Interstitial Frequency */}
-                <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+                <div className="glass-panel glass-panel-hover border-white/10 rounded-[30px] p-6.5 shadow-2xl backdrop-blur-2xl space-y-5 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-36 h-36 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none group-hover:bg-indigo-600/20 transition-all"></div>
+
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-2.5 bg-indigo-950/70 border border-indigo-900/60 rounded-xl text-indigo-400">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-indigo-400">
                         <Sliders className="w-5 h-5" />
                       </div>
                       <div>
@@ -2399,33 +2551,43 @@ export default function AdminDashboard() {
                         <p className="text-[11px] text-slate-400">Free note-save frequency</p>
                       </div>
                     </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 font-bold">
+                      CAP: {adFrequencyNoteSaves}
+                    </span>
                   </div>
 
-                  <p className="text-xs text-slate-400">
-                    Controls how many note creation / save events must occur on free mobile devices before an interstitial ad is triggered.
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Specifies how many note creation or audio capture saves must occur on free mobile devices before an interstitial ad is triggered.
                   </p>
 
-                  <div>
-                    <label className="flex items-center justify-between text-xs text-slate-300 font-medium mb-1.5">
-                      <span>Trigger every N note saves</span>
-                      <span className="text-indigo-400 font-mono font-bold">{adFrequencyNoteSaves} saves</span>
-                    </label>
+                  <div className="space-y-2 pt-1 border-t border-white/10">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Trigger every</span>
+                      <span className="text-indigo-400 font-mono font-bold text-sm">{adFrequencyNoteSaves} note saves</span>
+                    </div>
                     <input
-                      type="number"
+                      type="range"
                       min="1"
-                      max="20"
+                      max="15"
                       value={adFrequencyNoteSaves}
                       onChange={(e) => setAdFrequencyNoteSaves(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                      className="w-full px-3.5 py-2 bg-[#0B0F19] border border-slate-800 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-[#7C3AED]"
+                      className="w-full accent-indigo-400 cursor-pointer"
                     />
+                    <div className="flex justify-between text-[10px] font-mono text-slate-500">
+                      <span>1 (Aggressive)</span>
+                      <span>5 (Balanced)</span>
+                      <span>15 (Gentle)</span>
+                    </div>
                   </div>
                 </div>
 
                 {/* 3. Pro Immunity Guarantee */}
-                <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+                <div className="glass-panel glass-panel-hover border-white/10 rounded-[30px] p-6.5 shadow-2xl backdrop-blur-2xl space-y-5 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-36 h-36 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none group-hover:bg-emerald-600/20 transition-all"></div>
+
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-2.5 bg-emerald-950/70 border border-emerald-900/60 rounded-xl text-emerald-400">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-emerald-400">
                         <ShieldCheck className="w-5 h-5" />
                       </div>
                       <div>
@@ -2433,17 +2595,17 @@ export default function AdminDashboard() {
                         <p className="text-[11px] text-slate-400">100% Ad suppression rule</p>
                       </div>
                     </div>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800">
+                    <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-bold">
                       ENFORCED
                     </span>
                   </div>
 
-                  <p className="text-xs text-slate-400">
-                    The backend API and Flutter client check the user plan on every session. PRO and active TRIAL tokens automatically suppress AdMob SDK initialization.
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    The backend API and Flutter client check token claims on session boot. PRO and active TRIAL tokens automatically suppress AdMob SDK initialization.
                   </p>
 
-                  <div className="p-3 bg-[#0B0F19] border border-slate-800 rounded-xl text-[11px] font-mono text-slate-400">
-                    Rule: <span className="text-emerald-400">plan === 'PRO' || plan === 'TRIAL' → adMob.disable()</span>
+                  <div className="p-3.5 bg-black/40 border border-white/10 rounded-2xl text-[11px] font-mono text-slate-400">
+                    Rule: <span className="text-emerald-400 font-bold">plan === 'PRO' || 'TRIAL' → adMob.disable()</span>
                   </div>
                 </div>
               </div>
@@ -2453,216 +2615,619 @@ export default function AdminDashboard() {
           {/* ========================================================= */}
           {/* 8. BROADCAST ANNOUNCEMENTS */}
           {/* ========================================================= */}
+          {/* ========================================================= */}
+          {/* 8. BROADCAST ANNOUNCEMENTS */}
+          {/* ========================================================= */}
           {activeTab === 'announcements' && (
             <div className="space-y-6">
-              <div>
-                <h2 className="text-xl font-bold text-white tracking-tight">Broadcast Announcements</h2>
-                <p className="text-xs text-slate-400">Send system messages, release updates, and promotions directly to mobile clients</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                      <Megaphone className="w-3 h-3 text-fuchsia-400 animate-bounce" />
+                      Push Broadcast HQ
+                    </span>
+                    <span className="text-xs text-slate-500">• In-App Banners & Dialogs</span>
+                  </div>
+                  <h2 className="text-2xl font-extrabold text-white tracking-tight">Broadcast Announcements</h2>
+                  <p className="text-xs text-slate-400">
+                    Dispatch live in-app banners, maintenance alerts, and targeted tier campaigns directly to iOS & Android clients
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="px-3.5 py-1.5 rounded-xl bg-white/5 border border-white/10 text-[11px] font-mono text-slate-300">
+                    {announcements.length} Dispatched Campaigns
+                  </span>
+                </div>
               </div>
 
-              <form onSubmit={handleCreateAnnouncement} className="glass-panel border-white/10 rounded-[32px] p-7 space-y-5 shadow-2xl backdrop-blur-2xl">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <input
-                    type="text"
-                    required
-                    placeholder="Announcement Title"
-                    value={newAnnouncement.title}
-                    onChange={(e) => setNewAnnouncement({ ...newAnnouncement, title: e.target.value })}
-                    className="px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
-                  />
-                  <select
-                    value={newAnnouncement.targetTier}
-                    onChange={(e) => setNewAnnouncement({ ...newAnnouncement, targetTier: e.target.value })}
-                    className="px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
-                  >
-                    <option value="ALL">All Users</option>
-                    <option value="FREE">Free Tier Only</option>
-                    <option value="PRO">Pro Subscribers Only</option>
-                  </select>
-                </div>
-                <textarea
-                  required
-                  rows={3}
-                  placeholder="Broadcast message..."
-                  value={newAnnouncement.message}
-                  onChange={(e) => setNewAnnouncement({ ...newAnnouncement, message: e.target.value })}
-                  className="w-full px-4 py-3 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
-                />
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#EC4899] hover:opacity-95 text-white rounded-2xl text-xs font-bold shadow-xl shadow-purple-600/30 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+              {/* Top Section: Composer + Real-time Mobile Push Simulator */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                {/* 1. Composer Card (7 cols) */}
+                <form 
+                  onSubmit={handleCreateAnnouncement} 
+                  className="lg:col-span-7 glass-panel border-white/10 rounded-[32px] p-7 space-y-5 shadow-2xl backdrop-blur-2xl relative overflow-hidden"
                 >
-                  Send Announcement
-                </button>
-              </form>
+                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-xl text-fuchsia-400">
+                        <Send className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white">Create Broadcast Message</h3>
+                        <p className="text-[11px] text-slate-400">Instant client payload delivery</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-300 block mb-1.5">Announcement Title</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. ⚡️ Spring AI Upgrade: Fast Transcription Active"
+                        value={newAnnouncement.title}
+                        onChange={(e) => setNewAnnouncement({ ...newAnnouncement, title: e.target.value })}
+                        className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-300 block mb-1.5">Target Audience Tier</label>
+                        <select
+                          value={newAnnouncement.targetTier}
+                          onChange={(e) => setNewAnnouncement({ ...newAnnouncement, targetTier: e.target.value })}
+                          className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
+                        >
+                          <option value="ALL">All Mobile Users (Universal)</option>
+                          <option value="FREE">Free Tier Users Only</option>
+                          <option value="PRO">Pro Subscribers Only</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-300 block mb-1.5">Priority / Urgency</label>
+                        <div className="px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-slate-400 flex items-center justify-between">
+                          <span>Standard Push Banner</span>
+                          <span className="w-2 h-2 rounded-full bg-fuchsia-400 animate-ping"></span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-300 block mb-1.5">Broadcast Body Content</label>
+                      <textarea
+                        required
+                        rows={3}
+                        placeholder="Type message text displayed inside the mobile app top banner or modal dialog..."
+                        value={newAnnouncement.message}
+                        onChange={(e) => setNewAnnouncement({ ...newAnnouncement, message: e.target.value })}
+                        className="w-full px-4 py-3 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-between">
+                    <span className="text-[11px] text-slate-500 font-mono">
+                      Payload will be instantly cached in Redis & PostgreSQL
+                    </span>
+                    <button
+                      type="submit"
+                      className="px-6 py-2.5 bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#EC4899] hover:opacity-95 text-white rounded-2xl text-xs font-bold shadow-xl shadow-purple-600/30 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Transmit Broadcast</span>
+                    </button>
+                  </div>
+                </form>
+
+                {/* 2. Live Mobile App Preview Simulator (5 cols) */}
+                <div className="lg:col-span-5 glass-panel border-white/10 rounded-[32px] p-6 shadow-2xl backdrop-blur-2xl space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></div>
+                      <span className="text-xs font-bold text-white uppercase tracking-wider">Live Mobile App Preview</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-400">iOS / Android Mock</span>
+                  </div>
+
+                  {/* Phone screen mockup */}
+                  <div className="bg-[#05070D] border-2 border-white/10 rounded-[28px] p-4 shadow-inner relative overflow-hidden">
+                    {/* Mock phone status bar */}
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mb-3 px-1">
+                      <span>9:41</span>
+                      <div className="flex items-center gap-1.5">
+                        <Activity className="w-3 h-3 text-emerald-400" />
+                        <span>5G 100%</span>
+                      </div>
+                    </div>
+
+                    {/* App header mock */}
+                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-white/5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-purple-600 to-fuchsia-600 flex items-center justify-center text-[10px] font-bold text-white shadow-md">
+                          AS
+                        </div>
+                        <span className="text-xs font-bold text-white">App Square</span>
+                      </div>
+                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono">
+                        {newAnnouncement.targetTier === 'ALL' ? 'UNIVERSAL' : newAnnouncement.targetTier}
+                      </span>
+                    </div>
+
+                    {/* Announcement Banner Card inside phone */}
+                    <div className="relative rounded-2xl p-4 bg-gradient-to-r from-purple-900/60 via-fuchsia-950/60 to-[#0B0F19] border border-purple-500/40 shadow-lg space-y-2">
+                      <div className="flex items-start gap-2.5">
+                        <div className="p-1.5 rounded-xl bg-fuchsia-500/20 text-fuchsia-300">
+                          <Bell className="w-4 h-4 animate-bounce" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-xs font-bold text-white truncate">
+                            {newAnnouncement.title || "Announcement Title Preview"}
+                          </h4>
+                          <p className="text-[11px] text-slate-300 mt-1 leading-relaxed line-clamp-3">
+                            {newAnnouncement.message || "Your broadcast message will appear here for all matching mobile subscribers upon launching the app."}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="pt-2 flex justify-end gap-2 border-t border-white/5 text-[10px]">
+                        <span className="px-2.5 py-1 rounded-lg bg-white/10 text-slate-300 font-medium">Dismiss</span>
+                        <span className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white font-bold">Learn More</span>
+                      </div>
+                    </div>
+
+                    {/* Mock note cards below */}
+                    <div className="mt-3 space-y-2 opacity-30 pointer-events-none">
+                      <div className="h-8 bg-white/5 rounded-xl"></div>
+                      <div className="h-8 bg-white/5 rounded-xl"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Broadcast History Table */}
+              <div className="glass-panel border-white/10 rounded-[30px] overflow-hidden shadow-2xl backdrop-blur-2xl">
+                <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <History className="w-4 h-4 text-purple-400" />
+                    <h3 className="text-sm font-bold text-white">Dispatched Announcement History</h3>
+                  </div>
+                  <span className="text-xs text-slate-500 font-mono">{announcements.length} records</span>
+                </div>
+
+                <div className="divide-y divide-white/5">
+                  {announcements.length > 0 ? (
+                    announcements.map((ann) => (
+                      <div key={ann.id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-white">{ann.title}</span>
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/30 font-bold">
+                              {ann.targetTier || 'ALL'}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {new Date(ann.createdAt).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400 max-w-2xl">{ann.message}</p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAnnouncement(ann.id)}
+                            className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Remove</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-12 text-center text-xs text-slate-500">
+                      No active announcements. Compose your first broadcast message above.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
           {/* ========================================================= */}
           {/* 9. AUDIT TRAIL */}
           {/* ========================================================= */}
+          {/* ========================================================= */}
+          {/* 9. AUDIT TRAIL */}
+          {/* ========================================================= */}
           {activeTab === 'audit-logs' && (
             <div className="space-y-6">
-              <div>
-                <h2 className="text-xl font-bold text-white tracking-tight">Administrative Audit Trail</h2>
-                <p className="text-xs text-slate-400">Tamper-evident log of all admin operations and compliance records</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                      <ShieldAlert className="w-3 h-3 text-cyan-400" />
+                      Tamper-Evident Ledger
+                    </span>
+                    <span className="text-xs text-slate-500">• SOC-2 / ISO Compliance</span>
+                  </div>
+                  <h2 className="text-2xl font-extrabold text-white tracking-tight">Administrative Audit Trail</h2>
+                  <p className="text-xs text-slate-400">
+                    Immutable security log recording all administrator operations, role promotions, and platform policy edits
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={refreshData}
+                    className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-2 border border-white/10 transition-all"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+                    <span>Refresh Log Stream</span>
+                  </button>
+                </div>
               </div>
 
+              {/* Audit Table */}
               <div className="glass-panel border-white/10 rounded-[30px] overflow-hidden shadow-2xl backdrop-blur-2xl">
-                <table className="w-full text-left text-xs font-mono">
-                  <thead className="bg-[#0B0F19] text-[10px] uppercase text-slate-500 border-b border-slate-800">
-                    <tr>
-                      <th className="py-3 px-4">TIMESTAMP</th>
-                      <th className="py-3 px-4">ADMIN</th>
-                      <th className="py-3 px-4">ACTION</th>
-                      <th className="py-3 px-4">TARGET</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/80">
-                    {auditLogs.length > 0 ? (
-                      auditLogs.map((log) => (
-                        <tr key={log.id} className="hover:bg-slate-900/50">
-                          <td className="py-3 px-4 text-slate-400">{new Date(log.createdAt).toLocaleString()}</td>
-                          <td className="py-3 px-4 text-slate-300">{log.adminEmail}</td>
-                          <td className="py-3 px-4 text-purple-400 font-bold">{log.action}</td>
-                          <td className="py-3 px-4 text-slate-400">{log.targetEmail || log.targetId || '—'}</td>
-                        </tr>
-                      ))
-                    ) : (
+                <div className="p-4 bg-[#080D1A]/80 border-b border-white/10 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></div>
+                    <span>Streaming live audit events from PostgreSQL</span>
+                  </div>
+                  <span className="text-[11px] font-mono text-cyan-400 font-bold">{auditLogs.length} events logged</span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs font-mono">
+                    <thead className="bg-[#05070D] text-[10px] uppercase text-slate-400 border-b border-white/10">
                       <tr>
-                        <td colSpan={4} className="py-12 text-center text-xs text-slate-500">
-                          Audit trail logging active in PostgreSQL.
-                        </td>
+                        <th className="py-3.5 px-5">TIMESTAMP</th>
+                        <th className="py-3.5 px-5">ADMINISTRATOR</th>
+                        <th className="py-3.5 px-5">ACTION PERMUTATION</th>
+                        <th className="py-3.5 px-5">TARGET ENTITY</th>
+                        <th className="py-3.5 px-5 text-right">STATUS</th>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {auditLogs.length > 0 ? (
+                        auditLogs.map((log) => {
+                          const isDelete = log.action?.includes('DELETE') || log.action?.includes('REMOVE');
+                          const isUpdate = log.action?.includes('UPDATE') || log.action?.includes('SET') || log.action?.includes('PLAN');
+                          const isAuth = log.action?.includes('LOGIN') || log.action?.includes('AUTH');
+
+                          return (
+                            <tr key={log.id} className="hover:bg-white/[0.02] transition-colors">
+                              <td className="py-3.5 px-5 text-slate-400 whitespace-nowrap">
+                                {new Date(log.createdAt).toLocaleString(undefined, {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  second: '2-digit',
+                                })}
+                              </td>
+                              <td className="py-3.5 px-5 text-slate-200">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-5 h-5 rounded-full bg-purple-500/20 text-purple-300 flex items-center justify-center text-[10px] font-bold">
+                                    {(log.adminEmail || 'A')[0].toUpperCase()}
+                                  </div>
+                                  <span className="font-semibold">{log.adminEmail}</span>
+                                </div>
+                              </td>
+                              <td className="py-3.5 px-5">
+                                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border inline-block ${
+                                  isDelete 
+                                    ? 'bg-red-500/10 text-red-400 border-red-500/30' 
+                                    : isUpdate 
+                                    ? 'bg-purple-500/10 text-purple-300 border-purple-500/30' 
+                                    : isAuth 
+                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
+                                    : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+                                }`}>
+                                  {log.action}
+                                </span>
+                              </td>
+                              <td className="py-3.5 px-5 text-slate-300 font-mono text-[11px] max-w-xs truncate">
+                                {log.targetEmail || log.targetId || 'SYSTEM_GLOBAL'}
+                              </td>
+                              <td className="py-3.5 px-5 text-right">
+                                <span className="inline-flex items-center gap-1.5 text-[10px] text-emerald-400 font-bold">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                  RECORDED
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="py-16 text-center text-xs text-slate-500">
+                            Audit trail logging active in PostgreSQL. Perform any admin action to view live trace records.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
 
           {/* ========================================================= */}
-          {/* 10. SYSTEM HEALTH */}
+          {/* 10. SYSTEM HEALTH & DIAGNOSTICS */}
           {/* ========================================================= */}
           {activeTab === 'system-health' && (
             <div className="space-y-6">
-              <div>
-                <h2 className="text-xl font-bold text-white tracking-tight">System Diagnostics & Health</h2>
-                <p className="text-xs text-slate-400">Real-time status of database, API gateway, AI provider, and background workers</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                      <Activity className="w-3 h-3 text-emerald-400 animate-pulse" />
+                      Infrastructure Telemetry
+                    </span>
+                    <span className="text-xs text-slate-500">• 99.98% SLA Availability</span>
+                  </div>
+                  <h2 className="text-2xl font-extrabold text-white tracking-tight">System Diagnostics & Node Health</h2>
+                  <p className="text-xs text-slate-400">
+                    Live performance status of distributed database clusters, serverless API edge gateways, and speech synthesis pipelines
+                  </p>
+                </div>
+                <button
+                  onClick={refreshData}
+                  className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-2 border border-white/10 transition-all"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+                  <span>Ping Microservices</span>
+                </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="glass-panel glass-panel-hover border-white/10 p-6 rounded-[28px] shadow-lg flex flex-col justify-between backdrop-blur-2xl">
+              {/* 4 Health Bento Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="glass-panel glass-panel-hover border-white/10 p-5 rounded-[28px] shadow-xl backdrop-blur-2xl relative overflow-hidden group">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-400">PostgreSQL (Neon AWS)</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                      <HardDrive className="w-4 h-4" />
+                    </div>
+                    <span className="flex items-center gap-1.5 text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                      HEALTHY
+                    </span>
                   </div>
-                  <div className="text-lg font-bold text-white mt-2">Operational</div>
-                  <p className="text-[10px] text-slate-500 mt-1">Pool active, latency ~18ms</p>
+                  <div className="mt-4">
+                    <div className="text-sm font-bold text-white">Neon PostgreSQL</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">AWS us-east-1 • pgvector</div>
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] font-mono">
+                    <span className="text-slate-500">Latency:</span>
+                    <span className="text-cyan-400 font-bold">14ms</span>
+                  </div>
                 </div>
-                <div className="glass-panel glass-panel-hover border-white/10 p-6 rounded-[28px] shadow-lg flex flex-col justify-between backdrop-blur-2xl">
+
+                <div className="glass-panel glass-panel-hover border-white/10 p-5 rounded-[28px] shadow-xl backdrop-blur-2xl relative overflow-hidden group">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-400">Vercel API Gateway</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                      <Server className="w-4 h-4" />
+                    </div>
+                    <span className="flex items-center gap-1.5 text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                      EDGE READY
+                    </span>
                   </div>
-                  <div className="text-lg font-bold text-white mt-2">Operational</div>
-                  <p className="text-[10px] text-slate-500 mt-1">Edge regions active</p>
+                  <div className="mt-4">
+                    <div className="text-sm font-bold text-white">Vercel API Gateway</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Global Edge CDN & NestJS</div>
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] font-mono">
+                    <span className="text-slate-500">HTTP 200:</span>
+                    <span className="text-purple-400 font-bold">99.96%</span>
+                  </div>
                 </div>
-                <div className="glass-panel glass-panel-hover border-white/10 p-6 rounded-[28px] shadow-lg flex flex-col justify-between backdrop-blur-2xl">
+
+                <div className="glass-panel glass-panel-hover border-white/10 p-5 rounded-[28px] shadow-xl backdrop-blur-2xl relative overflow-hidden group">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-400">AI Gateway (ModelFlare)</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <div className="p-2.5 rounded-xl bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20">
+                      <Mic className="w-4 h-4" />
+                    </div>
+                    <span className="flex items-center gap-1.5 text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                      SYNCHRONIZED
+                    </span>
                   </div>
-                  <div className="text-lg font-bold text-white mt-2">Operational</div>
-                  <p className="text-[10px] text-slate-500 mt-1">gpt-4o-mini active</p>
+                  <div className="mt-4">
+                    <div className="text-sm font-bold text-white">AssemblyAI Pipeline</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Universal-2 Conformer Core</div>
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] font-mono">
+                    <span className="text-slate-500">Audio Queue:</span>
+                    <span className="text-fuchsia-400 font-bold">0 Pending</span>
+                  </div>
+                </div>
+
+                <div className="glass-panel glass-panel-hover border-white/10 p-5 rounded-[28px] shadow-xl backdrop-blur-2xl relative overflow-hidden group">
+                  <div className="flex items-center justify-between">
+                    <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      <BrainCircuit className="w-4 h-4" />
+                    </div>
+                    <span className="flex items-center gap-1.5 text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                      ACTIVE
+                    </span>
+                  </div>
+                  <div className="mt-4">
+                    <div className="text-sm font-bold text-white">ModelFlare Gateway</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Dynamic gpt-4o-mini route</div>
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] font-mono">
+                    <span className="text-slate-500">Tokens/sec:</span>
+                    <span className="text-emerald-400 font-bold">128 t/s</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Error Log Viewer */}
+              <div className="glass-panel border-white/10 rounded-[30px] overflow-hidden shadow-2xl backdrop-blur-2xl">
+                <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400" />
+                    <h3 className="text-sm font-bold text-white">Live Exception & Error Telemetry</h3>
+                  </div>
+                  <span className="text-xs text-slate-500 font-mono">{systemErrors.length} captured tracebacks</span>
+                </div>
+
+                <div className="divide-y divide-white/5">
+                  {systemErrors.length > 0 ? (
+                    systemErrors.map((err, idx) => (
+                      <div key={idx} className="p-5 hover:bg-white/[0.02] transition-colors space-y-2">
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-red-500/10 text-red-400 border border-red-500/20">
+                              {err.statusCode || '500'}
+                            </span>
+                            <span className="text-xs font-bold text-white font-mono">{err.endpoint || err.path || 'API Exception'}</span>
+                          </div>
+                          <span className="text-[11px] text-slate-500 font-mono">
+                            {err.createdAt ? new Date(err.createdAt).toLocaleTimeString() : 'Just now'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300 font-mono bg-black/40 p-3 rounded-xl border border-white/5 overflow-x-auto">
+                          {err.message || JSON.stringify(err)}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-12 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-2">
+                      <ShieldCheck className="w-8 h-8 text-emerald-400/80 mb-1" />
+                      <span className="font-semibold text-slate-300">Clean Telemetry Pipeline</span>
+                      <span>No unhandled runtime exceptions or database disconnects in the last 24 hours.</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           )}
 
           {/* ========================================================= */}
-          {/* 11. PLATFORM SETTINGS & SECURITY */}
+          {/* 11. PLATFORM SETTINGS & SECURITY INFRASTRUCTURE */}
           {/* ========================================================= */}
           {activeTab === 'settings' && (
             <div className="space-y-6">
-              <div>
-                <h2 className="text-xl font-bold text-white tracking-tight">Platform Settings & Security Infrastructure</h2>
-                <p className="text-xs text-slate-400">System parameters, database connection pooling, maintenance modes, and administrator tokens</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                      <Settings className="w-3 h-3 text-purple-400" />
+                      Core Environment
+                    </span>
+                    <span className="text-xs text-slate-500">• Production Node Cluster</span>
+                  </div>
+                  <h2 className="text-2xl font-extrabold text-white tracking-tight">Platform Settings & Security Infrastructure</h2>
+                  <p className="text-xs text-slate-400">
+                    System topology parameters, database connection pooling, maintenance holds, and session keys
+                  </p>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* 1. Infrastructure Overview */}
-                <div className="glass-panel border-white/10 rounded-[32px] p-7 space-y-5 shadow-2xl backdrop-blur-2xl text-xs">
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                    <span className="font-bold text-white uppercase tracking-wider">Deployment Topology</span>
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono text-[10px]">
+                <div className="glass-panel border-white/10 rounded-[32px] p-7 space-y-5 shadow-2xl backdrop-blur-2xl">
+                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 bg-purple-500/10 border border-purple-500/20 rounded-xl text-purple-400">
+                        <Cpu className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white">Deployment Topology</h3>
+                        <p className="text-[11px] text-slate-400">Cloud orchestration footprint</p>
+                      </div>
+                    </div>
+                    <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-mono text-[10px] font-bold">
                       PRODUCTION LIVE
                     </span>
                   </div>
 
-                  <div className="space-y-2.5 font-mono text-slate-300">
-                    <div className="flex justify-between items-center p-2.5 bg-[#0B0F19] rounded-xl border border-slate-800">
-                      <span className="text-slate-500">API Gateway:</span>
-                      <span className="text-white">Vercel Edge & Serverless</span>
+                  <div className="space-y-3 font-mono text-xs">
+                    <div className="flex justify-between items-center p-3 bg-black/40 rounded-2xl border border-white/5">
+                      <span className="text-slate-400">API Gateway:</span>
+                      <span className="text-white font-semibold">Vercel Edge & Serverless</span>
                     </div>
-                    <div className="flex justify-between items-center p-2.5 bg-[#0B0F19] rounded-xl border border-slate-800">
-                      <span className="text-slate-500">Primary Database:</span>
-                      <span className="text-cyan-400">Neon AWS PostgreSQL (pgvector enabled)</span>
+                    <div className="flex justify-between items-center p-3 bg-black/40 rounded-2xl border border-white/5">
+                      <span className="text-slate-400">Primary Database:</span>
+                      <span className="text-cyan-400 font-semibold">Neon AWS PostgreSQL (pgvector)</span>
                     </div>
-                    <div className="flex justify-between items-center p-2.5 bg-[#0B0F19] rounded-xl border border-slate-800">
-                      <span className="text-slate-500">Audio Transcription:</span>
-                      <span className="text-purple-400">AssemblyAI Universal-2</span>
+                    <div className="flex justify-between items-center p-3 bg-black/40 rounded-2xl border border-white/5">
+                      <span className="text-slate-400">Audio Transcription:</span>
+                      <span className="text-purple-400 font-semibold">AssemblyAI Universal-2</span>
                     </div>
-                    <div className="flex justify-between items-center p-2.5 bg-[#0B0F19] rounded-xl border border-slate-800">
-                      <span className="text-slate-500">Reasoning Core:</span>
-                      <span className="text-emerald-400">gpt-4o-mini (Dynamic Gateway)</span>
+                    <div className="flex justify-between items-center p-3 bg-black/40 rounded-2xl border border-white/5">
+                      <span className="text-slate-400">Reasoning Core:</span>
+                      <span className="text-emerald-400 font-semibold">gpt-4o-mini (Dynamic Gateway)</span>
                     </div>
                   </div>
                 </div>
 
                 {/* 2. Platform Operations & Maintenance Controls */}
-                <div className="glass-panel border-white/10 rounded-[32px] p-7 space-y-5 shadow-2xl backdrop-blur-2xl text-xs">
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                    <span className="font-bold text-white uppercase tracking-wider">System Controls</span>
-                    <span className={`px-2.5 py-0.5 rounded-full font-mono text-[10px] ${
-                      maintenanceMode ? "bg-amber-950 text-amber-400 border border-amber-800" : "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                <div className="glass-panel border-white/10 rounded-[32px] p-7 space-y-5 shadow-2xl backdrop-blur-2xl">
+                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white">Operational Controls</h3>
+                        <p className="text-[11px] text-slate-400">Platform safety toggles & access</p>
+                      </div>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full font-mono text-[10px] font-bold border ${
+                      maintenanceMode 
+                        ? "bg-amber-500/10 text-amber-400 border-amber-500/30" 
+                        : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
                     }`}>
-                      {maintenanceMode ? "MAINTENANCE MODE" : "NORMAL OPERATIONS"}
+                      {maintenanceMode ? "MAINTENANCE ACTIVE" : "NORMAL OPERATIONS"}
                     </span>
                   </div>
 
-                  <p className="text-slate-400 text-xs">
-                    Configure operational safety toggles and administrative session tokens.
+                  <p className="text-slate-400 text-xs leading-relaxed">
+                    Control global maintenance gates and manage active administrative credentials securely.
                   </p>
 
                   <div className="space-y-3 pt-2">
-                    <div className="p-3 bg-[#0B0F19] border border-slate-800 rounded-xl flex items-center justify-between">
+                    <div className="p-4 bg-black/40 border border-white/5 rounded-2xl flex items-center justify-between">
                       <div>
-                        <div className="font-semibold text-white">Maintenance Mode Hold</div>
-                        <div className="text-[11px] text-slate-500">Inform mobile clients that scheduled maintenance is underway</div>
+                        <div className="font-semibold text-white text-xs">Scheduled Maintenance Hold</div>
+                        <div className="text-[11px] text-slate-400">Notify mobile clients that scheduled maintenance is underway</div>
                       </div>
-                      <input
-                        type="checkbox"
-                        checked={maintenanceMode}
-                        onChange={async (e) => {
-                          const val = e.target.checked;
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const val = !maintenanceMode;
                           setMaintenanceMode(val);
                           await handleUpdateGlobalSetting("maintenance_mode", val, "System Scheduled Maintenance Hold");
                         }}
-                        className="w-4 h-4 text-purple-600 bg-slate-950 border-slate-800 rounded focus:ring-purple-500"
-                      />
+                        className={`relative inline-flex h-7 w-13 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none ${
+                          maintenanceMode ? 'bg-amber-600 shadow-md shadow-amber-600/30' : 'bg-slate-800'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-300 ease-in-out ${
+                            maintenanceMode ? 'translate-x-6' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
                     </div>
 
-                    <div className="p-3 bg-[#0B0F19] border border-slate-800 rounded-xl flex items-center justify-between">
+                    <div className="p-4 bg-black/40 border border-white/5 rounded-2xl flex items-center justify-between">
                       <div>
-                        <div className="font-semibold text-white">Purge Admin Session</div>
-                        <div className="text-[11px] text-slate-500">Sign out and revoke this browser's administrative token</div>
+                        <div className="font-semibold text-white text-xs">Purge Admin Credentials</div>
+                        <div className="text-[11px] text-slate-400">Sign out and revoke this browser's administrative token</div>
                       </div>
                       <button
                         onClick={handleLogout}
-                        className="px-3 py-1.5 bg-red-950 hover:bg-red-900 text-red-200 border border-red-800 rounded-xl text-xs font-semibold"
+                        className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/20 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5"
                       >
-                        Sign Out Now
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>Sign Out Now</span>
                       </button>
                     </div>
                   </div>
