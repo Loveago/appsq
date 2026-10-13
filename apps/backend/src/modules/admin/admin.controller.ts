@@ -235,4 +235,23 @@ export class AdminController {
   async getErrorLogs(@Query('limit') limit?: string) {
     return this.adminService.getErrorLogs(limit ? parseInt(limit, 10) : 50);
   }
+
+  // 8. NOTES & CONTENT MODERATION
+  @Get('notes')
+  async listNotes(
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.adminService.listNotes(
+      search,
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 25,
+    );
+  }
+
+  @Delete('notes/:id')
+  async deleteNote(@Req() req: any, @Param('id') id: string) {
+    return this.adminService.deleteNote(req.user, id);
+  }
 }

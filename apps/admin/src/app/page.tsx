@@ -3,6 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import {
   Users,
+  Eye,
+  Filter,
+  Server,
   BrainCircuit,
   DollarSign,
   HardDrive,
@@ -131,6 +134,19 @@ export default function AdminDashboard() {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [systemErrors, setSystemErrors] = useState<any[]>([]);
 
+  // Notes & Content moderation state
+  const [notesList, setNotesList] = useState<any[]>([]);
+  const [notesSearch, setNotesSearch] = useState("");
+  const [notesPagination, setNotesPagination] = useState({ page: 1, total: 0, totalPages: 1 });
+  const [isLoadingNotes, setIsLoadingNotes] = useState(false);
+  const [selectedNotePreview, setSelectedNotePreview] = useState<any | null>(null);
+
+  // Quick Action Notification / Settings update state
+  const [isSavingGlobalSettings, setIsSavingGlobalSettings] = useState(false);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [admobEnabled, setAdmobEnabled] = useState(true);
+  const [adFrequencyNoteSaves, setAdFrequencyNoteSaves] = useState(3);
+
   const showToast = (msg: string) => {
     setSuccessToast(msg);
     setTimeout(() => setSuccessToast(null), 4000);
@@ -258,6 +274,74 @@ export default function AdminDashboard() {
       setErrorMsg(err.message);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchNotes = async (searchQuery = notesSearch, page = 1) => {
+    setIsLoadingNotes(true);
+    try {
+      const params = new URLSearchParams();
+      if (searchQuery) params.append("search", searchQuery);
+      params.append("page", String(page));
+      params.append("limit", "25");
+      const res = await adminFetch(`/admin/notes?${params.toString()}`);
+      if (res && Array.isArray(res.notes)) {
+        setNotesList(res.notes);
+        setNotesPagination({ page: res.page || 1, total: res.total || 0, totalPages: res.totalPages || 1 });
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to fetch notes");
+    } finally {
+      setIsLoadingNotes(false);
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string, title: string) => {
+    if (!confirm(`Are you sure you want to delete note "${title}"? This will permanently moderate this item.`)) return;
+    try {
+      await adminFetch(`/admin/notes/${noteId}`, { method: "DELETE" });
+      showToast(`Note "${title}" successfully removed`);
+      if (selectedNotePreview?.id === noteId) setSelectedNotePreview(null);
+      fetchNotes();
+      refreshData();
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to delete note");
+    }
+  };
+
+  const handleUpdateGlobalSetting = async (key: string, value: any, description: string) => {
+    try {
+      await adminFetch(`/admin/settings/${key}`, {
+        method: "PUT",
+        body: JSON.stringify({ value, description }),
+      });
+      showToast(`System setting "${key}" updated`);
+      refreshData();
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to update system setting");
+    }
+  };
+
+  const handleSaveAdSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingGlobalSettings(true);
+    try {
+      await Promise.all([
+        adminFetch("/admin/settings/ads_enabled", {
+          method: "PUT",
+          body: JSON.stringify({ value: admobEnabled, description: "Global AdMob Ads Enabled Toggle" }),
+        }),
+        adminFetch("/admin/settings/ad_interstitial_frequency", {
+          method: "PUT",
+          body: JSON.stringify({ value: Number(adFrequencyNoteSaves), description: "Interstitial Note Save Interval" }),
+        }),
+      ]);
+      showToast("Ad Network policies saved to database");
+      refreshData();
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to save ad network settings");
+    } finally {
+      setIsSavingGlobalSettings(false);
     }
   };
 
@@ -676,6 +760,39 @@ export default function AdminDashboard() {
           </div>
         </div>
       </header>
+
+      {/* MOBILE HORIZONTAL NAVIGATION PILLS */}
+      <div className="md:hidden flex items-center gap-1.5 overflow-x-auto px-4 py-2.5 bg-[#0B0F19] border-b border-slate-800/80 scrollbar-none sticky top-16 z-30">
+        {[
+          { id: "overview", label: "Dashboard" },
+          { id: "users", label: "Users" },
+          { id: "ai-providers", label: "AI Providers" },
+          { id: "notes", label: "Notes" },
+          { id: "feature-flags", label: "Flags" },
+          { id: "plans-limits", label: "Plans" },
+          { id: "ads", label: "Ads" },
+          { id: "announcements", label: "Broadcasts" },
+          { id: "audit-logs", label: "Audit" },
+          { id: "system-health", label: "Health" },
+          { id: "settings", label: "Settings" },
+        ].map((item) => (
+          <button
+            key={item.id}
+            onClick={() => {
+              setActiveTab(item.id as Tab);
+              setSelectedUser(null);
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 transition-all ${
+              activeTab === item.id
+                ? "bg-gradient-to-r from-[#7C3AED] to-[#6366F1] text-white font-semibold shadow-sm"
+                : "bg-[#111827] text-slate-400 hover:text-white"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
 
       {/* MAIN SHELL LAYOUT */}
       <div className="flex-1 flex overflow-hidden">
@@ -1418,7 +1535,7 @@ export default function AdminDashboard() {
                         <div className="flex gap-2">
                           <button
                             onClick={handleApplyUserPlan}
-                            className="flex-1 py-2 px-3 bg-gradient-to-r from-[#7C3AED] to-[#6366F1] text-white rounded-xl text-xs font-semibold shadow-md shadow-purple-600/20"
+                            className="flex-1 py-2 px-3 bg-gradient-to-r from-[#7C3AED] to-[#6366F1] hover:opacity-95 text-white rounded-xl text-xs font-semibold shadow-md shadow-purple-600/20"
                           >
                             Apply Plan Override
                           </button>
@@ -1428,6 +1545,40 @@ export default function AdminDashboard() {
                           >
                             +7 Days Trial
                           </button>
+                        </div>
+
+                        {/* RBAC Role Elevation Control */}
+                        <div className="pt-3 border-t border-slate-800/80">
+                          <label className="text-[11px] text-slate-400 block mb-1">Access Role & Administrative Elevation</label>
+                          <div className="flex gap-2">
+                            {(["USER", "ADMIN", "SUPERADMIN"] as const).map((r) => (
+                              <button
+                                key={r}
+                                type="button"
+                                onClick={async () => {
+                                  if (!confirm(`Change role for ${selectedUser.email} to ${r}?`)) return;
+                                  try {
+                                    await adminFetch(`/admin/users/${selectedUser.id}/role`, {
+                                      method: "PUT",
+                                      body: JSON.stringify({ role: r }),
+                                    });
+                                    showToast(`User role elevated to ${r}`);
+                                    handleOpenUserDrawer({ ...selectedUser, role: r });
+                                    refreshData();
+                                  } catch (err: any) {
+                                    setErrorMsg(err.message || "Failed to update role");
+                                  }
+                                }}
+                                className={`flex-1 py-1.5 px-2 rounded-xl text-[11px] font-mono font-bold transition-all border ${
+                                  selectedUser.role === r
+                                    ? "bg-indigo-600 text-white border-indigo-500 shadow-sm shadow-indigo-500/30"
+                                    : "bg-slate-900 hover:bg-slate-800 text-slate-400 border-slate-800"
+                                }`}
+                              >
+                                {r}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1897,36 +2048,235 @@ export default function AdminDashboard() {
           )}
 
           {/* ========================================================= */}
-          {/* 5. NOTES & CONTENT TAB */}
+          {/* 5. NOTES & CONTENT MODERATION TAB */}
           {/* ========================================================= */}
           {activeTab === 'notes' && (
             <div className="space-y-6">
-              <div>
-                <h2 className="text-xl font-bold text-white tracking-tight">Notes & Second Brain Content</h2>
-                <p className="text-xs text-slate-400">Cross-system visibility into notes, indexed entities, and synced voice thoughts</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-bold text-white tracking-tight">Notes & Second Brain Content Moderation</h2>
+                  <p className="text-xs text-slate-400">Direct database visibility across synchronized notes, semantic embeddings, and user content moderation</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-3 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Search title, content, or user..."
+                      value={notesSearch}
+                      onChange={(e) => setNotesSearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") fetchNotes(notesSearch, 1);
+                      }}
+                      className="bg-[#111827] border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#7C3AED] w-64 transition-all"
+                    />
+                  </div>
+                  <button
+                    onClick={() => fetchNotes(notesSearch, 1)}
+                    disabled={isLoadingNotes}
+                    className="px-3 py-2 bg-gradient-to-r from-[#7C3AED] to-[#6366F1] text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-purple-600/20 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingNotes ? "animate-spin" : ""}`} />
+                    <span>Search</span>
+                  </button>
+                </div>
               </div>
 
+              {/* Summary Stats Row */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl">
-                  <span className="text-xs text-slate-400 uppercase font-semibold">Total Indexed Notes</span>
-                  <div className="text-3xl font-extrabold text-white mt-2">{metrics?.content?.notes ?? 0}</div>
-                  <p className="text-[11px] text-slate-500 mt-1">Full text + semantic vector search ready</p>
+                <div className="bg-[#111827] border border-slate-800/80 p-5 rounded-2xl shadow-sm">
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span className="text-xs font-semibold uppercase">Total Database Notes</span>
+                    <FileText className="w-4 h-4 text-purple-400" />
+                  </div>
+                  <div className="text-3xl font-extrabold text-white mt-2">{metrics?.content?.notes ?? notesPagination.total}</div>
+                  <p className="text-[11px] text-slate-500 mt-1">Full text & pgvector semantic embeddings active</p>
                 </div>
-                <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl">
-                  <span className="text-xs text-slate-400 uppercase font-semibold">Meetings Processed</span>
+                <div className="bg-[#111827] border border-slate-800/80 p-5 rounded-2xl shadow-sm">
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span className="text-xs font-semibold uppercase">Executive Meetings</span>
+                    <Video className="w-4 h-4 text-cyan-400" />
+                  </div>
                   <div className="text-3xl font-extrabold text-white mt-2">{metrics?.content?.meetings ?? 0}</div>
                   <p className="text-[11px] text-slate-500 mt-1">Speaker diarization & summary records</p>
                 </div>
-                <div className="bg-[#111827] border border-slate-800 p-5 rounded-2xl">
-                  <span className="text-xs text-slate-400 uppercase font-semibold">Tasks Extracted</span>
+                <div className="bg-[#111827] border border-slate-800/80 p-5 rounded-2xl shadow-sm">
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span className="text-xs font-semibold uppercase">AI Action Items</span>
+                    <CheckSquare className="w-4 h-4 text-emerald-400" />
+                  </div>
                   <div className="text-3xl font-extrabold text-white mt-2">{metrics?.content?.tasks ?? 0}</div>
-                  <p className="text-[11px] text-slate-500 mt-1">AI action items and deadlines</p>
+                  <p className="text-[11px] text-slate-500 mt-1">Extracted deadlines and priority tasks</p>
                 </div>
               </div>
 
-              <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 text-center text-xs text-slate-400">
-                Authoritative note records sync automatically with soft-delete protection and optimistic versioning.
+              {/* Notes Moderation Table */}
+              <div className="bg-[#111827] border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+                <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-[#0B0F19]">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">Synchronized Notes Repository</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
+                      {notesList.length} shown of {notesPagination.total}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-500">Live PostgreSQL Records</span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-[#0B0F19] text-slate-400 font-semibold uppercase text-[10px] tracking-wider border-b border-slate-800">
+                      <tr>
+                        <th className="py-3 px-4">Title & Excerpt</th>
+                        <th className="py-3 px-4">Author / User</th>
+                        <th className="py-3 px-4">Entities & Tags</th>
+                        <th className="py-3 px-4">Version</th>
+                        <th className="py-3 px-4">Created</th>
+                        <th className="py-3 px-4 text-right">Moderation Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/80">
+                      {notesList.length > 0 ? (
+                        notesList.map((note) => (
+                          <tr key={note.id} className="hover:bg-slate-900/50 transition-colors">
+                            <td className="py-3 px-4 max-w-xs">
+                              <div className="font-semibold text-white truncate flex items-center gap-1.5">
+                                {note.isPinned && <Star className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />}
+                                <span>{note.title || "Untitled Note"}</span>
+                              </div>
+                              <div className="text-slate-400 text-[11px] truncate mt-0.5 font-sans">
+                                {note.summary || note.content || "Empty content"}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 font-mono text-[11px] text-slate-300">
+                              <div>{note.user?.fullName || "User"}</div>
+                              <div className="text-slate-500">{note.user?.email || "Unknown email"}</div>
+                            </td>
+                            <td className="py-3 px-4">
+                              {note.extractedEntities ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-950 text-purple-300 border border-purple-800">
+                                  AI Extracted
+                                </span>
+                              ) : (
+                                <span className="text-slate-500 text-[10px]">—</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 font-mono text-[11px] text-slate-400">
+                              v{note.version || 1}
+                            </td>
+                            <td className="py-3 px-4 text-slate-400 text-[11px] font-mono">
+                              {new Date(note.createdAt).toLocaleDateString()}
+                            </td>
+                            <td className="py-3 px-4 text-right space-x-2">
+                              <button
+                                onClick={() => setSelectedNotePreview(note)}
+                                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-[11px] font-semibold inline-flex items-center gap-1"
+                              >
+                                <Eye className="w-3 h-3" />
+                                <span>Inspect</span>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteNote(note.id, note.title || "Untitled")}
+                                className="px-2.5 py-1 bg-red-950 hover:bg-red-900 text-red-300 border border-red-800 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Delete</span>
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-xs text-slate-500">
+                            {isLoadingNotes ? "Loading synchronized notes..." : "No notes matching the filter criteria found in database."}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination footer */}
+                {notesPagination.totalPages > 1 && (
+                  <div className="p-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 bg-[#0B0F19]">
+                    <span>Page {notesPagination.page} of {notesPagination.totalPages}</span>
+                    <div className="flex gap-1.5">
+                      <button
+                        disabled={notesPagination.page <= 1}
+                        onClick={() => fetchNotes(notesSearch, notesPagination.page - 1)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 text-white disabled:opacity-40"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        disabled={notesPagination.page >= notesPagination.totalPages}
+                        onClick={() => fetchNotes(notesSearch, notesPagination.page + 1)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 text-white disabled:opacity-40"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* Note Inspector Modal */}
+              {selectedNotePreview && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
+                  <div className="w-full max-w-2xl bg-[#111827] border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                      <div>
+                        <span className="text-[10px] font-mono uppercase text-indigo-400 font-bold">Content Inspector</span>
+                        <h3 className="text-base font-bold text-white">{selectedNotePreview.title || "Untitled Note"}</h3>
+                        <p className="text-xs text-slate-400">Author: {selectedNotePreview.user?.email || "Unknown"}</p>
+                      </div>
+                      <button
+                        onClick={() => setSelectedNotePreview(null)}
+                        className="p-1.5 text-slate-400 hover:text-white rounded-lg bg-slate-900 border border-slate-800"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-400 block mb-1">Raw Content Body</label>
+                        <div className="p-3.5 bg-[#0B0F19] border border-slate-800 rounded-xl text-xs text-slate-200 font-mono max-h-60 overflow-y-auto whitespace-pre-wrap">
+                          {selectedNotePreview.content || "(No text content)"}
+                        </div>
+                      </div>
+
+                      {selectedNotePreview.summary && (
+                        <div>
+                          <label className="text-[11px] font-semibold text-slate-400 block mb-1">AI Executive Summary</label>
+                          <div className="p-3 bg-purple-950/40 border border-purple-900/60 rounded-xl text-xs text-purple-200">
+                            {selectedNotePreview.summary}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-800">
+                      <span className="text-[11px] text-slate-500 font-mono">
+                        Note ID: {selectedNotePreview.id}
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setSelectedNotePreview(null)}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+                        >
+                          Close
+                        </button>
+                        <button
+                          onClick={() => handleDeleteNote(selectedNotePreview.id, selectedNotePreview.title || "Untitled")}
+                          className="px-3 py-1.5 bg-red-950 hover:bg-red-900 text-red-200 border border-red-800 rounded-xl text-xs font-semibold"
+                        >
+                          Delete Note
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1966,16 +2316,121 @@ export default function AdminDashboard() {
           )}
 
           {/* ========================================================= */}
-          {/* 7. AD NETWORK */}
+          {/* 7. AD NETWORK & MONETIZATION POLICIES */}
           {/* ========================================================= */}
           {activeTab === 'ads' && (
             <div className="space-y-6">
-              <div>
-                <h2 className="text-xl font-bold text-white tracking-tight">Ad Network & Placement Rules</h2>
-                <p className="text-xs text-slate-400">Manage Google AdMob frequencies, interstitial triggers, and Pro subscriber ad-suppression rules</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-bold text-white tracking-tight">Ad Network & Placement Rules</h2>
+                  <p className="text-xs text-slate-400">Real-time control over Google AdMob unit frequencies, interstitial thresholds, and Pro subscriber ad-suppression</p>
+                </div>
+                <button
+                  onClick={handleSaveAdSettings}
+                  disabled={isSavingGlobalSettings}
+                  className="px-4 py-2 bg-gradient-to-r from-[#7C3AED] to-[#6366F1] hover:opacity-95 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-purple-600/20 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSavingGlobalSettings ? "animate-spin" : ""}`} />
+                  <span>{isSavingGlobalSettings ? "Saving Rules..." : "Save Ad Policies"}</span>
+                </button>
               </div>
-              <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 text-xs text-slate-400">
-                AdMob units configured: Interstitial (every 3 note saves for Free tier), Banner ads on Home and Tasks screens. Fully suppressed for PRO and active TRIAL users.
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* 1. Master AdMob Kill-Switch */}
+                <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 bg-purple-950/70 border border-purple-900/60 rounded-xl text-purple-400">
+                        <Radio className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white">Master Ad Status</h3>
+                        <p className="text-[11px] text-slate-400">Global AdMob SDK serving</p>
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border font-bold ${
+                      admobEnabled ? "bg-emerald-950 text-emerald-400 border-emerald-800" : "bg-red-950 text-red-400 border-red-800"
+                    }`}>
+                      {admobEnabled ? "ACTIVE" : "SUPPRESSED"}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-400">
+                    When enabled, banner and interstitial ads are rendered for Free tier users. Pro and Trial subscribers are permanently immune to ads.
+                  </p>
+
+                  <div className="pt-2 border-t border-slate-800/80">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <span className="text-xs text-slate-200 font-medium">Serve Mobile Ads</span>
+                      <input
+                        type="checkbox"
+                        checked={admobEnabled}
+                        onChange={(e) => setAdmobEnabled(e.target.checked)}
+                        className="w-4 h-4 text-purple-600 bg-slate-950 border-slate-800 rounded focus:ring-purple-500"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* 2. Interstitial Frequency */}
+                <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 bg-indigo-950/70 border border-indigo-900/60 rounded-xl text-indigo-400">
+                        <Sliders className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white">Interstitial Interval</h3>
+                        <p className="text-[11px] text-slate-400">Free note-save frequency</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-400">
+                    Controls how many note creation / save events must occur on free mobile devices before an interstitial ad is triggered.
+                  </p>
+
+                  <div>
+                    <label className="flex items-center justify-between text-xs text-slate-300 font-medium mb-1.5">
+                      <span>Trigger every N note saves</span>
+                      <span className="text-indigo-400 font-mono font-bold">{adFrequencyNoteSaves} saves</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={adFrequencyNoteSaves}
+                      onChange={(e) => setAdFrequencyNoteSaves(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      className="w-full px-3.5 py-2 bg-[#0B0F19] border border-slate-800 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-[#7C3AED]"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Pro Immunity Guarantee */}
+                <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 bg-emerald-950/70 border border-emerald-900/60 rounded-xl text-emerald-400">
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white">Pro Ad-Free Tier</h3>
+                        <p className="text-[11px] text-slate-400">100% Ad suppression rule</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800">
+                      ENFORCED
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-400">
+                    The backend API and Flutter client check the user plan on every session. PRO and active TRIAL tokens automatically suppress AdMob SDK initialization.
+                  </p>
+
+                  <div className="p-3 bg-[#0B0F19] border border-slate-800 rounded-xl text-[11px] font-mono text-slate-400">
+                    Rule: <span className="text-emerald-400">plan === 'PRO' || plan === 'TRIAL' → adMob.disable()</span>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -2111,24 +2566,91 @@ export default function AdminDashboard() {
           )}
 
           {/* ========================================================= */}
-          {/* 11. SETTINGS */}
+          {/* 11. PLATFORM SETTINGS & SECURITY */}
           {/* ========================================================= */}
           {activeTab === 'settings' && (
             <div className="space-y-6">
               <div>
-                <h2 className="text-xl font-bold text-white tracking-tight">Admin Console Settings</h2>
-                <p className="text-xs text-slate-400">Configure global platform options and security controls</p>
+                <h2 className="text-xl font-bold text-white tracking-tight">Platform Settings & Security Infrastructure</h2>
+                <p className="text-xs text-slate-400">System parameters, database connection pooling, maintenance modes, and administrator tokens</p>
               </div>
 
-              <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 space-y-4 text-xs">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold text-white">Environment Mode</div>
-                    <div className="text-slate-500">Production (Vercel Serverless + Neon AWS PostgreSQL)</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* 1. Infrastructure Overview */}
+                <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 space-y-4 text-xs">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <span className="font-bold text-white uppercase tracking-wider">Deployment Topology</span>
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono text-[10px]">
+                      PRODUCTION LIVE
+                    </span>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono text-[10px]">
-                    PRODUCTION
-                  </span>
+
+                  <div className="space-y-2.5 font-mono text-slate-300">
+                    <div className="flex justify-between items-center p-2.5 bg-[#0B0F19] rounded-xl border border-slate-800">
+                      <span className="text-slate-500">API Gateway:</span>
+                      <span className="text-white">Vercel Edge & Serverless</span>
+                    </div>
+                    <div className="flex justify-between items-center p-2.5 bg-[#0B0F19] rounded-xl border border-slate-800">
+                      <span className="text-slate-500">Primary Database:</span>
+                      <span className="text-cyan-400">Neon AWS PostgreSQL (pgvector enabled)</span>
+                    </div>
+                    <div className="flex justify-between items-center p-2.5 bg-[#0B0F19] rounded-xl border border-slate-800">
+                      <span className="text-slate-500">Audio Transcription:</span>
+                      <span className="text-purple-400">AssemblyAI Universal-2</span>
+                    </div>
+                    <div className="flex justify-between items-center p-2.5 bg-[#0B0F19] rounded-xl border border-slate-800">
+                      <span className="text-slate-500">Reasoning Core:</span>
+                      <span className="text-emerald-400">gpt-4o-mini (Dynamic Gateway)</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Platform Operations & Maintenance Controls */}
+                <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 space-y-4 text-xs">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <span className="font-bold text-white uppercase tracking-wider">System Controls</span>
+                    <span className={`px-2.5 py-0.5 rounded-full font-mono text-[10px] ${
+                      maintenanceMode ? "bg-amber-950 text-amber-400 border border-amber-800" : "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                    }`}>
+                      {maintenanceMode ? "MAINTENANCE MODE" : "NORMAL OPERATIONS"}
+                    </span>
+                  </div>
+
+                  <p className="text-slate-400 text-xs">
+                    Configure operational safety toggles and administrative session tokens.
+                  </p>
+
+                  <div className="space-y-3 pt-2">
+                    <div className="p-3 bg-[#0B0F19] border border-slate-800 rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold text-white">Maintenance Mode Hold</div>
+                        <div className="text-[11px] text-slate-500">Inform mobile clients that scheduled maintenance is underway</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={maintenanceMode}
+                        onChange={async (e) => {
+                          const val = e.target.checked;
+                          setMaintenanceMode(val);
+                          await handleUpdateGlobalSetting("maintenance_mode", val, "System Scheduled Maintenance Hold");
+                        }}
+                        className="w-4 h-4 text-purple-600 bg-slate-950 border-slate-800 rounded focus:ring-purple-500"
+                      />
+                    </div>
+
+                    <div className="p-3 bg-[#0B0F19] border border-slate-800 rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold text-white">Purge Admin Session</div>
+                        <div className="text-[11px] text-slate-500">Sign out and revoke this browser's administrative token</div>
+                      </div>
+                      <button
+                        onClick={handleLogout}
+                        className="px-3 py-1.5 bg-red-950 hover:bg-red-900 text-red-200 border border-red-800 rounded-xl text-xs font-semibold"
+                      >
+                        Sign Out Now
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

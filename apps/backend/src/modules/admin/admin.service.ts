@@ -1020,4 +1020,89 @@ export class AdminService {
       return [];
     }
   }
+
+  // ==========================================
+  // 8. NOTES & CONTENT MODERATION
+  // ==========================================
+  async listNotes(search?: string, page: number = 1, limit: number = 25) {
+    const skip = (Math.max(1, page) - 1) * limit;
+    const where: any = { deletedAt: null };
+
+    if (search && search.trim()) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { content: { contains: search, mode: 'insensitive' } },
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
+    try {
+      const [total, notes] = await Promise.all([
+        this.prisma.note.count({ where }),
+        this.prisma.note.findMany({
+          where,
+          select: {
+            id: true,
+            title: true,
+            content: true,
+            summary: true,
+            isPinned: true,
+            isArchived: true,
+            extractedEntities: true,
+            version: true,
+            createdAt: true,
+            updatedAt: true,
+            user: {
+              select: {
+                id: true,
+                email: true,
+                fullName: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+      ]);
+
+      return {
+        notes,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+    } catch (err: any) {
+      this.logger.error(`Error listing notes in AdminService: ${err.message}`);
+      return { notes: [], total: 0, page: 1, limit, totalPages: 0 };
+    }
+  }
+
+  async deleteNote(admin: { id: string; email: string }, noteId: string) {
+    const note = await this.prisma.note.findUnique({
+      where: { id: noteId },
+      include: { user: { select: { email: true } } },
+    });
+
+    if (!note) {
+      throw new NotFoundException('Note not found');
+    }
+
+    await this.prisma.note.delete({
+      where: { id: noteId },
+    });
+
+    await this.logAdminAction({
+      adminId: admin.id,
+      adminEmail: admin.email,
+      action: 'DELETE_NOTE_MODERATION',
+      targetType: 'NOTE',
+      targetId: noteId,
+      targetEmail: note.user?.email,
+      details: { title: note.title },
+    });
+
+    return { success: true, message: `Note "${note.title}" deleted by admin` };
+  }
 }
