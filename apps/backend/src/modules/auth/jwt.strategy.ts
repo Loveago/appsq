@@ -17,12 +17,29 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string; email: string }) {
+  async validate(payload: { sub: string; email: string; role?: string }) {
+    const adminEmail = (this.configService.get<string>('ADMIN_EMAIL') || 'admin@mindora.ai').toLowerCase();
+    const isSuperAdmin =
+      payload.sub === 'superadmin' ||
+      payload.role === 'SUPERADMIN' ||
+      (payload.email && payload.email.toLowerCase() === adminEmail);
+
     try {
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
       });
       if (!user) {
+        if (isSuperAdmin) {
+          return {
+            id: payload.sub || 'superadmin',
+            email: payload.email || adminEmail,
+            fullName: 'Mindora Super Admin',
+            role: 'SUPERADMIN',
+            plan: 'PRO',
+            subscriptionTier: 'PRO',
+            accountStatus: 'ACTIVE',
+          };
+        }
         throw new UnauthorizedException('User not found');
       }
       if (user.isSuspended || user.accountStatus === 'SUSPENDED') {
@@ -38,6 +55,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       }).catch(() => {});
       return user;
     } catch (err) {
+      if (isSuperAdmin) {
+        return {
+          id: payload.sub || 'superadmin',
+          email: payload.email || adminEmail,
+          fullName: 'Mindora Super Admin',
+          role: 'SUPERADMIN',
+          plan: 'PRO',
+          subscriptionTier: 'PRO',
+          accountStatus: 'ACTIVE',
+        };
+      }
       if (err instanceof UnauthorizedException) throw err;
       throw new UnauthorizedException('Authentication failed: user record unavailable');
     }

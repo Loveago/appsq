@@ -19,7 +19,7 @@ import { BillingModule } from '../billing/billing.module';
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET') || 'super_secret_mindora_jwt_key_2026',
         signOptions: {
-          expiresIn: configService.get<string>('JWT_EXPIRATION') || '15m',
+          expiresIn: configService.get<string>('JWT_EXPIRATION') || '30d',
         },
       }),
     }),
