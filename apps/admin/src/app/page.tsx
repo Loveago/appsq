@@ -57,6 +57,8 @@ import {
   CloudOff,
   Database,
   RotateCcw,
+  Edit3,
+  Power,
 } from 'lucide-react';
 import { adminFetch, getAdminToken, setAdminToken, clearAdminToken } from '../lib/api';
 
@@ -117,6 +119,7 @@ export default function AdminDashboard() {
     baseUrl: string;
     apiKey: string;
     chatModel: string;
+    reasoningModel: string;
     priority: number;
     isEnabled: boolean;
   }>({
@@ -124,12 +127,16 @@ export default function AdminDashboard() {
     baseUrl: '',
     apiKey: '',
     chatModel: 'gpt-4o-mini',
+    reasoningModel: '',
     priority: 1,
     isEnabled: true,
   });
   const [isEditingProvider, setIsEditingProvider] = useState(false);
   const [testingProviderId, setTestingProviderId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ id: string; success: boolean; message: string } | null>(null);
+  const [activeGatewayStatus, setActiveGatewayStatus] = useState<any>(null);
+  const [isTestingActiveGateway, setIsTestingActiveGateway] = useState(false);
+  const [activeGatewayTestResult, setActiveGatewayTestResult] = useState<any>(null);
 
   // AssemblyAI Settings State
   const [assemblyAiKey, setAssemblyAiKey] = useState<string>('');
@@ -336,7 +343,7 @@ export default function AdminDashboard() {
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const [m, u, p, f, s, a, l, e, pl, bc, we, ac, ec, sc, gc] = await Promise.all([
+      const [m, u, p, f, s, a, l, e, pl, bc, we, ac, ec, sc, gc, ags] = await Promise.all([
         adminFetch('/admin/overview').catch(() => null),
         adminFetch('/admin/users?limit=40').catch(() => ({ users: [] })),
         adminFetch('/admin/ai/providers').catch(() => []),
@@ -352,11 +359,13 @@ export default function AdminDashboard() {
         adminFetch('/admin/email/config').catch(() => null),
         adminFetch('/admin/sync/config').catch(() => null),
         adminFetch('/admin/auth/google-config').catch(() => null),
+        adminFetch('/admin/ai/status').catch(() => null),
       ]);
 
       if (m) setMetrics(m);
       if (u?.users) setUsersList(u.users);
       if (Array.isArray(p)) setAiProviders(p);
+      if (ags) setActiveGatewayStatus(ags);
       if (pl) setPlanLimitsConfig(pl);
       if (bc) setBillingConfig(bc);
       if (Array.isArray(we)) setWebhookEvents(we);
@@ -959,6 +968,64 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleOpenAddProvider = () => {
+    setProviderForm({
+      id: undefined,
+      name: '',
+      baseUrl: '',
+      apiKey: '',
+      chatModel: 'gpt-4o-mini',
+      reasoningModel: '',
+      priority: aiProviders.length + 1,
+      isEnabled: true,
+    });
+    setIsEditingProvider(true);
+  };
+
+  const handleEditProvider = (prov: any) => {
+    setProviderForm({
+      id: prov.id,
+      name: prov.name,
+      baseUrl: prov.baseUrl,
+      apiKey: '', // Leave blank to keep existing key
+      chatModel: prov.chatModel || 'gpt-4o-mini',
+      reasoningModel: prov.reasoningModel || '',
+      priority: prov.priority || 1,
+      isEnabled: prov.isEnabled ?? true,
+    });
+    setIsEditingProvider(true);
+  };
+
+  const handleToggleProvider = async (prov: any) => {
+    try {
+      await adminFetch(`/admin/ai/providers/${prov.id}/toggle`, { method: 'PUT' });
+      showToast(`Provider "${prov.name}" is now ${prov.isEnabled ? 'disabled' : 'active'}`);
+      refreshData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to toggle provider');
+    }
+  };
+
+  const handleTestActiveGateway = async () => {
+    setIsTestingActiveGateway(true);
+    setActiveGatewayTestResult(null);
+    try {
+      const res = await adminFetch('/admin/ai/test-active', { method: 'POST' });
+      setActiveGatewayTestResult(res);
+      if (res.success) {
+        showToast(`AI Gateway Operational! Latency: ${res.latencyMs}ms`);
+      } else {
+        setErrorMsg(`AI Gateway Ping Failed: ${res.error}`);
+      }
+      refreshData();
+    } catch (err: any) {
+      setActiveGatewayTestResult({ success: false, error: err.message });
+      setErrorMsg(err.message || 'Test connection failed');
+    } finally {
+      setIsTestingActiveGateway(false);
+    }
+  };
+
   const handleSaveProvider = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -966,13 +1033,14 @@ export default function AdminDashboard() {
         method: 'POST',
         body: JSON.stringify(providerForm),
       });
-      showToast(`Provider "${providerForm.name}" registered`);
+      showToast(providerForm.id ? `Provider "${providerForm.name}" updated` : `Provider "${providerForm.name}" registered`);
       setIsEditingProvider(false);
       setProviderForm({
         name: '',
         baseUrl: '',
         apiKey: '',
         chatModel: 'gpt-4o-mini',
+        reasoningModel: '',
         priority: 1,
         isEnabled: true,
       });
@@ -987,11 +1055,12 @@ export default function AdminDashboard() {
     setTestResult(null);
     try {
       const res = await adminFetch(`/admin/ai/providers/${providerId}/test`, { method: 'POST' });
+      const sampleText = res.sampleResponse || res.response || 'OK';
       setTestResult({
         id: providerId,
         success: res.success,
         message: res.success
-          ? `Latency: ${res.latencyMs}ms • Response: "${res.sampleResponse?.slice(0, 45)}..."`
+          ? `Latency: ${res.latencyMs}ms • Response: "${sampleText.slice(0, 50)}..."`
           : `Failed: ${res.error}`,
       });
       refreshData();
@@ -3171,23 +3240,82 @@ export default function AdminDashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2.5">
-                  <div className="p-2.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-                    <BrainCircuit className="w-5 h-5" />
+                    <div className="p-2.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                      <BrainCircuit className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-black text-white tracking-tight">AI Provider Hot-Swap Gateway</h2>
+                      <p className="text-xs text-slate-400">Configure multi-provider fallbacks, custom model IDs, test real endpoint latency, and change active models without redeploying</p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-xl font-black text-white tracking-tight">AI Provider Hot-Swap Gateway</h2>
-                    <p className="text-xs text-slate-400">Configure multi-provider fallbacks, test real endpoint latency, and change active models without redeploying</p>
-                  </div>
-                </div>
-                  <p className="text-xs text-slate-400">Configure multi-provider fallbacks, test real endpoint latency, and change active models without redeploying</p>
                 </div>
                 <button
-                  onClick={() => setIsEditingProvider(true)}
+                  onClick={handleOpenAddProvider}
                   className="px-5 py-2.5 bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#EC4899] hover:opacity-95 text-white rounded-2xl text-xs font-bold flex items-center gap-1.5 shadow-xl shadow-purple-600/30 hover:scale-105 active:scale-95 transition-all"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   Add New Provider
                 </button>
+              </div>
+
+              {/* Live AI Gateway Diagnostic Banner */}
+              <div className="glass-panel border-white/10 rounded-[32px] p-6 shadow-xl space-y-4 backdrop-blur-2xl bg-gradient-to-br from-[#0B0F19]/90 to-[#1E1B4B]/40 border border-purple-500/20">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono text-purple-400 uppercase tracking-wider font-semibold">Live AI Gateway Status</span>
+                      <span className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full font-bold ${
+                        activeGatewayStatus?.activeSource === 'DATABASE_PROVIDER'
+                          ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                          : activeGatewayStatus?.activeSource === 'ENVIRONMENT_VARIABLES'
+                          ? 'bg-cyan-950 text-cyan-400 border border-cyan-800'
+                          : 'bg-amber-950 text-amber-400 border border-amber-800'
+                      }`}>
+                        {activeGatewayStatus?.activeSource || 'ACTIVE GATEWAY'}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2.5 text-sm text-white font-bold">
+                      <span>Provider: <span className="text-purple-300 font-mono font-medium">{activeGatewayStatus?.providerName || 'Loading...'}</span></span>
+                      <span className="text-slate-600">•</span>
+                      <span>Active Chat Model: <span className="text-emerald-400 font-mono px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800/60 font-semibold">{activeGatewayStatus?.model || 'gpt-4o-mini'}</span></span>
+                    </div>
+                    <div className="text-xs font-mono text-slate-400 truncate">
+                      Routing Endpoint: {activeGatewayStatus?.baseUrl || 'https://api.openai.com/v1'} • API Key: {activeGatewayStatus?.keyMasked || '••••••••'}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleTestActiveGateway}
+                      disabled={isTestingActiveGateway}
+                      className="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-lg shadow-purple-600/20 disabled:opacity-50 transition-all"
+                    >
+                      <Play className={`w-3.5 h-3.5 ${isTestingActiveGateway ? 'animate-spin' : ''}`} />
+                      <span>{isTestingActiveGateway ? 'Testing AI Gateway...' : 'Ping Active AI Gateway'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {activeGatewayTestResult && (
+                  <div className={`p-4 rounded-2xl text-xs font-mono border ${
+                    activeGatewayTestResult.success ? 'bg-emerald-950/70 border-emerald-800 text-emerald-300' : 'bg-red-950/70 border-red-800 text-red-300'
+                  } space-y-1.5`}>
+                    <div className="font-bold flex items-center justify-between">
+                      <span>{activeGatewayTestResult.success ? '✅ Gateway Responding Successfully' : '❌ Gateway Request Failed'}</span>
+                      <span>Round-Trip: {activeGatewayTestResult.latencyMs || 0}ms</span>
+                    </div>
+                    {activeGatewayTestResult.response && (
+                      <div className="text-slate-200 text-[11px] truncate">
+                        Output Sample: "{activeGatewayTestResult.response}"
+                      </div>
+                    )}
+                    {activeGatewayTestResult.error && (
+                      <div className="text-red-300 text-[11px]">
+                        Error: {activeGatewayTestResult.error}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* AssemblyAI Config Card */}
@@ -3273,7 +3401,7 @@ export default function AdminDashboard() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-bold text-white">{prov.name}</span>
                           <span
-                            className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
+                            className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
                               prov.isEnabled
                                 ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
                                 : 'bg-slate-800 text-slate-400 border border-slate-700'
@@ -3288,10 +3416,31 @@ export default function AdminDashboard() {
                       <div className="space-y-2 text-xs text-slate-300 font-mono bg-[#0B0F19] p-3 rounded-xl border border-slate-800">
                         <div className="truncate"><span className="text-slate-500">Base URL:</span> {prov.baseUrl}</div>
                         <div><span className="text-slate-500">API Key:</span> •••••••••••••••• (Stored securely)</div>
-                        <div><span className="text-slate-500">Chat Model:</span> <span className="text-indigo-400">{prov.chatModel}</span></div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-500">Chat Model:</span>
+                          <span className="px-2 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-800/80 font-bold">{prov.chatModel || 'gpt-4o-mini'}</span>
+                        </div>
+                        {prov.reasoningModel && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-500">Reasoning Model:</span>
+                            <span className="px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800/80 font-bold">{prov.reasoningModel}</span>
+                          </div>
+                        )}
+                        {prov.lastLatencyMs && (
+                          <div className="text-[11px] text-slate-400 pt-1 border-t border-slate-800/50 flex justify-between">
+                            <span>Last Latency: {prov.lastLatencyMs}ms</span>
+                            <span className={prov.lastStatus === 'OPERATIONAL' ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>{prov.lastStatus}</span>
+                          </div>
+                        )}
                       </div>
 
-                      <div className="flex items-center justify-between pt-2">
+                      {testResult && testResult.id === prov.id && (
+                        <div className={`p-2.5 rounded-xl text-xs font-mono border ${testResult.success ? 'bg-emerald-950/70 border-emerald-800 text-emerald-300' : 'bg-red-950/70 border-red-800 text-red-300'}`}>
+                          {testResult.message}
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between pt-2 gap-2">
                         <button
                           onClick={() => handleTestProvider(prov.id)}
                           disabled={testingProviderId === prov.id}
@@ -3301,79 +3450,203 @@ export default function AdminDashboard() {
                           <span>{testingProviderId === prov.id ? 'Pinging Provider...' : 'Test Connection'}</span>
                         </button>
 
-                        <button
-                          onClick={() => handleDeleteProvider(prov.id, prov.name)}
-                          className="p-1.5 text-slate-500 hover:text-red-400 transition-colors"
-                          title="Delete Provider"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleToggleProvider(prov)}
+                            className={`p-1.5 rounded-lg border transition-colors ${prov.isEnabled ? 'text-emerald-400 border-emerald-800/50 hover:bg-emerald-950/50' : 'text-slate-500 border-slate-800 hover:bg-slate-800'}`}
+                            title={prov.isEnabled ? 'Disable Provider' : 'Enable Provider'}
+                          >
+                            <Power className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            onClick={() => handleEditProvider(prov)}
+                            className="p-1.5 text-slate-400 hover:text-purple-300 rounded-lg hover:bg-slate-800 border border-slate-800 transition-colors"
+                            title="Edit Provider & Models"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteProvider(prov.id, prov.name)}
+                            className="p-1.5 text-slate-500 hover:text-red-400 rounded-lg hover:bg-red-950/30 border border-transparent hover:border-red-800 transition-colors"
+                            title="Delete Provider"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))
                 ) : (
-                  <div className="md:col-span-2 p-8 text-center text-xs text-slate-500 bg-[#111827] rounded-2xl border border-slate-800">
-                    No custom AI providers configured in DB yet. The backend is currently using environment defaults (AI_BASE_URL / OPENAI_BASE_URL). Click "Add New Provider" above to add dynamic providers.
+                  <div className="md:col-span-2 p-8 text-center text-xs text-slate-400 bg-[#111827] rounded-2xl border border-slate-800 space-y-2">
+                    <p className="font-semibold text-slate-300">No custom AI providers stored in DB yet.</p>
+                    <p className="text-[11px] text-slate-500">The backend is dynamically routing via Environment Variables (AI_BASE_URL, MODELFLARE_BASE_URL, AI_MODEL). Click "Add New Provider" above if you wish to configure or hot-swap providers via the database.</p>
                   </div>
                 )}
               </div>
 
               {/* Provider Modal Form */}
               {isEditingProvider && (
-                <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4 backdrop-blur-sm">
-                  <div className="w-full max-w-lg glass-panel border-white/15 rounded-[32px] p-8 shadow-2xl space-y-6 backdrop-blur-3xl bg-[#080C16]/95">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-base font-bold text-white">Add OpenAI-Compatible Provider</h3>
-                      <button onClick={() => setIsEditingProvider(false)} className="text-slate-500 hover:text-white">✕</button>
+                <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4 backdrop-blur-md">
+                  <div className="w-full max-w-lg glass-panel border-white/15 rounded-[32px] p-8 shadow-2xl space-y-6 backdrop-blur-3xl bg-[#080C16]/95 max-h-[90vh] overflow-y-auto">
+                    <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                      <div>
+                        <h3 className="text-base font-bold text-white">
+                          {providerForm.id ? 'Edit OpenAI-Compatible Provider' : 'Add OpenAI-Compatible Provider'}
+                        </h3>
+                        <p className="text-xs text-slate-400">Configure ModelFlare, OpenAI, Groq, DeepSeek, or custom gateways</p>
+                      </div>
+                      <button onClick={() => setIsEditingProvider(false)} className="text-slate-500 hover:text-white p-1 text-sm">✕</button>
                     </div>
 
                     <form onSubmit={handleSaveProvider} className="space-y-4">
                       <div>
-                        <label className="block text-xs font-semibold text-slate-400 mb-1">Provider Name</label>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">Provider Name</label>
                         <input
                           type="text"
                           required
                           value={providerForm.name}
                           onChange={(e) => setProviderForm({ ...providerForm, name: e.target.value })}
-                          placeholder="e.g. OpenAI / ModelFlare / Groq"
+                          placeholder="e.g. ModelFlare, OpenAI, Groq, DeepSeek"
                           className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-white text-xs focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-mono transition-all"
                         />
                       </div>
+
                       <div>
-                        <label className="block text-xs font-semibold text-slate-400 mb-1">Base URL</label>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">Base URL</label>
                         <input
                           type="url"
                           required
                           value={providerForm.baseUrl}
                           onChange={(e) => setProviderForm({ ...providerForm, baseUrl: e.target.value })}
-                          placeholder="https://api.openai.com/v1"
+                          placeholder="https://api.modelflare.ai/v1 or https://api.openai.com/v1"
                           className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-white text-xs focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-mono transition-all"
                         />
                       </div>
+
                       <div>
-                        <label className="block text-xs font-semibold text-slate-400 mb-1">API Key</label>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">
+                          API Key {providerForm.id && <span className="text-slate-500 font-normal">(Leave blank to keep existing key)</span>}
+                        </label>
                         <input
                           type="password"
-                          required
+                          required={!providerForm.id}
                           value={providerForm.apiKey}
                           onChange={(e) => setProviderForm({ ...providerForm, apiKey: e.target.value })}
-                          placeholder="sk-..."
+                          placeholder={providerForm.id ? "•••••••••••••••• (Leave blank to keep current key)" : "sk-..."}
                           className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-white text-xs focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-mono transition-all"
                         />
                       </div>
-                      <div className="flex gap-3">
+
+                      {/* Primary Chat Model ID */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-xs font-semibold text-purple-300">
+                            Chat Model ID <span className="text-red-400">*</span>
+                          </label>
+                          <span className="text-[10px] text-slate-400">Used for conversational reasoning & Second Brain</span>
+                        </div>
+                        <input
+                          type="text"
+                          required
+                          value={providerForm.chatModel}
+                          onChange={(e) => setProviderForm({ ...providerForm, chatModel: e.target.value })}
+                          placeholder="e.g. gpt-4o-mini, meta-llama/llama-3.1-8b-instruct, deepseek-chat"
+                          className="w-full px-4 py-2.5 bg-[#05070D] border border-purple-500/30 rounded-2xl text-white text-xs focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-mono transition-all"
+                        />
+                        {/* Quick Suggestion Pills */}
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          <span className="text-[10px] text-slate-500 self-center mr-1">Suggestions:</span>
+                          {['gpt-4o-mini', 'gpt-4o', 'deepseek-chat', 'claude-3-5-sonnet', 'meta-llama/llama-3.1-8b-instruct'].map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => setProviderForm({ ...providerForm, chatModel: m })}
+                              className={`text-[10px] font-mono px-2 py-0.5 rounded-lg border transition-all ${
+                                providerForm.chatModel === m
+                                  ? 'bg-purple-900/80 text-purple-200 border-purple-500'
+                                  : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:text-white'
+                              }`}
+                            >
+                              {m}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Optional Reasoning Model ID */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-xs font-semibold text-cyan-300">
+                            Reasoning Model ID <span className="text-slate-500 font-normal">(Optional)</span>
+                          </label>
+                          <span className="text-[10px] text-slate-400">Used for complex multi-step reasoning</span>
+                        </div>
+                        <input
+                          type="text"
+                          value={providerForm.reasoningModel}
+                          onChange={(e) => setProviderForm({ ...providerForm, reasoningModel: e.target.value })}
+                          placeholder="e.g. o1-mini, o3-mini, deepseek-reasoner"
+                          className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-white text-xs focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 font-mono transition-all"
+                        />
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          <span className="text-[10px] text-slate-500 self-center mr-1">Suggestions:</span>
+                          {['o1-mini', 'o3-mini', 'deepseek-reasoner'].map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => setProviderForm({ ...providerForm, reasoningModel: m })}
+                              className={`text-[10px] font-mono px-2 py-0.5 rounded-lg border transition-all ${
+                                providerForm.reasoningModel === m
+                                  ? 'bg-cyan-900/80 text-cyan-200 border-cyan-500'
+                                  : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:text-white'
+                              }`}
+                            >
+                              {m}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 pt-2">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Priority (1 = Highest)</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="20"
+                            value={providerForm.priority}
+                            onChange={(e) => setProviderForm({ ...providerForm, priority: parseInt(e.target.value, 10) || 1 })}
+                            className="w-full px-4 py-2 bg-[#05070D] border border-white/10 rounded-xl text-white text-xs font-mono"
+                          />
+                        </div>
+                        <div className="flex flex-col justify-end">
+                          <label className="flex items-center gap-2 p-2 bg-[#05070D] border border-white/10 rounded-xl cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={providerForm.isEnabled}
+                              onChange={(e) => setProviderForm({ ...providerForm, isEnabled: e.target.checked })}
+                              className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 bg-slate-900 border-slate-700"
+                            />
+                            <span className="text-xs text-white font-semibold">Enable Provider</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3 pt-4 border-t border-white/10">
                         <button
                           type="button"
                           onClick={() => setIsEditingProvider(false)}
-                          className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+                          className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors"
                         >
                           Cancel
                         </button>
                         <button
                           type="submit"
-                          className="flex-1 py-2 bg-gradient-to-r from-[#7C3AED] to-[#6366F1] text-white rounded-xl text-xs font-semibold"
+                          className="flex-1 py-2.5 bg-gradient-to-r from-[#7C3AED] to-[#6366F1] hover:opacity-95 text-white rounded-xl text-xs font-semibold shadow-lg shadow-purple-600/30 transition-all"
                         >
-                          Save Provider
+                          {providerForm.id ? 'Update Provider' : 'Save Provider'}
                         </button>
                       </div>
                     </form>

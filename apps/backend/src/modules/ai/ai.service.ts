@@ -20,49 +20,77 @@ import { BillingService } from '../billing/billing.service';
 @Injectable()
 export class AiService {
   private openaiClient: OpenAI | null = null;
-  private readonly defaultModel: string;
+  private defaultModel: string;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly billingService: BillingService,
   ) {
-    const apiKey =
-      this.configService.get<string>('AI_API_KEY') ||
-      this.configService.get<string>('OPENAI_API_KEY') ||
-      this.configService.get<string>('MODELFLARE_API_KEY') ||
-      process.env.AI_API_KEY ||
-      process.env.OPENAI_API_KEY ||
-      process.env.MODELFLARE_API_KEY;
+    const env = this.getDynamicEnvConfig();
+    this.defaultModel = env.model;
 
-    const baseURL =
-      this.configService.get<string>('AI_BASE_URL') ||
-      this.configService.get<string>('OPENAI_BASE_URL') ||
-      this.configService.get<string>('MODELFLARE_BASE_URL') ||
-      process.env.AI_BASE_URL ||
-      process.env.OPENAI_BASE_URL ||
-      process.env.MODELFLARE_BASE_URL ||
-      'https://api.openai.com/v1';
-
-    this.defaultModel =
-      this.configService.get<string>('AI_MODEL') ||
-      this.configService.get<string>('OPENAI_MODEL') ||
-      this.configService.get<string>('MODELFLARE_MODEL') ||
-      process.env.AI_MODEL ||
-      process.env.OPENAI_MODEL ||
-      process.env.MODELFLARE_MODEL ||
-      'gpt-4o-mini';
-
-    if (apiKey && apiKey !== 'mock-key' && baseURL.startsWith('http')) {
+    if (env.apiKey && env.apiKey !== 'mock-key' && env.baseURL.startsWith('http')) {
       try {
         this.openaiClient = new OpenAI({
-          apiKey,
-          baseURL,
+          apiKey: env.apiKey,
+          baseURL: env.baseURL,
         });
       } catch {
         this.openaiClient = null;
       }
     }
+  }
+
+  getDynamicEnvConfig(): { apiKey: string; baseURL: string; model: string } {
+    const apiKey =
+      this.configService.get<string>('AI_API_KEY') ||
+      this.configService.get<string>('MODELFLARE_API_KEY') ||
+      this.configService.get<string>('OPENAI_API_KEY') ||
+      this.configService.get<string>('AI_KEY') ||
+      this.configService.get<string>('OPENAI_KEY') ||
+      process.env.AI_API_KEY ||
+      process.env.MODELFLARE_API_KEY ||
+      process.env.OPENAI_API_KEY ||
+      process.env.AI_KEY ||
+      process.env.OPENAI_KEY ||
+      '';
+
+    const baseURL =
+      this.configService.get<string>('AI_BASE_URL') ||
+      this.configService.get<string>('MODELFLARE_BASE_URL') ||
+      this.configService.get<string>('OPENAI_BASE_URL') ||
+      this.configService.get<string>('AI_GATEWAY_URL') ||
+      process.env.AI_BASE_URL ||
+      process.env.MODELFLARE_BASE_URL ||
+      process.env.OPENAI_BASE_URL ||
+      process.env.AI_GATEWAY_URL ||
+      'https://api.openai.com/v1';
+
+    const model =
+      this.configService.get<string>('AI_MODEL') ||
+      this.configService.get<string>('MODELFLARE_MODEL') ||
+      this.configService.get<string>('OPENAI_MODEL') ||
+      this.configService.get<string>('OPENAI_MODEL_NAME') ||
+      this.configService.get<string>('MODEL_NAME') ||
+      this.configService.get<string>('CHAT_MODEL') ||
+      this.configService.get<string>('MODEL') ||
+      this.configService.get<string>('FREE_TIER_AI_MODEL') ||
+      process.env.AI_MODEL ||
+      process.env.MODELFLARE_MODEL ||
+      process.env.OPENAI_MODEL ||
+      process.env.OPENAI_MODEL_NAME ||
+      process.env.MODEL_NAME ||
+      process.env.CHAT_MODEL ||
+      process.env.MODEL ||
+      process.env.FREE_TIER_AI_MODEL ||
+      'gpt-4o-mini';
+
+    return {
+      apiKey: apiKey ? apiKey.trim() : '',
+      baseURL: baseURL ? baseURL.trim() : 'https://api.openai.com/v1',
+      model: model ? model.trim() : 'gpt-4o-mini',
+    };
   }
 
   async getOrCreateDefaultGuestId(): Promise<string> {
@@ -86,7 +114,16 @@ export class AiService {
     }
   }
 
-  async getAiClient(): Promise<{ client: OpenAI | null; model: string; providerName: string }> {
+  async getAiClient(): Promise<{
+    client: OpenAI | null;
+    model: string;
+    providerName: string;
+    baseUrl: string;
+    isDbProvider: boolean;
+  }> {
+    const env = this.getDynamicEnvConfig();
+    this.defaultModel = env.model;
+
     try {
       const activeProvider = await this.prisma.aiProviderConfig.findFirst({
         where: { isEnabled: true },
@@ -98,50 +135,137 @@ export class AiService {
           apiKey: activeProvider.apiKeyEncrypted,
           baseURL: activeProvider.baseUrl,
         });
+        const resolvedModel = activeProvider.chatModel?.trim() || env.model || 'gpt-4o-mini';
         return {
           client,
-          model: activeProvider.chatModel || this.defaultModel,
+          model: resolvedModel,
           providerName: activeProvider.name,
+          baseUrl: activeProvider.baseUrl,
+          isDbProvider: true,
         };
       }
     } catch {
       // DB lookup error, continue with default env client
     }
 
-    // If client wasn't created in constructor or env changed, recreate dynamically from env
-    if (!this.openaiClient) {
-      const apiKey =
-        this.configService.get<string>('AI_API_KEY') ||
-        this.configService.get<string>('OPENAI_API_KEY') ||
-        this.configService.get<string>('MODELFLARE_API_KEY') ||
-        process.env.AI_API_KEY ||
-        process.env.OPENAI_API_KEY ||
-        process.env.MODELFLARE_API_KEY;
-
-      const baseURL =
-        this.configService.get<string>('AI_BASE_URL') ||
-        this.configService.get<string>('OPENAI_BASE_URL') ||
-        this.configService.get<string>('MODELFLARE_BASE_URL') ||
-        process.env.AI_BASE_URL ||
-        process.env.OPENAI_BASE_URL ||
-        process.env.MODELFLARE_BASE_URL ||
-        'https://api.openai.com/v1';
-
-      if (apiKey && apiKey !== 'mock-key' && baseURL.startsWith('http')) {
-        try {
-          this.openaiClient = new OpenAI({
-            apiKey,
-            baseURL,
-          });
-        } catch {}
+    // Dynamic environment fallback
+    if (env.apiKey && env.apiKey !== 'mock-key' && env.baseURL.startsWith('http')) {
+      try {
+        const client = new OpenAI({
+          apiKey: env.apiKey,
+          baseURL: env.baseURL,
+        });
+        return {
+          client,
+          model: env.model,
+          providerName: 'OpenAI-Compatible Gateway (Environment)',
+          baseUrl: env.baseURL,
+          isDbProvider: false,
+        };
+      } catch (err) {
+        console.warn('Failed to construct OpenAI client from environment:', err);
       }
     }
 
     return {
-      client: this.openaiClient,
-      model: this.defaultModel,
-      providerName: this.openaiClient ? 'OpenAI-Compatible Gateway (Environment)' : 'Offline Local Fallback',
+      client: null,
+      model: env.model,
+      providerName: 'Offline Local Fallback',
+      baseUrl: env.baseURL,
+      isDbProvider: false,
     };
+  }
+
+  async testActiveConfiguration(): Promise<{
+    success: boolean;
+    latencyMs: number;
+    providerName: string;
+    source: 'DATABASE_PROVIDER' | 'ENVIRONMENT_VARIABLES' | 'OFFLINE_FALLBACK';
+    baseUrl: string;
+    model: string;
+    hasApiKey: boolean;
+    keyMasked: string;
+    response?: string;
+    error?: string;
+  }> {
+    const env = this.getDynamicEnvConfig();
+    const startTime = Date.now();
+    const { client, model, providerName, baseUrl, isDbProvider } = await this.getAiClient();
+
+    const activeSource = isDbProvider
+      ? ('DATABASE_PROVIDER' as const)
+      : client
+      ? ('ENVIRONMENT_VARIABLES' as const)
+      : ('OFFLINE_FALLBACK' as const);
+
+    let activeKey = env.apiKey;
+    if (isDbProvider) {
+      try {
+        const prov = await this.prisma.aiProviderConfig.findFirst({
+          where: { isEnabled: true },
+          orderBy: { priority: 'asc' },
+        });
+        if (prov?.apiKeyEncrypted) activeKey = prov.apiKeyEncrypted;
+      } catch (_) {}
+    }
+
+    const keyMasked = activeKey
+      ? activeKey.length > 8
+        ? `${activeKey.slice(0, 4)}••••${activeKey.slice(-4)}`
+        : '••••••••'
+      : 'NONE';
+
+    if (!client) {
+      return {
+        success: false,
+        latencyMs: 0,
+        providerName,
+        source: activeSource,
+        baseUrl,
+        model,
+        hasApiKey: Boolean(activeKey),
+        keyMasked,
+        error:
+          'No active AI provider or API key configured. Please configure an OpenAI-compatible provider in the Admin Panel or set AI_API_KEY/MODELFLARE_API_KEY in environment variables.',
+      };
+    }
+
+    try {
+      const completion = await client.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: 'Say "OPERATIONAL_TEST_OK"' }],
+        max_tokens: 15,
+        temperature: 0.1,
+      });
+
+      const latencyMs = Date.now() - startTime;
+      const response = completion.choices[0]?.message?.content?.trim() || 'OPERATIONAL_TEST_OK';
+
+      return {
+        success: true,
+        latencyMs,
+        providerName,
+        source: activeSource,
+        baseUrl,
+        model,
+        hasApiKey: true,
+        keyMasked,
+        response,
+      };
+    } catch (err: any) {
+      const latencyMs = Date.now() - startTime;
+      return {
+        success: false,
+        latencyMs,
+        providerName,
+        source: activeSource,
+        baseUrl,
+        model,
+        hasApiKey: Boolean(activeKey),
+        keyMasked,
+        error: err?.message || String(err),
+      };
+    }
   }
 
   async checkAndTrackQuota(userId: string, tokensEstimate: number): Promise<void> {
@@ -1970,8 +2094,21 @@ If no action is required, do NOT include the <<<ACTIONS>>> block.`;
             console.warn('Failed to parse and execute LLM actions:', actionErr);
           }
         }
-      } catch (llmErr) {
-        console.warn('LLM chat failed, using local fallback:', llmErr);
+      } catch (llmErr: any) {
+        console.error(`LLM chat failed with model "${model}" via provider "${providerName}":`, llmErr);
+        const errMsg = llmErr?.message || String(llmErr);
+        if (
+          errMsg.includes('503') ||
+          errMsg.includes('401') ||
+          errMsg.includes('404') ||
+          errMsg.includes('400') ||
+          errMsg.includes('model') ||
+          errMsg.includes('unauthorized') ||
+          errMsg.includes('group cannot currently process') ||
+          errMsg.includes('quota')
+        ) {
+          assistantAnswer = `⚠️ **AI Gateway Notice**: Unable to complete request using model \`${model}\` via **${providerName}**.\n\n*Gateway error*: ${errMsg}\n\nPlease verify your Model ID, Base URL, and API Key in the Admin Panel (AI Providers) or environment variables.`;
+        }
       }
     }
 
@@ -2293,8 +2430,21 @@ If no action is required, do NOT include the <<<ACTIONS>>> block.`;
             sendEvent('chunk', { text: contentDelta });
           }
         }
-      } catch (streamErr) {
-        console.warn('AI streaming failed, falling back to local handler:', streamErr);
+      } catch (streamErr: any) {
+        console.error(`AI streaming failed with model "${model}" via provider "${providerName}":`, streamErr);
+        const errMsg = streamErr?.message || String(streamErr);
+        if (
+          errMsg.includes('503') ||
+          errMsg.includes('401') ||
+          errMsg.includes('404') ||
+          errMsg.includes('400') ||
+          errMsg.includes('model') ||
+          errMsg.includes('unauthorized') ||
+          errMsg.includes('group cannot currently process') ||
+          errMsg.includes('quota')
+        ) {
+          accumulatedContent = `⚠️ **AI Gateway Notice**: Unable to complete streaming using model \`${model}\` via **${providerName}**.\n\n*Gateway error*: ${errMsg}\n\nPlease verify your Model ID, Base URL, and API Key in the Admin Panel (AI Providers) or environment variables.`;
+        }
       }
     }
 

@@ -219,6 +219,16 @@ export class AdminController {
   }
 
   // 3. AI PROVIDERS & ROUTING
+  @Get('ai/status')
+  async getAiGatewayStatus() {
+    return this.adminService.getAiGatewayStatus();
+  }
+
+  @Post('ai/test-active')
+  async testActiveAiGateway() {
+    return this.adminService.testActiveAiGateway();
+  }
+
   @Get('ai/providers')
   async getAiProviders() {
     return this.adminService.getAiProviders();
@@ -227,6 +237,11 @@ export class AdminController {
   @Post('ai/providers')
   async saveAiProvider(@Req() req: any, @Body() dto: any) {
     return this.adminService.createOrUpdateAiProvider(req.user, dto);
+  }
+
+  @Put('ai/providers/:id/toggle')
+  async toggleAiProvider(@Req() req: any, @Param('id') providerId: string) {
+    return this.adminService.toggleAiProvider(req.user, providerId);
   }
 
   @Post('ai/providers/:id/test')

@@ -3,11 +3,13 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import OpenAI from 'openai';
+import { AiService } from '../ai/ai.service';
 
 @Injectable()
 export class AdminService {
@@ -17,6 +19,7 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly billingService: BillingService,
     private readonly notificationsService: NotificationsService,
+    @Optional() private readonly aiService?: AiService,
   ) {}
 
   // ==========================================
@@ -777,6 +780,7 @@ export class AdminService {
         success: true,
         latencyMs,
         response: reply.trim(),
+        sampleResponse: reply.trim(),
         status: 'OPERATIONAL',
       };
     } catch (err: any) {
@@ -811,6 +815,66 @@ export class AdminService {
         error: errorMsg,
       };
     }
+  }
+
+  async getAiGatewayStatus() {
+    if (!this.aiService) {
+      return { activeSource: 'NONE', error: 'AiService unavailable' };
+    }
+    const testResult = await this.aiService.testActiveConfiguration();
+    const env = this.aiService.getDynamicEnvConfig();
+    return {
+      activeSource: testResult.source,
+      providerName: testResult.providerName,
+      baseUrl: testResult.baseUrl,
+      model: testResult.model,
+      hasApiKey: testResult.hasApiKey,
+      keyMasked: testResult.keyMasked,
+      envDetected: {
+        hasApiKey: Boolean(env.apiKey),
+        keyMasked: env.apiKey
+          ? env.apiKey.length > 8
+            ? `${env.apiKey.slice(0, 4)}••••${env.apiKey.slice(-4)}`
+            : '••••••••'
+          : 'NONE',
+        baseUrl: env.baseURL,
+        model: env.model,
+      },
+    };
+  }
+
+  async testActiveAiGateway() {
+    if (!this.aiService) {
+      return { success: false, error: 'AiService unavailable' };
+    }
+    return this.aiService.testActiveConfiguration();
+  }
+
+  async toggleAiProvider(admin: { id: string; email: string }, providerId: string) {
+    const provider = await this.prisma.aiProviderConfig.findUnique({
+      where: { id: providerId },
+    });
+    if (!provider) throw new NotFoundException('Provider not found');
+
+    const updated = await this.prisma.aiProviderConfig.update({
+      where: { id: providerId },
+      data: { isEnabled: !provider.isEnabled },
+    });
+
+    await this.logAdminAction({
+      adminId: admin.id,
+      adminEmail: admin.email,
+      action: updated.isEnabled ? 'ENABLE_AI_PROVIDER' : 'DISABLE_AI_PROVIDER',
+      targetType: 'AI_PROVIDER',
+      targetId: providerId,
+      details: { name: provider.name, isEnabled: updated.isEnabled },
+    });
+
+    return {
+      ...updated,
+      apiKeyEncrypted: updated.apiKeyEncrypted ? '••••••••••••••••' : '',
+      hasKey: Boolean(updated.apiKeyEncrypted),
+    };
   }
 
   async deleteAiProvider(admin: { id: string; email: string }, providerId: string) {

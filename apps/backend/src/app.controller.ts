@@ -1,13 +1,17 @@
-import { Controller, Get, Post } from '@nestjs/common';
+import { Controller, Get, Post, Optional } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { PrismaService } from './database/prisma.service';
 import { SCHEMA_SQL } from './database/schema-ddl';
 import * as bcrypt from 'bcryptjs';
+import { AiService } from './modules/ai/ai.service';
 
 @ApiTags('Health')
 @Controller()
 export class AppController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly aiService?: AiService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Backend Health Check and System Status' })
@@ -62,6 +66,67 @@ export class AppController {
         error: err.message || String(err),
       };
     }
+  }
+
+  @Get('health/ai')
+  @ApiOperation({ summary: 'AI Gateway Connectivity and Diagnostic Health' })
+  async getAiHealth() {
+    if (!this.aiService) {
+      return { status: 'DEGRADED', error: 'AiService not available' };
+    }
+    const testResult = await this.aiService.testActiveConfiguration();
+    let dbProviders: any[] = [];
+    try {
+      const providers = await this.prisma.aiProviderConfig.findMany({
+        orderBy: { priority: 'asc' },
+      });
+      dbProviders = providers.map((p) => ({
+        id: p.id,
+        name: p.name,
+        baseUrl: p.baseUrl,
+        chatModel: p.chatModel,
+        reasoningModel: p.reasoningModel,
+        priority: p.priority,
+        isEnabled: p.isEnabled,
+        hasKey: Boolean(p.apiKeyEncrypted),
+        keyMasked: p.apiKeyEncrypted
+          ? p.apiKeyEncrypted.length > 8
+            ? `${p.apiKeyEncrypted.slice(0, 4)}••••${p.apiKeyEncrypted.slice(-4)}`
+            : '••••••••'
+          : 'NONE',
+        lastTestedAt: p.lastTestedAt,
+        lastLatencyMs: p.lastLatencyMs,
+        lastStatus: p.lastStatus,
+      }));
+    } catch (_) {}
+
+    const env = this.aiService.getDynamicEnvConfig();
+    return {
+      status: testResult.success ? 'HEALTHY' : 'DEGRADED',
+      activeSource: testResult.source,
+      activeProvider: testResult.providerName,
+      activeModel: testResult.model,
+      activeBaseUrl: testResult.baseUrl,
+      hasApiKey: testResult.hasApiKey,
+      keyMasked: testResult.keyMasked,
+      testPing: {
+        success: testResult.success,
+        latencyMs: testResult.latencyMs,
+        sampleResponse: testResult.response || null,
+        error: testResult.error || null,
+      },
+      dbProviders,
+      environmentConfig: {
+        hasApiKey: Boolean(env.apiKey),
+        keyMasked: env.apiKey
+          ? env.apiKey.length > 8
+            ? `${env.apiKey.slice(0, 4)}••••${env.apiKey.slice(-4)}`
+            : '••••••••'
+          : 'NONE',
+        baseUrl: env.baseURL,
+        model: env.model,
+      },
+    };
   }
 
   @Get('health/migrate')
