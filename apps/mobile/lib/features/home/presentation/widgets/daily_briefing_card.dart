@@ -97,7 +97,7 @@ class _DailyBriefingCardState extends State<DailyBriefingCard> {
             const SizedBox(height: 10),
 
             Text(
-              widget.headline ?? 'Welcome to Mindora! Your Second Brain is ready.',
+              widget.headline ?? 'Welcome to VyNotes! Your Second Brain is ready.',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,

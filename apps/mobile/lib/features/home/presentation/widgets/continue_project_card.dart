@@ -10,7 +10,7 @@ class ContinueProjectCard extends StatelessWidget {
 
   const ContinueProjectCard({
     super.key,
-    this.projectName = 'Mindora Studio v2.0',
+    this.projectName = 'VyNotes Workspace v2.0',
     this.activeTask = 'Design system architecture & neural canvas',
     this.progress = 0.68,
     this.onTap,

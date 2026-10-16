@@ -1,4 +1,4 @@
-package com.example.mindora_mobile
+package com.vynotes.crazytech
 
 import io.flutter.embedding.android.FlutterActivity
 

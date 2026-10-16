@@ -8,6 +8,11 @@ class TaskModel {
   final bool isAiExtracted;
   final bool isCompleted;
 
+  final String? description;
+  final String? category;
+  final int? stepNumber;
+  final String? taskType;
+
   const TaskModel({
     required this.id,
     required this.title,
@@ -17,6 +22,10 @@ class TaskModel {
     required this.dueTime,
     required this.isAiExtracted,
     this.isCompleted = false,
+    this.description,
+    this.category,
+    this.stepNumber,
+    this.taskType,
   });
 
   TaskModel copyWith({
@@ -28,6 +37,10 @@ class TaskModel {
     String? dueTime,
     bool? isAiExtracted,
     bool? isCompleted,
+    String? description,
+    String? category,
+    int? stepNumber,
+    String? taskType,
   }) {
     return TaskModel(
       id: id ?? this.id,
@@ -38,6 +51,10 @@ class TaskModel {
       dueTime: dueTime ?? this.dueTime,
       isAiExtracted: isAiExtracted ?? this.isAiExtracted,
       isCompleted: isCompleted ?? this.isCompleted,
+      description: description ?? this.description,
+      category: category ?? this.category,
+      stepNumber: stepNumber ?? this.stepNumber,
+      taskType: taskType ?? this.taskType,
     );
   }
 
@@ -51,6 +68,10 @@ class TaskModel {
       'dueTime': dueTime,
       'isAiExtracted': isAiExtracted,
       'isCompleted': isCompleted,
+      'description': description,
+      'category': category,
+      'stepNumber': stepNumber,
+      'taskType': taskType,
     };
   }
 
@@ -64,6 +85,10 @@ class TaskModel {
       dueTime: json['dueTime'] as String? ?? 'Today',
       isAiExtracted: json['isAiExtracted'] as bool? ?? false,
       isCompleted: json['isCompleted'] as bool? ?? false,
+      description: json['description'] as String?,
+      category: json['category'] as String?,
+      stepNumber: json['stepNumber'] as int?,
+      taskType: json['taskType'] as String?,
     );
   }
 }

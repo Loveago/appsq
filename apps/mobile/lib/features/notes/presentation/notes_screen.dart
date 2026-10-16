@@ -5,6 +5,7 @@ import '../../../../core/widgets/fade_slide_in.dart';
 import '../../../../core/models/note_model.dart';
 import '../../../../core/providers/app_state_providers.dart';
 import 'note_editor_screen.dart';
+import '../../ads/presentation/ad_banner_widget.dart';
 
 class NotesScreen extends StatelessWidget {
   final VoidCallback? onBack;
@@ -270,9 +271,15 @@ class _NotesScreenViewState extends ConsumerState<_NotesScreenView> {
                 : ListView.separated(
                     padding: const EdgeInsets.fromLTRB(20, 4, 20, 100),
                     physics: const BouncingScrollPhysics(),
-                    itemCount: filteredNotes.length,
+                    itemCount: filteredNotes.length + 1,
                     separatorBuilder: (context, index) => const SizedBox(height: 10),
                     itemBuilder: (context, index) {
+                      if (index == filteredNotes.length) {
+                        return const AdBannerWidget(
+                          placement: 'notes_list',
+                          margin: EdgeInsets.symmetric(vertical: 8),
+                        );
+                      }
                       final note = filteredNotes[index];
                       return _buildNoteCard(note, isDark, index);
                     },

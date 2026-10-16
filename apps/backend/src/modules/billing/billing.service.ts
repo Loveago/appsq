@@ -8,6 +8,151 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
+import {
+  encryptSecret,
+  decryptSecret,
+  maskSecret,
+  isMaskedValue,
+} from '../../common/utils/crypto.util';
+
+export interface SubscriptionProductMapping {
+  id: string; // internal id e.g. "pro_monthly", "pro_annual"
+  plan: 'PRO' | 'TRIAL';
+  displayName: string;
+  description: string;
+  billingPeriod: 'MONTHLY' | 'ANNUAL' | 'LIFETIME';
+  googlePlayProductId: string; // e.g. "mindora_pro_monthly"
+  appleProductId: string; // e.g. "mindora_pro_monthly"
+  revenueCatPackageId?: string; // e.g. "$rc_monthly"
+  entitlementId: string; // e.g. "pro"
+  badgeText?: string; // e.g. "Popular", "Save 35%"
+  sortOrder: number;
+  isEnabled: boolean;
+  limits: {
+    aiTokens: number;
+    transcriptionMinutes: number;
+    documentScans: number;
+    meetingMode: boolean;
+  };
+}
+
+export interface SubscriptionDisplayConfig {
+  headline: string;
+  subheadline: string;
+  proFeatures: string[];
+  promotionalBannerText?: string;
+  trialDisclosureText: string;
+  renewalDisclosureText: string;
+  termsUrl: string;
+  privacyUrl: string;
+  maintenanceMode: boolean;
+}
+
+export interface SubscriptionTrialConfig {
+  enabled: boolean;
+  durationDays: number;
+  eligiblePlans: string[];
+  disclosureText: string;
+}
+
+export interface RevenueCatAdminConfig {
+  enabled: boolean;
+  androidPublicApiKey: string;
+  iosPublicApiKey: string;
+  serverSecretApiKeyEncrypted: string;
+  webhookAuthTokenEncrypted: string;
+  defaultEntitlementId: string;
+  lastValidatedAt: string | null;
+  lastValidationStatus: 'SUCCESS' | 'FAILED' | 'PENDING' | 'NOT_CONFIGURED';
+  lastValidationMessage?: string;
+  lastWebhookReceivedAt: string | null;
+  products: SubscriptionProductMapping[];
+  display: SubscriptionDisplayConfig;
+  trial: SubscriptionTrialConfig;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export const DEFAULT_SUBSCRIPTION_CONFIG: RevenueCatAdminConfig = {
+  enabled: true,
+  androidPublicApiKey: 'goog_mindora_prod_android_key',
+  iosPublicApiKey: 'appl_mindora_prod_ios_key',
+  serverSecretApiKeyEncrypted: '',
+  webhookAuthTokenEncrypted: '',
+  defaultEntitlementId: 'pro',
+  lastValidatedAt: null,
+  lastValidationStatus: 'NOT_CONFIGURED',
+  lastWebhookReceivedAt: null,
+  products: [
+    {
+      id: 'pro_monthly',
+      plan: 'PRO',
+      displayName: 'Mindora Pro Monthly',
+      description: 'Monthly unlimited access to your AI Second Brain',
+      billingPeriod: 'MONTHLY',
+      googlePlayProductId: 'mindora_pro_monthly',
+      appleProductId: 'mindora_pro_monthly',
+      revenueCatPackageId: '$rc_monthly',
+      entitlementId: 'pro',
+      badgeText: '',
+      sortOrder: 1,
+      isEnabled: true,
+      limits: {
+        aiTokens: 1000000,
+        transcriptionMinutes: 300,
+        documentScans: 500,
+        meetingMode: true,
+      },
+    },
+    {
+      id: 'pro_annual',
+      plan: 'PRO',
+      displayName: 'Mindora Pro Annual',
+      description: 'Annual membership with continuous sync & 35% discount',
+      billingPeriod: 'ANNUAL',
+      googlePlayProductId: 'mindora_pro_annual',
+      appleProductId: 'mindora_pro_annual',
+      revenueCatPackageId: '$rc_annual',
+      entitlementId: 'pro',
+      badgeText: 'Save 35%',
+      sortOrder: 2,
+      isEnabled: true,
+      limits: {
+        aiTokens: 1000000,
+        transcriptionMinutes: 300,
+        documentScans: 500,
+        meetingMode: true,
+      },
+    },
+  ],
+  display: {
+    headline: 'Unlimited Second Brain.',
+    subheadline:
+      'Unlock continuous audio recording, neural RAG indexing, and automatic synthesis.',
+    proFeatures: [
+      'Unlimited continuous voice & meeting capture',
+      'Advanced speech-to-text with AssemblyAI',
+      'Neural graph semantic search & grounding',
+      'Full Second Brain AI Chat & Reasoning',
+      'High-capacity monthly token budget (1,000,000 tokens)',
+      'Cross-platform synchronization (iOS & Android)',
+    ],
+    promotionalBannerText: '✦ SPECIAL LAUNCH: 7-DAY EVALUATION AVAILABLE',
+    trialDisclosureText:
+      'Try 7 days free. Cancel anytime before trial ends without being charged.',
+    renewalDisclosureText:
+      'Subscriptions automatically renew unless cancelled at least 24 hours before the end of the current period.',
+    termsUrl: 'https://appsquare.app/terms',
+    privacyUrl: 'https://appsquare.app/privacy',
+    maintenanceMode: false,
+  },
+  trial: {
+    enabled: true,
+    durationDays: 7,
+    eligiblePlans: ['pro_monthly', 'pro_annual'],
+    disclosureText: '7-day evaluation with full Second Brain capabilities.',
+  },
+};
 
 export interface PlanLimits {
   aiMessages: number;
@@ -37,6 +182,12 @@ export interface EntitlementsResponse {
   };
   plan: 'FREE' | 'TRIAL' | 'PRO' | 'EXPIRED' | 'CANCELLED';
   subscriptionStatus: 'FREE' | 'TRIALING' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
+  isPro: boolean;
+  isTrialActive: boolean;
+  trialDaysRemaining: number;
+  subscriptionDaysRemaining: number;
+  daysRemaining: number;
+  expiresAt: string | null;
   trial: {
     active: boolean;
     startedAt: Date | null;
@@ -50,6 +201,7 @@ export interface EntitlementsResponse {
     provider: string | null;
     cancelledAt: Date | null;
     autoRenewing?: boolean;
+    daysRemaining: number;
   };
   limits: PlanLimits;
   usage: PlanUsage;
@@ -220,6 +372,321 @@ export class BillingService {
     }).catch(() => {});
 
     return setting.value;
+  }
+
+  // ==========================================
+  // CONFIGURATION MANAGEMENT & REVENUECAT KEYS
+  // ==========================================
+  private cachedSubscriptionConfig: RevenueCatAdminConfig | null = null;
+  private subscriptionConfigExpiry = 0;
+
+  async getRawSubscriptionConfig(): Promise<RevenueCatAdminConfig> {
+    const now = Date.now();
+    if (this.cachedSubscriptionConfig && this.subscriptionConfigExpiry > now) {
+      return this.cachedSubscriptionConfig;
+    }
+
+    try {
+      const setting = await this.prisma.systemSetting.findUnique({
+        where: { key: 'subscription_config' },
+      });
+      if (setting && setting.value && typeof setting.value === 'object') {
+        const val = setting.value as Partial<RevenueCatAdminConfig>;
+        const merged: RevenueCatAdminConfig = {
+          ...DEFAULT_SUBSCRIPTION_CONFIG,
+          ...val,
+          products:
+            Array.isArray(val.products) && val.products.length > 0
+              ? val.products
+              : DEFAULT_SUBSCRIPTION_CONFIG.products,
+          display: { ...DEFAULT_SUBSCRIPTION_CONFIG.display, ...(val.display || {}) },
+          trial: { ...DEFAULT_SUBSCRIPTION_CONFIG.trial, ...(val.trial || {}) },
+        };
+        this.cachedSubscriptionConfig = merged;
+        this.subscriptionConfigExpiry = now + 30000;
+        return merged;
+      }
+    } catch (_) {}
+
+    return DEFAULT_SUBSCRIPTION_CONFIG;
+  }
+
+  async getAdminSubscriptionConfig() {
+    const raw = await this.getRawSubscriptionConfig();
+    const lastWebhook = await this.prisma.webhookEvent.findFirst({
+      where: { provider: 'REVENUECAT' },
+      orderBy: { processedAt: 'desc' },
+    });
+    const totalWebhooks = await this.prisma.webhookEvent.count({
+      where: { provider: 'REVENUECAT' },
+    });
+
+    return {
+      enabled: raw.enabled,
+      androidPublicApiKey: raw.androidPublicApiKey,
+      iosPublicApiKey: raw.iosPublicApiKey,
+      serverSecretApiKey: maskSecret(raw.serverSecretApiKeyEncrypted),
+      hasServerSecret: Boolean(raw.serverSecretApiKeyEncrypted),
+      webhookAuthToken: maskSecret(raw.webhookAuthTokenEncrypted),
+      hasWebhookSecret: Boolean(raw.webhookAuthTokenEncrypted),
+      defaultEntitlementId: raw.defaultEntitlementId || 'pro',
+      lastValidatedAt: raw.lastValidatedAt,
+      lastValidationStatus: raw.lastValidationStatus,
+      lastValidationMessage: raw.lastValidationMessage,
+      lastWebhookReceivedAt: lastWebhook
+        ? lastWebhook.processedAt.toISOString()
+        : raw.lastWebhookReceivedAt,
+      totalWebhookEvents: totalWebhooks,
+      products: raw.products,
+      display: raw.display,
+      trial: raw.trial,
+      updatedAt: raw.updatedAt,
+      updatedBy: raw.updatedBy,
+    };
+  }
+
+  async updateAdminSubscriptionConfig(
+    admin: { id: string; email: string },
+    dto: Partial<RevenueCatAdminConfig> & {
+      serverSecretApiKey?: string;
+      webhookAuthToken?: string;
+    },
+  ) {
+    const current = await this.getRawSubscriptionConfig();
+
+    let serverSecretApiKeyEncrypted = current.serverSecretApiKeyEncrypted;
+    if (dto.serverSecretApiKey && !isMaskedValue(dto.serverSecretApiKey)) {
+      serverSecretApiKeyEncrypted = encryptSecret(dto.serverSecretApiKey.trim());
+    }
+
+    let webhookAuthTokenEncrypted = current.webhookAuthTokenEncrypted;
+    if (dto.webhookAuthToken && !isMaskedValue(dto.webhookAuthToken)) {
+      webhookAuthTokenEncrypted = encryptSecret(dto.webhookAuthToken.trim());
+    }
+
+    const updatedConfig: RevenueCatAdminConfig = {
+      ...current,
+      enabled: dto.enabled !== undefined ? Boolean(dto.enabled) : current.enabled,
+      androidPublicApiKey: (dto.androidPublicApiKey ?? current.androidPublicApiKey ?? '').trim(),
+      iosPublicApiKey: (dto.iosPublicApiKey ?? current.iosPublicApiKey ?? '').trim(),
+      serverSecretApiKeyEncrypted,
+      webhookAuthTokenEncrypted,
+      defaultEntitlementId: (
+        dto.defaultEntitlementId ??
+        current.defaultEntitlementId ??
+        'pro'
+      ).trim(),
+      products: Array.isArray(dto.products) ? dto.products : current.products,
+      display: {
+        ...current.display,
+        ...(dto.display || {}),
+        maintenanceMode:
+          dto.display?.maintenanceMode !== undefined
+            ? Boolean(dto.display.maintenanceMode)
+            : current.display.maintenanceMode,
+      },
+      trial: {
+        ...current.trial,
+        ...(dto.trial || {}),
+        enabled:
+          dto.trial?.enabled !== undefined
+            ? Boolean(dto.trial.enabled)
+            : current.trial.enabled,
+        durationDays: Number(dto.trial?.durationDays) || current.trial.durationDays,
+      },
+      updatedAt: new Date().toISOString(),
+      updatedBy: admin.email,
+    };
+
+    await this.prisma.systemSetting.upsert({
+      where: { key: 'subscription_config' },
+      update: {
+        value: updatedConfig as any,
+        description: 'RevenueCat subscription and billing configuration',
+      },
+      create: {
+        key: 'subscription_config',
+        value: updatedConfig as any,
+        description: 'RevenueCat subscription and billing configuration',
+      },
+    });
+
+    // Invalidate cache immediately
+    this.cachedSubscriptionConfig = null;
+    this.subscriptionConfigExpiry = 0;
+
+    // Log in AuditLog
+    await this.prisma.auditLog
+      .create({
+        data: {
+          adminId: admin.id,
+          adminEmail: admin.email,
+          action: 'UPDATE_SUBSCRIPTION_CONFIG',
+          targetType: 'SETTING',
+          targetId: 'subscription_config',
+          details: {
+            enabled: updatedConfig.enabled,
+            androidKeyConfigured: Boolean(updatedConfig.androidPublicApiKey),
+            iosKeyConfigured: Boolean(updatedConfig.iosPublicApiKey),
+            serverSecretConfigured: Boolean(serverSecretApiKeyEncrypted),
+            webhookSecretConfigured: Boolean(webhookAuthTokenEncrypted),
+            productCount: updatedConfig.products.length,
+          } as any,
+        },
+      })
+      .catch(() => {});
+
+    return this.getAdminSubscriptionConfig();
+  }
+
+  async getPublicSubscriptionConfig(platform?: string) {
+    const raw = await this.getRawSubscriptionConfig();
+    const plat = (platform || '').toLowerCase();
+    const isIos = plat === 'ios';
+
+    return {
+      revenueCatEnabled: raw.enabled,
+      apiKey: isIos ? raw.iosPublicApiKey : raw.androidPublicApiKey,
+      androidApiKey: raw.androidPublicApiKey,
+      iosApiKey: raw.iosPublicApiKey,
+      entitlementId: raw.defaultEntitlementId || 'pro',
+      products: raw.products
+        .filter((p) => p.isEnabled)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+      display: raw.display,
+      trial: raw.trial,
+      maintenanceMode: raw.display.maintenanceMode,
+    };
+  }
+
+  async validateRevenueCatConnection(secretKeyOverride?: string) {
+    const raw = await this.getRawSubscriptionConfig();
+    const secretKey =
+      secretKeyOverride && !isMaskedValue(secretKeyOverride)
+        ? secretKeyOverride.trim()
+        : decryptSecret(raw.serverSecretApiKeyEncrypted) ||
+          this.configService.get<string>('REVENUECAT_SECRET_KEY') ||
+          '';
+
+    if (!secretKey) {
+      return {
+        success: false,
+        message:
+          'RevenueCat Secret API Key is not configured. Please enter your secret key (sk_...) to test the connection.',
+      };
+    }
+
+    try {
+      const res = await fetch(
+        'https://api.revenuecat.com/v1/subscribers/test_connection_ping',
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${secretKey}`,
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      const isSuccess = res.status === 200 || res.status === 404;
+      const statusText = isSuccess ? 'SUCCESS' : 'FAILED';
+      const message = isSuccess
+        ? 'RevenueCat API credentials verified successfully (connected to RevenueCat v1 REST API).'
+        : `RevenueCat API returned status ${res.status}: Invalid or unauthorized secret key.`;
+
+      await this.prisma.systemSetting
+        .upsert({
+          where: { key: 'subscription_config' },
+          update: {
+            value: {
+              ...raw,
+              lastValidatedAt: new Date().toISOString(),
+              lastValidationStatus: statusText,
+              lastValidationMessage: message,
+            } as any,
+          },
+          create: {
+            key: 'subscription_config',
+            value: {
+              ...raw,
+              lastValidatedAt: new Date().toISOString(),
+              lastValidationStatus: statusText,
+              lastValidationMessage: message,
+            } as any,
+          },
+        })
+        .catch(() => {});
+
+      this.cachedSubscriptionConfig = null;
+      return { success: isSuccess, message };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `Could not reach RevenueCat server: ${err.message}`,
+      };
+    }
+  }
+
+  async getRecentWebhookEvents(limit = 30) {
+    return this.prisma.webhookEvent.findMany({
+      where: { provider: 'REVENUECAT' },
+      take: Math.min(limit, 100),
+      orderBy: { processedAt: 'desc' },
+    });
+  }
+
+  async manualSubscriptionOverride(
+    admin: { id: string; email: string },
+    targetUserId: string,
+    dto: {
+      plan: 'PRO' | 'FREE' | 'TRIAL';
+      durationDays?: number;
+      reason: string;
+    },
+  ) {
+    if (!dto.reason || dto.reason.trim().length < 3) {
+      throw new BadRequestException(
+        'A valid reason is required for manual subscription overrides.',
+      );
+    }
+
+    let result: EntitlementsResponse;
+    if (dto.plan === 'PRO' || dto.plan === 'TRIAL') {
+      result = await this.activateSubscription({
+        userId: targetUserId,
+        plan: dto.plan,
+        provider: 'ADMIN',
+        durationDays: dto.durationDays || 30,
+        source: 'ADMIN',
+        metadata: {
+          manualOverride: true,
+          reason: dto.reason.trim(),
+          authorizedBy: admin.email,
+        },
+      });
+    } else {
+      result = await this.downgradeToFree(targetUserId, 'ADMIN', dto.reason.trim());
+    }
+
+    await this.prisma.auditLog
+      .create({
+        data: {
+          adminId: admin.id,
+          adminEmail: admin.email,
+          action: 'MANUAL_SUBSCRIPTION_OVERRIDE',
+          targetType: 'USER',
+          targetId: targetUserId,
+          details: {
+            plan: dto.plan,
+            durationDays: dto.durationDays,
+            reason: dto.reason.trim(),
+          } as any,
+        },
+      })
+      .catch(() => {});
+
+    return result;
   }
 
   /**
@@ -431,6 +898,35 @@ export class BillingService {
       transcriptionMinutes: transcriptionDurationSum?._sum?.quantity || 0,
     };
 
+    // Authoritative calculation of days remaining (clamped to non-negative integers)
+    let subscriptionDaysRemaining = 0;
+    if (effectivePlan === 'TRIAL') {
+      trialActive = true;
+      const tEnd = user.trialEndsAt || subExpiresAt;
+      if (tEnd && tEnd.getTime() > now.getTime()) {
+        trialDaysRemaining = Math.max(0, Math.ceil((tEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+      } else {
+        trialDaysRemaining = 0;
+      }
+    } else if (effectivePlan === 'PRO') {
+      const pEnd = subExpiresAt || user.subscriptionExpiresAt;
+      if (pEnd && pEnd.getTime() > now.getTime()) {
+        subscriptionDaysRemaining = Math.max(0, Math.ceil((pEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+      } else if (pEnd) {
+        subscriptionDaysRemaining = 0;
+      } else {
+        subscriptionDaysRemaining = 30;
+      }
+    }
+
+    const overallDaysRemaining = trialActive
+      ? trialDaysRemaining
+      : (effectivePlan === 'PRO' ? subscriptionDaysRemaining : 0);
+
+    const expiresAt = trialActive
+      ? (user.trialEndsAt || subExpiresAt)?.toISOString() || null
+      : (effectivePlan === 'PRO' ? (subExpiresAt || user.subscriptionExpiresAt)?.toISOString() || null : null);
+
     const remaining: PlanLimits = {
       aiMessages: Math.max(0, limits.aiMessages - usage.aiMessages),
       aiTokens: Math.max(0, limits.aiTokens - usage.aiTokens),
@@ -455,6 +951,12 @@ export class BillingService {
       },
       plan: effectivePlan,
       subscriptionStatus,
+      isPro: effectivePlan === 'PRO' || effectivePlan === 'TRIAL',
+      isTrialActive: trialActive,
+      trialDaysRemaining,
+      subscriptionDaysRemaining,
+      daysRemaining: overallDaysRemaining,
+      expiresAt,
       trial: {
         active: trialActive,
         startedAt: user.trialStartedAt,
@@ -468,6 +970,7 @@ export class BillingService {
         provider: activeProvider,
         cancelledAt: subCancelledAt,
         autoRenewing,
+        daysRemaining: subscriptionDaysRemaining,
       },
       limits,
       usage,
@@ -850,10 +1353,22 @@ export class BillingService {
    * RevenueCat Webhook Handler with idempotency & out-of-order event protection.
    */
   async handleRevenueCatWebhook(payload: any, authHeader?: string) {
-    const secret = this.configService.get<string>('REVENUECAT_WEBHOOK_AUTH_TOKEN');
-    if (secret && authHeader && authHeader !== secret) {
-      this.logger.warn('Unauthorized RevenueCat webhook attempt');
-      throw new UnauthorizedException('Invalid webhook authorization token');
+    const startTime = Date.now();
+    const rawConfig = await this.getRawSubscriptionConfig();
+    const decryptedSecret = decryptSecret(rawConfig.webhookAuthTokenEncrypted);
+    const expectedSecret =
+      decryptedSecret ||
+      this.configService.get<string>('REVENUECAT_WEBHOOK_AUTH_TOKEN') ||
+      '';
+
+    if (expectedSecret && authHeader) {
+      const cleanAuth = authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7)
+        : authHeader;
+      if (cleanAuth !== expectedSecret) {
+        this.logger.warn('Unauthorized RevenueCat webhook attempt');
+        throw new UnauthorizedException('Invalid webhook authorization token');
+      }
     }
 
     const event = payload?.event;
@@ -862,7 +1377,9 @@ export class BillingService {
     const eventId = event.id;
     const appUserId = event.app_user_id;
     const type = event.type;
-    const eventTimeMs = event.event_timestamp_ms ? Number(event.event_timestamp_ms) : Date.now();
+    const eventTimeMs = event.event_timestamp_ms
+      ? Number(event.event_timestamp_ms)
+      : Date.now();
 
     // 1. Idempotency Check: if event was already processed, skip duplicate
     if (eventId) {
@@ -881,6 +1398,7 @@ export class BillingService {
             provider: 'REVENUECAT',
             eventType: type,
             userId: appUserId,
+            status: 'PROCESSING',
             payload: event,
           },
         });
@@ -902,6 +1420,18 @@ export class BillingService {
 
     if (!user) {
       this.logger.warn(`RevenueCat webhook user not found: ${appUserId}`);
+      if (eventId) {
+        await (this.prisma as any).webhookEvent
+          .update({
+            where: { eventId },
+            data: {
+              status: 'IGNORED',
+              errorMessage: `User not found: ${appUserId}`,
+              processingTimeMs: Date.now() - startTime,
+            },
+          })
+          .catch(() => {});
+      }
       return { received: true, userFound: false };
     }
 
@@ -909,16 +1439,29 @@ export class BillingService {
     // If user's current subscription was started AFTER this webhook event's timestamp,
     // and this event is a downgrade (EXPIRATION or CANCELLATION), ignore it!
     if (user.subscriptionStartedAt && user.subscriptionStartedAt.getTime() > eventTimeMs) {
-      if (type === 'EXPIRATION' || type === 'CANCELLATION') {
+      if (type === 'EXPIRATION' || type === 'CANCELLATION' || type === 'BILLING_ISSUE') {
         this.logger.warn(
           `Ignoring out-of-order RevenueCat event ${type} (${new Date(eventTimeMs).toISOString()}) because user has newer subscription started at ${user.subscriptionStartedAt.toISOString()}`,
         );
+        if (eventId && (this.prisma as any).webhookEvent?.update) {
+          await (this.prisma as any).webhookEvent
+            .update({
+              where: { eventId },
+              data: {
+                status: 'IGNORED',
+                errorMessage: 'Out of order event suppressed',
+                processingTimeMs: Date.now() - startTime,
+              },
+            })
+            .catch(() => {});
+        }
         return { received: true, ignored: 'out_of_order' };
       }
     }
 
     const expiresAt = event.expiration_at_ms ? new Date(event.expiration_at_ms) : null;
     const originalTransactionId = event.original_transaction_id || event.transaction_id || eventId;
+    const store = event.store || (event.product_id?.includes('ios') ? 'APP_STORE' : 'PLAY_STORE');
 
     if (
       type === 'INITIAL_PURCHASE' ||
@@ -937,9 +1480,12 @@ export class BillingService {
         expiresAt,
         source: 'WEBHOOK',
         metadata: {
+          store,
           productId: event.product_id,
+          entitlementId: event.entitlement_id || event.entitlement_ids?.[0] || 'pro',
           currency: event.currency,
           price: event.price_in_purchased_currency,
+          environment: event.environment || 'PRODUCTION',
         },
       });
     } else if (type === 'CANCELLATION') {
@@ -967,8 +1513,45 @@ export class BillingService {
         source: 'WEBHOOK',
         metadata: { reason: event.cancel_reason },
       });
-    } else if (type === 'EXPIRATION') {
-      await this.downgradeToFree(user.id, 'WEBHOOK', 'Subscription expired in RevenueCat');
+    } else if (type === 'EXPIRATION' || type === 'REVOCATION') {
+      await this.downgradeToFree(
+        user.id,
+        'WEBHOOK',
+        type === 'REVOCATION' ? 'Subscription revoked/refunded in store' : 'Subscription expired in RevenueCat',
+      );
+    } else if (type === 'BILLING_ISSUE') {
+      const gracePeriodExpiresAt = event.grace_period_expiration_at_ms
+        ? new Date(event.grace_period_expiration_at_ms)
+        : null;
+
+      await (this.prisma as any).subscription
+        .updateMany({
+          where: { userId: user.id, status: 'ACTIVE' },
+          data: { status: 'BILLING_ISSUE', gracePeriodExpiresAt },
+        })
+        .catch(() => {});
+
+      this.logSubscriptionTransition({
+        userId: user.id,
+        oldPlan: user.plan,
+        newPlan: user.plan,
+        event: 'REVENUECAT_BILLING_ISSUE',
+        paymentRef: originalTransactionId,
+        source: 'WEBHOOK',
+        metadata: { gracePeriodExpiresAt },
+      });
+    }
+
+    if (eventId && (this.prisma as any).webhookEvent?.update) {
+      await (this.prisma as any).webhookEvent
+        .update({
+          where: { eventId },
+          data: {
+            status: 'SUCCESS',
+            processingTimeMs: Date.now() - startTime,
+          },
+        })
+        .catch(() => {});
     }
 
     return { success: true };

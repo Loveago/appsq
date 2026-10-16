@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:share_plus/share_plus.dart';
+import '../services/audio_service.dart';
 import '../theme/app_colors.dart';
 
 class AudioPlaybackController {
@@ -19,6 +21,7 @@ class AudioPlaybackBar extends StatefulWidget {
   final String audioPath;
   final VoidCallback? onRemove;
   final String? title;
+  final String? transcript;
   final AudioPlaybackController? controller;
 
   const AudioPlaybackBar({
@@ -26,6 +29,7 @@ class AudioPlaybackBar extends StatefulWidget {
     required this.audioPath,
     this.onRemove,
     this.title,
+    this.transcript,
     this.controller,
   });
 
@@ -38,6 +42,7 @@ class _AudioPlaybackBarState extends State<AudioPlaybackBar> {
   PlayerState _playerState = PlayerState.stopped;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
+  String _effectivePath = '';
 
   Duration get currentPosition => _position;
 
@@ -49,21 +54,30 @@ class _AudioPlaybackBarState extends State<AudioPlaybackBar> {
   @override
   void initState() {
     super.initState();
+    _effectivePath = widget.audioPath;
     widget.controller?._attach(this);
     _player = AudioPlayer();
     _player.setReleaseMode(ReleaseMode.stop);
     _initAudioListeners();
-    _loadInitialDuration();
+    _resolveAndLoad();
+  }
+
+  Future<void> _resolveAndLoad() async {
+    final resolved = await AudioRecordingService.resolveAudioPath(widget.audioPath);
+    if (mounted) {
+      setState(() => _effectivePath = resolved);
+    }
+    _loadInitialDuration(resolved);
   }
 
   Future<void> seekTo(Duration pos) async {
     try {
       if (_playerState != PlayerState.playing) {
         Source source;
-        if (widget.audioPath.startsWith('http://') || widget.audioPath.startsWith('https://')) {
-          source = UrlSource(widget.audioPath);
+        if (_effectivePath.startsWith('http://') || _effectivePath.startsWith('https://')) {
+          source = UrlSource(_effectivePath);
         } else {
-          source = DeviceFileSource(widget.audioPath);
+          source = DeviceFileSource(_effectivePath);
         }
         await _player.play(source, position: pos);
       } else {
@@ -84,15 +98,19 @@ class _AudioPlaybackBarState extends State<AudioPlaybackBar> {
     }
   }
 
-  void _loadInitialDuration() {
+  void _loadInitialDuration(String path) {
     try {
-      if (widget.audioPath.isNotEmpty && !widget.audioPath.startsWith('http')) {
-        final f = File(widget.audioPath);
+      if (path.isNotEmpty && !path.startsWith('http')) {
+        final f = File(path);
         if (f.existsSync()) {
-          _player.setSource(DeviceFileSource(widget.audioPath)).then((_) {
+          _player.setSource(DeviceFileSource(path)).then((_) {
             _player.getDuration().then((dur) {
-              if (dur != null && mounted) {
+              if (dur != null && dur > Duration.zero && mounted) {
                 setState(() => _duration = dur);
+              } else if (f.lengthSync() > 0 && mounted) {
+                // Fallback estimate if container header hasn't reported length: ~16KB/s for 128kbps m4a
+                final estSeconds = (f.lengthSync() / 16000).clamp(1.0, 7200.0).round();
+                setState(() => _duration = Duration(seconds: estSeconds));
               }
             });
           }).catchError((_) {});
@@ -107,7 +125,9 @@ class _AudioPlaybackBarState extends State<AudioPlaybackBar> {
     });
 
     _durationSub = _player.onDurationChanged.listen((dur) {
-      if (mounted) setState(() => _duration = dur);
+      if (dur > Duration.zero && mounted) {
+        setState(() => _duration = dur);
+      }
     });
 
     _positionSub = _player.onPositionChanged.listen((pos) {
@@ -144,10 +164,10 @@ class _AudioPlaybackBarState extends State<AudioPlaybackBar> {
           await _player.resume();
         } else {
           Source source;
-          if (widget.audioPath.startsWith('http://') || widget.audioPath.startsWith('https://')) {
-            source = UrlSource(widget.audioPath);
+          if (_effectivePath.startsWith('http://') || _effectivePath.startsWith('https://')) {
+            source = UrlSource(_effectivePath);
           } else {
-            final f = File(widget.audioPath);
+            final f = File(_effectivePath);
             if (!f.existsSync()) {
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -159,7 +179,7 @@ class _AudioPlaybackBarState extends State<AudioPlaybackBar> {
               }
               return;
             }
-            source = DeviceFileSource(widget.audioPath);
+            source = DeviceFileSource(_effectivePath);
           }
           await _player.stop();
           await _player.play(source);
@@ -167,6 +187,59 @@ class _AudioPlaybackBarState extends State<AudioPlaybackBar> {
       }
     } catch (e) {
       debugPrint('AudioPlaybackBar playback notice: $e');
+    }
+  }
+
+  Future<void> _exportAudio() async {
+    try {
+      if (_effectivePath.isEmpty) return;
+      final f = File(_effectivePath);
+      if (await f.exists()) {
+        if (!mounted) return;
+        final box = context.findRenderObject() as RenderBox?;
+        await Share.shareXFiles(
+          [XFile(f.path, mimeType: _effectivePath.endsWith('.wav') ? 'audio/wav' : 'audio/m4a')],
+          text: widget.title ?? 'Voice Note Recording',
+          sharePositionOrigin: box != null ? box.localToGlobal(Offset.zero) & box.size : null,
+        );
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Cannot export: Audio file not found locally.')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportTranscript() async {
+    try {
+      if (widget.transcript == null || widget.transcript!.trim().isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No transcript available for this recording.')),
+          );
+        }
+        return;
+      }
+      final box = context.findRenderObject() as RenderBox?;
+      await Share.share(
+        'Transcript for "${widget.title ?? 'Voice Note'}":\n\n${widget.transcript}',
+        subject: 'Transcript - ${widget.title ?? 'Voice Note'}',
+        sharePositionOrigin: box != null ? box.localToGlobal(Offset.zero) & box.size : null,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e')),
+        );
+      }
     }
   }
 
@@ -240,6 +313,45 @@ class _AudioPlaybackBarState extends State<AudioPlaybackBar> {
                     ),
                   ],
                 ),
+              ),
+              // Native Export Popover
+              PopupMenuButton<String>(
+                icon: Icon(
+                  Icons.ios_share_rounded,
+                  size: 18,
+                  color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                ),
+                tooltip: 'Export / Share',
+                onSelected: (val) {
+                  if (val == 'audio') {
+                    _exportAudio();
+                  } else if (val == 'transcript') {
+                    _exportTranscript();
+                  }
+                },
+                itemBuilder: (ctx) => [
+                  const PopupMenuItem(
+                    value: 'audio',
+                    child: Row(
+                      children: [
+                        Icon(Icons.audio_file_rounded, size: 16),
+                        SizedBox(width: 8),
+                        Text('Export Audio File (.m4a/.wav)'),
+                      ],
+                    ),
+                  ),
+                  if (widget.transcript != null && widget.transcript!.trim().isNotEmpty)
+                    const PopupMenuItem(
+                      value: 'transcript',
+                      child: Row(
+                        children: [
+                          Icon(Icons.description_rounded, size: 16),
+                          SizedBox(width: 8),
+                          Text('Export Transcript (.txt)'),
+                        ],
+                      ),
+                    ),
+                ],
               ),
               if (widget.onRemove != null)
                 IconButton(

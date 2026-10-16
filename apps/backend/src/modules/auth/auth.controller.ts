@@ -32,6 +32,30 @@ export class AuthController {
     return this.authService.login(email, password);
   }
 
+  @Post('google')
+  async googleLogin(
+    @Body('idToken') idToken?: string,
+    @Body('email') email?: string,
+    @Body('fullName') fullName?: string,
+    @Body('avatarUrl') avatarUrl?: string,
+  ) {
+    return this.authService.googleLogin({ idToken, email: email || '', fullName, avatarUrl });
+  }
+
+  @Post('forgot-password')
+  async forgotPassword(@Body('email') email: string) {
+    return this.authService.forgotPassword(email);
+  }
+
+  @Post('reset-password')
+  async resetPassword(
+    @Body('email') email: string,
+    @Body('code') code: string,
+    @Body('newPassword') newPassword: string,
+  ) {
+    return this.authService.resetPassword(email, code, newPassword);
+  }
+
   @Post('guest')
   async guestLogin(@Body('deviceId') deviceId?: string) {
     return this.authService.guestLogin(deviceId);

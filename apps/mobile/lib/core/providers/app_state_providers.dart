@@ -3,6 +3,8 @@ import '../models/note_model.dart';
 import '../models/task_model.dart';
 import '../models/project_model.dart';
 import '../models/smart_list_model.dart';
+import '../models/notification_model.dart';
+import '../models/reminder_model.dart';
 import '../storage/local_storage_service.dart';
 import '../network/api_client.dart';
 
@@ -298,29 +300,81 @@ class TasksNotifier extends StateNotifier<List<TaskModel>> {
     ApiClient.instance.deleteTask(id).catchError((_) => false);
   }
 
-  void addExtractedTasks(List<String> titles, {String project = 'Quick Capture', String? sourceNote}) {
-    final newTasks = titles.map((title) {
-      ApiClient.instance.createTask(
-        title: title,
-        priority: 'HIGH',
-        dueTimeStr: 'Tomorrow',
-        projectId: project,
-      ).catchError((_) => null);
+  void addExtractedTasks(
+    List<dynamic> rawTasks, {
+    String project = 'Quick Capture',
+    String? sourceNote,
+  }) {
+    final existingTitles = state.map((t) => t.title.trim().toLowerCase()).toSet();
+    final newTasks = <TaskModel>[];
 
-      return TaskModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString() + title.hashCode.toString(),
+    for (final item in rawTasks) {
+      String title = '';
+      String? description;
+      String priority = 'high';
+      String dueTime = 'Tomorrow';
+      String? category;
+      int? stepNumber;
+      String? taskType;
+
+      if (item is TaskModel) {
+        title = item.title;
+        description = item.description;
+        priority = item.priority;
+        dueTime = item.dueTime;
+        category = item.category;
+        stepNumber = item.stepNumber;
+        taskType = item.taskType;
+      } else if (item is Map) {
+        title = (item['title'] ?? item['task'] ?? item['instruction'] ?? '').toString().trim();
+        description = item['description']?.toString();
+        priority = (item['priority']?.toString().toLowerCase()) ?? 'medium';
+        dueTime = (item['dueDate'] ?? item['dueTime'] ?? 'Tomorrow').toString();
+        category = item['category']?.toString();
+        stepNumber = item['stepNumber'] is int ? item['stepNumber'] as int : null;
+        taskType = item['taskType']?.toString();
+      } else if (item is String) {
+        title = item.trim();
+      }
+
+      if (title.isEmpty) continue;
+
+      final normalizedTitle = title.toLowerCase();
+      if (existingTitles.contains(normalizedTitle)) {
+        continue;
+      }
+      existingTitles.add(normalizedTitle);
+
+      final taskModel = TaskModel(
+        id: '${DateTime.now().millisecondsSinceEpoch}_${title.hashCode.abs()}',
         title: title,
         project: project,
         sourceNote: sourceNote,
-        priority: 'high',
-        dueTime: 'Tomorrow',
+        priority: priority.toLowerCase(),
+        dueTime: dueTime,
         isAiExtracted: true,
         isCompleted: false,
+        description: description,
+        category: category,
+        stepNumber: stepNumber,
+        taskType: taskType,
       );
-    }).toList();
 
-    state = [...newTasks, ...state];
-    LocalStorageService.instance.saveTasks(state);
+      newTasks.add(taskModel);
+
+      ApiClient.instance.createTask(
+        title: title,
+        description: description,
+        priority: priority.toUpperCase(),
+        dueTimeStr: dueTime,
+        projectId: project,
+      ).catchError((_) => null);
+    }
+
+    if (newTasks.isNotEmpty) {
+      state = [...newTasks, ...state];
+      LocalStorageService.instance.saveTasks(state);
+    }
   }
 }
 
@@ -425,3 +479,155 @@ class SmartListsNotifier extends StateNotifier<List<SmartListModel>> {
 final smartListsProvider = StateNotifierProvider<SmartListsNotifier, List<SmartListModel>>((ref) {
   return SmartListsNotifier();
 });
+
+// ==========================================
+// Notifications State Notifier
+// ==========================================
+class NotificationsNotifier extends StateNotifier<List<NotificationModel>> {
+  NotificationsNotifier() : super([]) {
+    loadNotifications();
+  }
+
+  bool _isLoading = false;
+  bool get isLoading => _isLoading;
+
+  Future<void> loadNotifications({bool? unreadOnly, String? category}) async {
+    _isLoading = true;
+    try {
+      final list = await ApiClient.instance.fetchNotifications(
+        unreadOnly: unreadOnly,
+        category: category,
+      );
+      state = list;
+    } catch (_) {
+      // Keep existing state on error
+    } finally {
+      _isLoading = false;
+    }
+  }
+
+  Future<void> markAsRead(String id) async {
+    final success = await ApiClient.instance.markNotificationRead(id);
+    if (success) {
+      state = [
+        for (final n in state)
+          if (n.id == id) n.copyWith(readAt: DateTime.now()) else n,
+      ];
+    }
+  }
+
+  Future<void> markAllAsRead() async {
+    final success = await ApiClient.instance.markAllNotificationsRead();
+    if (success) {
+      final now = DateTime.now();
+      state = [
+        for (final n in state)
+          if (n.readAt == null) n.copyWith(readAt: now) else n,
+      ];
+    }
+  }
+
+  Future<void> deleteNotification(String id) async {
+    final success = await ApiClient.instance.deleteNotification(id);
+    if (success) {
+      state = state.where((n) => n.id != id).toList();
+    }
+  }
+}
+
+final notificationsProvider = StateNotifierProvider<NotificationsNotifier, List<NotificationModel>>((ref) {
+  return NotificationsNotifier();
+});
+
+final unreadNotificationCountProvider = Provider<int>((ref) {
+  final list = ref.watch(notificationsProvider);
+  return list.where((n) => !n.isRead).length;
+});
+
+// ==========================================
+// Reminders State Notifier
+// ==========================================
+class RemindersNotifier extends StateNotifier<List<ReminderModel>> {
+  RemindersNotifier() : super([]) {
+    loadReminders();
+  }
+
+  bool _isLoading = false;
+  bool get isLoading => _isLoading;
+
+  Future<void> loadReminders({String? status, String? noteId, String? taskId}) async {
+    _isLoading = true;
+    try {
+      final list = await ApiClient.instance.fetchReminders(
+        status: status,
+        noteId: noteId,
+        taskId: taskId,
+      );
+      state = list;
+    } catch (_) {
+      // Keep existing state on error
+    } finally {
+      _isLoading = false;
+    }
+  }
+
+  Future<ReminderModel?> addReminder({
+    required String title,
+    String? description,
+    required DateTime remindAt,
+    String? noteId,
+    String? taskId,
+    String? meetingId,
+    String? voiceNoteId,
+    String recurrenceRule = 'NONE',
+    String? timezone,
+  }) async {
+    final created = await ApiClient.instance.createReminder(
+      title: title,
+      description: description,
+      remindAt: remindAt,
+      noteId: noteId,
+      taskId: taskId,
+      meetingId: meetingId,
+      voiceNoteId: voiceNoteId,
+      recurrenceRule: recurrenceRule,
+      timezone: timezone,
+    );
+    if (created != null) {
+      state = [created, ...state];
+    }
+    return created;
+  }
+
+  Future<void> snoozeReminder(String id, {int minutes = 15, DateTime? customUntil}) async {
+    final updated = await ApiClient.instance.snoozeReminder(id, minutes: minutes, customUntil: customUntil);
+    if (updated != null) {
+      state = [
+        for (final r in state)
+          if (r.id == id) updated else r,
+      ];
+    }
+  }
+
+  Future<void> completeReminder(String id) async {
+    final updated = await ApiClient.instance.completeReminder(id);
+    if (updated != null) {
+      state = [
+        for (final r in state)
+          if (r.id == id) updated else r,
+      ];
+    }
+  }
+
+  Future<void> deleteReminder(String id) async {
+    final success = await ApiClient.instance.deleteReminder(id);
+    if (success) {
+      state = state.where((r) => r.id != id).toList();
+    }
+  }
+}
+
+final remindersProvider = StateNotifierProvider<RemindersNotifier, List<ReminderModel>>((ref) {
+  return RemindersNotifier();
+});
+

@@ -12,6 +12,9 @@ import { BillingModule } from './modules/billing/billing.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { VoiceNotesModule } from './modules/voice-notes/voice-notes.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { RemindersModule } from './modules/reminders/reminders.module';
+import { AdsModule } from './modules/ads/ads.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -29,6 +32,9 @@ import { AppController } from './app.controller';
     AdminModule,
     DocumentsModule,
     VoiceNotesModule,
+    NotificationsModule,
+    RemindersModule,
+    AdsModule,
   ],
   controllers: [AppController],
 })

@@ -224,7 +224,7 @@ class SettingsScreen extends ConsumerWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          profile.isPro ? 'Mindora Pro Active' : 'Free Tier',
+                          profile.isPro ? 'VyNotes Pro Active' : 'Free Tier',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -602,7 +602,7 @@ class SettingsScreen extends ConsumerWidget {
             child: Column(
               children: [
                 Text(
-                  'Mindora v1.0.0 (Production Build)',
+                  'VyNotes v1.0.0 (Production Build)',
                   style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600,

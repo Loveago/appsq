@@ -7,17 +7,29 @@ export interface AiCompletionOptions {
   userPrompt: string;
 }
 
+export interface ExtractedTaskItem {
+  title: string;
+  description?: string | null;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  dueDate: string | null;
+  category?: string;
+  taskType?: 'EXPLICIT' | 'PROCEDURAL' | 'PURCHASE' | 'PREPARATION' | 'FOLLOWUP' | 'SUGGESTION';
+  stepNumber?: number | null;
+  dependencies?: string[];
+  quantity?: string | null;
+  isPrerequisite?: boolean;
+  isSuggestion?: boolean;
+  confidence?: number;
+}
+
 export interface ExtractedContextResult {
   people: string[];
   projects: string[];
   deadlines: string[];
-  tasks: Array<{
-    title: string;
-    priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
-    dueDate: string | null;
-  }>;
+  tasks: ExtractedTaskItem[];
   relatedTopics: string[];
   suggestedTitle: string;
+  summary?: string;
 }
 
 export interface MeetingDistillationResult {

@@ -7,8 +7,10 @@ class SmartScanResult {
   final List<String> lists;
   final List<String> detectedDates;
   final List<String> detectedAmounts;
+  final List<String> uncertainWords;
   final double confidenceScore;
   final String documentType;
+  final bool isHandwritten;
 
   SmartScanResult({
     required this.rawText,
@@ -17,8 +19,10 @@ class SmartScanResult {
     required this.lists,
     required this.detectedDates,
     required this.detectedAmounts,
+    required this.uncertainWords,
     required this.confidenceScore,
     required this.documentType,
+    required this.isHandwritten,
   });
 
   Map<String, dynamic> toJson() => {
@@ -27,8 +31,10 @@ class SmartScanResult {
     'lists': lists,
     'detectedDates': detectedDates,
     'detectedAmounts': detectedAmounts,
+    'uncertainWords': uncertainWords,
     'confidenceScore': confidenceScore,
     'documentType': documentType,
+    'isHandwritten': isHandwritten,
   };
 }
 
@@ -54,13 +60,39 @@ class OcrService {
       final lists = <String>[];
       final dates = <String>[];
       final amounts = <String>[];
+      final uncertainWords = <String>[];
+
+      // Track bounding box variance and unrecognized character patterns for handwriting cues
+      int totalElements = 0;
+      int lowConfidenceCount = 0;
+
+      for (final block in recognizedText.blocks) {
+        for (final line in block.lines) {
+          for (final element in line.elements) {
+            totalElements++;
+            final text = element.text;
+            // ML Kit provides angle/symbols - identify ambiguous handwriting patterns or unusual symbol mixing
+            if (RegExp(r'''[^\w\s.,;:!?"\-/()%$]''').hasMatch(text) ||
+                (text.length >= 3 && RegExp(r'[a-z][A-Z]').hasMatch(text)) ||
+                (RegExp(r'\d[a-zA-Z]{1,2}\d').hasMatch(text))) {
+              lowConfidenceCount++;
+              if (!uncertainWords.contains(text) && text.length >= 2) {
+                uncertainWords.add(text);
+              }
+            }
+          }
+        }
+      }
 
       // Regex matchers
-      final dateRegex = RegExp(r'\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4})\b', caseSensitive: false);
-      final amountRegex = RegExp(r'(?:[\$€£¥]\s*\d+(?:\.\d{2})?|\b\d+\.\d{2}\s*(?:USD|EUR|GBP)?\b)');
+      final dateRegex = RegExp(
+          r'\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4})\b',
+          caseSensitive: false);
+      final amountRegex = RegExp(
+          r'(?:[\$€£¥]\s*\d+(?:\.\d{2})?|\b\d+\.\d{2}\s*(?:USD|EUR|GBP)?\b)');
       final listRegex = RegExp(r'^(\s*[-*•]|\s*\[[ xX]?\]|\s*\d+[.)])\s+(.*)$');
 
-      final lines = raw.split('\n').map((l) => l.trim()).filter((l) => l.isNotEmpty).toList();
+      final lines = raw.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
 
       for (final line in lines) {
         // Date detection
@@ -94,28 +126,50 @@ class OcrService {
         }
 
         // Heading detection (Short lines, uppercase or title style)
-        if (line.length <= 40 && !line.endsWith('.') && (line == line.toUpperCase() || line.startsWith('#'))) {
+        if (line.length <= 40 &&
+            !line.endsWith('.') &&
+            (line == line.toUpperCase() || line.startsWith('#'))) {
           headings.add(line.replaceAll(RegExp(r'^#+\s*'), ''));
         }
       }
 
-      // Infer Document Type
+      // Infer Document Type with specialized second-brain categories
       final lower = raw.toLowerCase();
-      String docType = 'GENERAL';
-      if (lower.contains('invoice') || lower.contains('bill to') || lower.contains('amount due')) {
-        docType = 'INVOICE';
+      String docType = 'GENERAL_NOTE';
+      
+      final hasIngredients = lower.contains('ingredient') ||
+          lower.contains('cup') ||
+          lower.contains('tbsp') ||
+          lower.contains('tsp') ||
+          lower.contains('preheat') ||
+          lower.contains('bake') ||
+          lower.contains('simmer');
+      final hasMultipleRecipes = lower.contains('serves') && (lower.indexOf('serves') != lower.lastIndexOf('serves'));
+
+      if (hasMultipleRecipes || (hasIngredients && (lower.contains('index') || lower.contains('contents') || lower.contains('page ')))) {
+        docType = 'COOKBOOK';
+      } else if (hasIngredients || lower.contains('recipe') || lower.contains('directions:') || lower.contains('instructions:')) {
+        docType = 'RECIPE';
+      } else if (lower.contains('grocery') || lower.contains('shopping list') || (lists.length >= 4 && (lower.contains('buy') || lower.contains('milk') || lower.contains('bread')))) {
+        docType = 'SHOPPING_LIST';
+      } else if (lower.contains('agenda') || lower.contains('meeting') || lower.contains('action items') || lower.contains('attendees')) {
+        docType = 'MEETING_NOTES';
+      } else if (lower.contains('invoice') || lower.contains('bill to') || lower.contains('amount due')) {
+        docType = 'RECEIPT_EXPENSES';
       } else if (lower.contains('receipt') || lower.contains('subtotal') || lower.contains('cashier') || lower.contains('tax')) {
-        docType = 'RECEIPT';
-      } else if (lower.contains('agreement') || lower.contains('contract') || lower.contains('hereby')) {
-        docType = 'CONTRACT';
+        docType = 'RECEIPT_EXPENSES';
+      } else if (lower.contains('exam') || lower.contains('lecture') || lower.contains('chapter') || lower.contains('homework') || lower.contains('study')) {
+        docType = 'STUDY_NOTES';
+      } else if (lower.contains('milestone') || lower.contains('deliverable') || lower.contains('sprint') || lower.contains('roadmap')) {
+        docType = 'PROJECT_PLAN';
       } else if (lists.length >= 3) {
-        docType = 'CHECKLIST';
-      } else if (raw.isNotEmpty) {
-        docType = 'NOTE';
+        docType = 'SHOPPING_LIST';
       }
 
-      // Estimate confidence score (based on character recognizability and structured clarity)
-      final confidenceScore = (raw.length > 20 ? 0.95 : (raw.isNotEmpty ? 0.80 : 0.0));
+      final isHandwritten = lowConfidenceCount > 3 || (totalElements > 0 && (lowConfidenceCount / totalElements) > 0.12);
+      final double confidenceScore = (raw.length > 20
+          ? (isHandwritten ? 0.82 : 0.96)
+          : (raw.isNotEmpty ? 0.70 : 0.0));
 
       return SmartScanResult(
         rawText: raw,
@@ -124,15 +178,13 @@ class OcrService {
         lists: lists,
         detectedDates: dates,
         detectedAmounts: amounts,
+        uncertainWords: uncertainWords,
         confidenceScore: confidenceScore,
         documentType: docType,
+        isHandwritten: isHandwritten,
       );
     } finally {
       textRecognizer.close();
     }
   }
-}
-
-extension _IterableFilter<E> on Iterable<E> {
-  Iterable<E> filter(bool Function(E element) test) => where(test);
 }

@@ -77,6 +77,10 @@ export class TasksService {
 
   async delete(id: string, userId: string) {
     try {
+      await this.prisma.reminder.updateMany({
+        where: { taskId: id, status: { in: ['PENDING', 'SNOOZED'] } },
+        data: { status: 'CANCELLED' },
+      }).catch(() => null);
       await this.prisma.task.deleteMany({ where: { id, userId } });
       return { success: true };
     } catch {

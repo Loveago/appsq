@@ -42,6 +42,29 @@ enum MeetingStatus {
   FAILED
 }
 
+enum NotificationCategory {
+  REMINDER
+  NOTE_REVIEW
+  TASK_DUE
+  MEETING
+  VOICE_NOTE
+  ANNOUNCEMENT
+  SYSTEM
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum NotificationChannel {
+  IN_APP
+  PUSH
+  BOTH
+}
+
 model User {
   id                    String           @id @default(uuid())
   email                 String           @unique
@@ -91,6 +114,9 @@ model User {
   scannedDocuments      ScannedDocument[]
   voiceNotes            VoiceNote[]
   subscriptions         Subscription[]
+  notifications         Notification[]
+  notificationPreference NotificationPreference?
+  devices               UserDevice[]
 
   @@index([email])
   @@index([subscriptionTier])
@@ -244,27 +270,42 @@ model Meeting {
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reminders Reminder[]
 
   @@index([userId])
 }
 
 model Reminder {
-  id          String   @id @default(uuid())
-  userId      String
-  noteId      String?
-  taskId      String?
-  title       String
-  remindAt    DateTime
-  isCompleted Boolean  @default(false)
+  id              String    @id @default(uuid())
+  userId          String
+  noteId          String?
+  taskId          String?
+  meetingId       String?
+  voiceNoteId     String?
+  title           String
+  description     String?
+  remindAt        DateTime
+  timezone        String    @default("UTC")
+  isCompleted     Boolean   @default(false)
+  status          String    @default("PENDING") // PENDING, TRIGGERED, SNOOZED, COMPLETED, CANCELLED
+  snoozedUntil    DateTime?
+  recurrenceRule  String?   // NONE, DAILY, WEEKLY, MONTHLY
+  lastTriggeredAt DateTime?
+  notificationId  String?
+  metadata        Json?
 
-  createdAt DateTime @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  note Note? @relation(fields: [noteId], references: [id], onDelete: SetNull)
-  task Task? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  note            Note?      @relation(fields: [noteId], references: [id], onDelete: SetNull)
+  task            Task?      @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  meeting         Meeting?   @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  voiceNote       VoiceNote? @relation(fields: [voiceNoteId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([remindAt])
+  @@index([status])
 }
 
 model DailyBriefing {
@@ -378,16 +419,33 @@ model FeatureFlag {
 }
 
 model Announcement {
-  id          String   @id @default(uuid())
-  title       String
-  message     String   @db.Text
-  targetTier  String   @default("ALL") // "ALL" | "FREE" | "PRO"
-  actionUrl   String?
-  actionLabel String?
-  isActive    Boolean  @default(true)
-  expiresAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String    @id @default(uuid())
+  title              String
+  message            String    @db.Text
+  targetTier         String    @default("ALL") // "ALL" | "FREE" | "TRIAL" | "PRO"
+  category           String    @default("ANNOUNCEMENT")
+  priority           String    @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
+  channel            String    @default("BOTH") // IN_APP, PUSH, BOTH
+  actionUrl          String?
+  actionLabel        String?
+  status             String    @default("DRAFT") // DRAFT, SCHEDULED, PUBLISHED, RETRACTED, EXPIRED
+  scheduledFor       DateTime?
+  publishedAt        DateTime?
+  retractedAt        DateTime?
+  expiresAt          DateTime?
+  createdByAdminId   String?
+  targetAudienceJson Json?
+  totalTargeted      Int       @default(0)
+  deliveredCount     Int       @default(0)
+  failedCount        Int       @default(0)
+  idempotencyKey     String?   @unique
+  isActive           Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([status])
+  @@index([targetTier])
+  @@index([createdAt])
 }
 
 model SystemErrorLog {
@@ -455,6 +513,7 @@ model VoiceNote {
   updatedAt     DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reminders Reminder[]
 
   @@index([userId])
   @@index([createdAt])
@@ -463,13 +522,20 @@ model VoiceNote {
 model Subscription {
   id                     String    @id @default(uuid())
   userId                 String
-  provider               String    @default("IN_APP") // "REVENUECAT", "STRIPE", "IN_APP", "ADMIN"
+  provider               String    @default("IN_APP") // "REVENUECAT", "STRIPE", "IN_APP", "ADMIN", "PLAY_STORE", "APP_STORE"
   providerSubscriptionId String?
+  store                  String?   // "APP_STORE", "PLAY_STORE", "STRIPE", "PROMOTIONAL", "MANUAL"
+  productId              String?
+  entitlementId          String?   @default("pro")
+  originalTransactionId  String?
   plan                   String    @default("PRO") // "PRO", "TRIAL", "FREE"
-  status                 String    @default("ACTIVE") // "ACTIVE", "CANCELLED", "EXPIRED", "REVOKED"
+  status                 String    @default("ACTIVE") // "ACTIVE", "CANCELLED", "EXPIRED", "REVOKED", "BILLING_ISSUE"
+  isTrial                Boolean   @default(false)
+  environment            String?   @default("PRODUCTION") // "SANDBOX", "PRODUCTION"
   startedAt              DateTime  @default(now())
   expiresAt              DateTime?
   cancelledAt            DateTime?
+  gracePeriodExpiresAt   DateTime?
   autoRenewing           Boolean   @default(true)
   metadata               Json?
   createdAt              DateTime  @default(now())
@@ -481,18 +547,107 @@ model Subscription {
   @@index([providerSubscriptionId])
   @@index([status])
   @@index([expiresAt])
+  @@index([productId])
 }
 
 model WebhookEvent {
-  id          String   @id @default(uuid())
-  eventId     String   @unique
-  provider    String   // "REVENUECAT", "STRIPE"
-  eventType   String
-  userId      String?
-  payload     Json?
-  processedAt DateTime @default(now())
+  id               String   @id @default(uuid())
+  eventId          String   @unique
+  provider         String   // "REVENUECAT", "STRIPE"
+  eventType        String
+  userId           String?
+  status           String   @default("SUCCESS") // "SUCCESS", "FAILED", "IGNORED", "DUPLICATE"
+  errorMessage     String?
+  processingTimeMs Int?
+  payload          Json?
+  processedAt      DateTime @default(now())
 
   @@index([eventId])
   @@index([provider])
+  @@index([eventType])
+  @@index([status])
 }
+
+model Notification {
+  id               String               @id @default(uuid())
+  userId           String
+  title            String
+  body             String               @db.Text
+  category         NotificationCategory @default(REMINDER)
+  priority         NotificationPriority @default(NORMAL)
+  channel          NotificationChannel  @default(IN_APP)
+
+  isRead           Boolean              @default(false)
+  readAt           DateTime?
+
+  deepLink         String?              // e.g. "mindora://notes/123", "mindora://tasks/456", "mindora://reminders/789"
+  targetType       String?              // "NOTE", "TASK", "REMINDER", "MEETING", "VOICE_NOTE", "ANNOUNCEMENT"
+  targetId         String?
+
+  scheduledFor     DateTime             @default(now())
+  deliveredAt      DateTime?
+  expiresAt        DateTime?
+
+  deliveryAttempts Int                  @default(0)
+  deliveryStatus   String               @default("PENDING") // PENDING, DELIVERED, FAILED, EXPIRED, CANCELLED
+  lastError        String?
+  idempotencyKey   String?              @unique
+  metadata         Json?
+
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@index([scheduledFor])
+  @@index([deliveryStatus])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model NotificationPreference {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+
+  pushEnabled      Boolean  @default(true)
+  inAppEnabled     Boolean  @default(true)
+  reminderAlerts   Boolean  @default(true)
+  noteReviewAlerts Boolean  @default(true)
+  taskDueAlerts    Boolean  @default(true)
+  meetingAlerts    Boolean  @default(true)
+  voiceNoteAlerts  Boolean  @default(true)
+  announcements    Boolean  @default(true)
+
+  quietHoursStart  String?
+  quietHoursEnd    String?
+  timezone         String   @default("UTC")
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserDevice {
+  id          String   @id @default(uuid())
+  userId      String
+  token       String   @unique
+  platform    String   // "ANDROID", "IOS", "WEB"
+  deviceModel String?
+  appVersion  String?
+  isActive    Boolean  @default(true)
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([platform])
+  @@index([isActive])
+}
+
 

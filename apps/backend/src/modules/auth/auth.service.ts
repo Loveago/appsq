@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../database/prisma.service';
 import { BillingService } from '../billing/billing.service';
+import { EmailService } from './email.service';
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -21,6 +22,7 @@ export class AuthService implements OnModuleInit {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly billingService: BillingService,
+    private readonly emailService: EmailService,
   ) {}
 
   async onModuleInit() {
@@ -401,5 +403,168 @@ export class AuthService implements OnModuleInit {
       expiresIn: this.configService.get('JWT_REFRESH_EXPIRATION') || '90d',
     });
     return { accessToken, refreshToken };
+  }
+
+  /**
+   * Google Sign-In / Sign-Up
+   * Authenticates or registers a user via Google OAuth identity.
+   */
+  async googleLogin(payload: {
+    idToken?: string;
+    email: string;
+    fullName?: string;
+    avatarUrl?: string;
+  }) {
+    if (!payload.email) {
+      throw new BadRequestException('Email is required for Google authentication');
+    }
+
+    const cleanEmail = payload.email.trim().toLowerCase();
+    let verifiedName = payload.fullName?.trim() || '';
+    let verifiedPicture = payload.avatarUrl?.trim() || '';
+
+    // If an idToken is provided, attempt Google tokeninfo verification
+    if (payload.idToken && payload.idToken.length > 20) {
+      try {
+        const verifyRes = await fetch(
+          `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(payload.idToken.trim())}`,
+        );
+        if (verifyRes.ok) {
+          const tokenInfo = (await verifyRes.json()) as any;
+          if (tokenInfo.email) {
+            if (tokenInfo.name) verifiedName = tokenInfo.name;
+            if (tokenInfo.picture) verifiedPicture = tokenInfo.picture;
+          }
+        }
+      } catch (err: any) {
+        this.logger.warn(`Google idToken verification warning: ${err.message}`);
+      }
+    }
+
+    let user = await this.prisma.user.findUnique({
+      where: { email: cleanEmail },
+    });
+
+    if (!user) {
+      // Create new user authenticated via Google
+      user = await this.prisma.user.create({
+        data: {
+          email: cleanEmail,
+          fullName: verifiedName || 'VyNotes User',
+          avatarUrl: verifiedPicture || null,
+          role: 'USER',
+          plan: 'FREE',
+          subscriptionTier: 'FREE',
+          accountStatus: 'ACTIVE',
+          emailVerified: true,
+          passwordHash: null,
+          lastLoginAt: new Date(),
+          lastActiveAt: new Date(),
+        },
+      });
+      this.logger.log(`Created new user via Google Sign-In: ${cleanEmail}`);
+    } else {
+      if (user.isSuspended || user.accountStatus === 'SUSPENDED') {
+        throw new UnauthorizedException(
+          `Account suspended: ${user.suspendedReason || 'Contact support.'}`,
+        );
+      }
+      if (user.accountStatus === 'DELETED') {
+        throw new UnauthorizedException('This account has been closed.');
+      }
+
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          lastLoginAt: new Date(),
+          lastActiveAt: new Date(),
+          emailVerified: true,
+          ...(verifiedPicture && !user.avatarUrl ? { avatarUrl: verifiedPicture } : {}),
+          ...(verifiedName && user.fullName === 'Mindora User' ? { fullName: verifiedName } : {}),
+        },
+      });
+    }
+
+    const safeUser = {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      avatarUrl: user.avatarUrl,
+      role: user.role,
+      plan: user.plan,
+      subscriptionTier: user.subscriptionTier,
+      accountStatus: user.accountStatus || 'ACTIVE',
+      createdAt: user.createdAt,
+      lastLoginAt: user.lastLoginAt,
+    };
+
+    const tokens = this.generateTokens(user.id, user.email, user.role);
+    const entitlements = await this.billingService.getUserEntitlements(user.id);
+    return { user: safeUser, ...tokens, entitlements };
+  }
+
+  /**
+   * Request password reset code via Brevo transactional email
+   */
+  async forgotPassword(email: string) {
+    if (!email || !email.includes('@')) {
+      throw new BadRequestException('Please provide a valid email address');
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({
+      where: { email: cleanEmail },
+    });
+
+    if (user && !user.isSuspended && user.accountStatus !== 'DELETED') {
+      const otp = this.emailService.createOtp(cleanEmail);
+      await this.emailService.sendPasswordResetOtpEmail(
+        cleanEmail,
+        otp,
+        user.fullName || 'VyNotes User',
+      );
+    }
+
+    // Always return generic success to prevent email enumeration
+    return {
+      success: true,
+      message: 'If an account exists with this email, a 6-digit verification code has been sent.',
+    };
+  }
+
+  /**
+   * Reset password with OTP code
+   */
+  async resetPassword(email: string, code: string, newPassword: string) {
+    if (!email || !code || !newPassword) {
+      throw new BadRequestException('Email, verification code, and new password are required');
+    }
+
+    if (newPassword.length < 6) {
+      throw new BadRequestException('New password must be at least 6 characters');
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    this.emailService.validateOtp(cleanEmail, code);
+
+    const user = await this.prisma.user.findUnique({
+      where: { email: cleanEmail },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User account not found');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, updatedAt: new Date() },
+    });
+
+    this.logger.log(`Password reset successfully for user: ${cleanEmail}`);
+    return {
+      success: true,
+      message: 'Password successfully reset. You may now sign in with your new credentials.',
+    };
   }
 }

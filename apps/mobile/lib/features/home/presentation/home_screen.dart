@@ -20,8 +20,10 @@ import '../../projects/presentation/project_detail_screen.dart';
 import '../../graph/presentation/knowledge_graph_screen.dart';
 import '../../briefing/presentation/daily_briefing_dialog.dart';
 import '../../voice/presentation/voice_capture_sheet.dart';
+import '../../notifications/presentation/notifications_screen.dart';
+import '../../reminders/presentation/reminders_screen.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../ads/presentation/native_ad_card.dart';
+import '../../ads/presentation/ad_banner_widget.dart';
 import '../../../../core/services/ocr_service.dart';
 import '../../../../core/network/api_client.dart';
 
@@ -195,10 +197,92 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                   ),
 
-                  // Action Controls (Meeting Voice trigger & Pro Token)
+                  // Action Controls (Meeting Voice trigger, Reminders, Notifications & Pro Token)
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const RemindersScreen()),
+                          );
+                        },
+                        icon: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: isDark ? AppColors.darkSurface : Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                              width: 0.6,
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.alarm_rounded,
+                            size: 15,
+                            color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                          ),
+                        ),
+                        tooltip: 'Reminders & Follow-ups',
+                      ),
+                      Consumer(
+                        builder: (context, ref, _) {
+                          final unreadCount = ref.watch(unreadNotificationCountProvider);
+                          return IconButton(
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                              );
+                            },
+                            icon: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? AppColors.darkSurface : Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                                      width: 0.6,
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    Icons.notifications_outlined,
+                                    size: 15,
+                                    color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                                  ),
+                                ),
+                                if (unreadCount > 0)
+                                  Positioned(
+                                    top: -3,
+                                    right: -3,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(3),
+                                      decoration: const BoxDecoration(
+                                        color: AppColors.rose,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                                      child: Text(
+                                        unreadCount > 9 ? '9+' : '$unreadCount',
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 8,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            tooltip: 'Notification Center',
+                          );
+                        },
+                      ),
                       IconButton(
                         visualDensity: VisualDensity.compact,
                         onPressed: widget.onOpenMeetingMode ?? () => _openMeetingMode(context),
@@ -394,7 +478,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           Text(
                             pendingTasks.isNotEmpty
                                 ? pendingTasks.first.title
-                                : (notes.isNotEmpty ? notes.first.title : 'Welcome to Mindora'),
+                                : (notes.isNotEmpty ? notes.first.title : 'Welcome to VyNotes'),
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w600,
@@ -469,7 +553,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 return DailyBriefingCard(
                   headline: pendingTasks.isNotEmpty
                       ? 'Focus for today: ${pendingTasks.first.title}'
-                      : 'Welcome to Mindora! Your Second Brain is ready.',
+                      : 'Welcome to VyNotes! Your Second Brain is ready.',
                   insight: pendingTasks.isNotEmpty
                       ? 'You have ${pendingTasks.length} tasks pending completion.'
                       : 'Capture a note or record an audio meeting to populate your daily brief.',
@@ -518,9 +602,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
           const SliverToBoxAdapter(child: SizedBox(height: 6)),
 
-          // Native Sponsored Card (for Free tier users, suppressed for Pro)
+          // Native AdMob Banner Card (for Free tier users, suppressed for Pro)
           const SliverToBoxAdapter(
-            child: NativeAdCard(),
+            child: AdBannerWidget(placement: 'home_dashboard'),
           ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 6)),
@@ -737,9 +821,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             );
           }
 
+          SmartScanResult? scanResult;
           String extractedText = '';
           try {
-            final scanResult = await OcrService.instance.extractStructuredFromImage(pickedFile.path);
+            scanResult = await OcrService.instance.extractStructuredFromImage(pickedFile.path);
             extractedText = scanResult.rawText;
 
             // Authoritative server persistence & quota tracking
@@ -770,6 +855,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               builder: (context) => AiExtractSheet(
                 imagePath: pickedFile.path,
                 rawThought: extractedText,
+                scanResult: scanResult,
               ),
             );
           }
@@ -803,9 +889,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             );
           }
 
+          SmartScanResult? scanResult;
           String extractedText = '';
           try {
-            final scanResult = await OcrService.instance.extractStructuredFromImage(pickedFile.path);
+            scanResult = await OcrService.instance.extractStructuredFromImage(pickedFile.path);
             extractedText = scanResult.rawText;
 
             // Authoritative server persistence & quota tracking
@@ -836,6 +923,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               builder: (context) => AiExtractSheet(
                 imagePath: pickedFile.path,
                 rawThought: extractedText,
+                scanResult: scanResult,
               ),
             );
           }

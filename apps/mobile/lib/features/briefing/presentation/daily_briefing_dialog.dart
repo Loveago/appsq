@@ -229,7 +229,7 @@ class DailyBriefingDialog extends ConsumerWidget {
             child: Text(
               pendingTasks.isNotEmpty
                   ? 'You have ${pendingTasks.length} pending items queued. Tackle your top priority first to maintain steady momentum.'
-                  : 'Start capturing thoughts, recordings, or notes to let Mindora synthesize strategic insights for your day.',
+                  : 'Start capturing thoughts, recordings, or notes to let VyNotes synthesize strategic insights for your day.',
               style: TextStyle(
                 fontSize: 12,
                 color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,

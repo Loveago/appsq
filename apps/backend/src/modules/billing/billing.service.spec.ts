@@ -102,6 +102,14 @@ describe('BillingService - Subscription Synchronization & Lifecycle Audit', () =
         mockWebhookEvents.push({ ...data });
         return { ...data };
       }),
+      update: jest.fn().mockImplementation(async ({ where, data }: any) => {
+        const idx = mockWebhookEvents.findIndex((e) => e.eventId === where.eventId);
+        if (idx >= 0) {
+          mockWebhookEvents[idx] = { ...mockWebhookEvents[idx], ...data };
+          return { ...mockWebhookEvents[idx] };
+        }
+        return null;
+      }),
     },
     systemSetting: {
       findUnique: jest.fn().mockResolvedValue(null),

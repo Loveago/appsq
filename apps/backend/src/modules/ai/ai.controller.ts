@@ -34,6 +34,17 @@ export class AiController {
   }
 
   @UseGuards(OptionalJwtAuthGuard)
+  @Post('extract-smart')
+  async extractSmartDocument(
+    @Body('content') content: string,
+    @Body('imageHint') imageHint?: { ocrConfidence?: number; detectedType?: string; isHandwritten?: boolean },
+    @CurrentUser('id') userId?: string,
+  ) {
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.aiService.extractSmartDocument(content, effectiveUserId, imageHint);
+  }
+
+  @UseGuards(OptionalJwtAuthGuard)
   @Post('summarize')
   async summarizeNote(
     @Body('content') content: string,

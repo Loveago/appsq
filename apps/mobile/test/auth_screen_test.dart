@@ -13,7 +13,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('MINDORA'), findsOneWidget);
+    expect(find.text('VYNOTES'), findsOneWidget);
     expect(find.text('Sign In'), findsNWidgets(2)); // switcher tab + submit button
     expect(find.text('Sign Up'), findsOneWidget);
 
@@ -25,7 +25,9 @@ void main() {
     expect(find.byType(TextField), findsNWidgets(3)); // Name, Email, Password
 
     // Guest / Offline bypass
-    await tester.tap(find.text('Continue as Guest / Offline Demo →'));
+    final guestFinder = find.text('Continue as Guest / Offline Demo →');
+    await tester.ensureVisible(guestFinder);
+    await tester.tap(guestFinder);
     await tester.pumpAndSettle();
 
     expect(authed, isTrue);

@@ -6,6 +6,12 @@
       "use": "@vercel/node"
     }
   ],
+  "crons": [
+    {
+      "path": "/reminders/scheduler/tick",
+      "schedule": "* * * * *"
+    }
+  ],
   "routes": [
     {
       "src": "/(.*)",

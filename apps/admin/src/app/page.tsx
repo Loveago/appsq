@@ -51,12 +51,15 @@ import {
   Cpu,
   Check,
   MessageSquare,
+  Copy,
+  Mail,
 } from 'lucide-react';
 import { adminFetch, getAdminToken, setAdminToken, clearAdminToken } from '../lib/api';
 
 type Tab =
   | 'overview'
   | 'users'
+  | 'subscriptions'
   | 'ai-providers'
   | 'notes'
   | 'feature-flags'
@@ -129,12 +132,102 @@ export default function AdminDashboard() {
   const [isSavingAssemblyAi, setIsSavingAssemblyAi] = useState(false);
   const [assemblyAiTestResult, setAssemblyAiTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  // Brevo Transactional Email & Password Reset State
+  const [emailConfig, setEmailConfig] = useState<{
+    apiKey: string;
+    senderEmail: string;
+    senderName: string;
+    isEnabled: boolean;
+    isConfigured: boolean;
+  }>({
+    apiKey: '',
+    senderEmail: 'noreply@vynotes.app',
+    senderName: 'VyNotes Security',
+    isEnabled: true,
+    isConfigured: false,
+  });
+  const [isSavingEmailConfig, setIsSavingEmailConfig] = useState(false);
+  const [testEmailAddress, setTestEmailAddress] = useState('');
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
   const [featureFlags, setFeatureFlags] = useState<any[]>([]);
   const [systemSettings, setSystemSettings] = useState<Record<string, any>>({});
   const [announcements, setAnnouncements] = useState<any[]>([]);
-  const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', targetTier: 'ALL' });
+  const [newAnnouncement, setNewAnnouncement] = useState({
+    title: '',
+    message: '',
+    targetTier: 'ALL',
+    priority: 'NORMAL',
+    channel: 'BOTH',
+    publishImmediately: true,
+  });
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [systemErrors, setSystemErrors] = useState<any[]>([]);
+
+  // In-App Purchases & RevenueCat billing states
+  const [billingConfig, setBillingConfig] = useState<any>({
+    isConfigured: false,
+    environment: 'PRODUCTION',
+    androidPublicKey: '',
+    iosPublicKey: '',
+    serverSecretKey: '',
+    webhookSecret: '',
+    products: [
+      {
+        id: 'monthly_pro',
+        revenueCatPackageId: '$rc_monthly',
+        googlePlayProductId: 'ai_notes_pro_monthly',
+        appStoreProductId: 'ai_notes_pro_monthly',
+        billingPeriod: 'MONTHLY',
+        title: 'Mindora Pro Monthly',
+        badgeText: 'Flexible',
+        trialDays: 7,
+        order: 1,
+        isEnabled: true,
+      },
+      {
+        id: 'annual_pro',
+        revenueCatPackageId: '$rc_annual',
+        googlePlayProductId: 'ai_notes_pro_annual',
+        appStoreProductId: 'ai_notes_pro_annual',
+        billingPeriod: 'ANNUAL',
+        title: 'Mindora Pro Annual',
+        badgeText: 'Best Value • Save 40%',
+        trialDays: 7,
+        order: 2,
+        isEnabled: true,
+      },
+    ],
+    display: {
+      headline: 'Unlock the Full Power of Mindora Pro',
+      subheadline: 'Infinite context, unlimited speech transcription, and autonomous AI task reasoning.',
+      proBenefits: [
+        'Unlimited AI chat reasoning with gpt-4o-mini',
+        'Unlimited AssemblyAI speech-to-text audio memos',
+        'Pro Meeting Mode with live speaker diarization',
+        'Automatic general-purpose task extraction',
+        'Priority vector search & semantic second brain',
+      ],
+      trialDisclosure: '7 days free, then automatically renews. Cancel anytime in Google Play / App Store account settings.',
+      maintenanceMode: false,
+    },
+    trials: {
+      defaultTrialDays: 7,
+      allowCardlessTrial: true,
+      enforceOneTrialPerDevice: true,
+    },
+  });
+  const [isSavingBillingConfig, setIsSavingBillingConfig] = useState(false);
+  const [isTestingRcConnection, setIsTestingRcConnection] = useState(false);
+  const [rcTestResult, setRcTestResult] = useState<{ success: boolean; message: string; appName?: string } | null>(null);
+  const [webhookEvents, setWebhookEvents] = useState<any[]>([]);
+  const [isLoadingWebhookEvents, setIsLoadingWebhookEvents] = useState(false);
+  const [copiedWebhookUrl, setCopiedWebhookUrl] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<any | null>(null);
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('Admin customer support override');
+
 
   // Notes & Content moderation state
   const [notesList, setNotesList] = useState<any[]>([]);
@@ -148,6 +241,17 @@ export default function AdminDashboard() {
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [admobEnabled, setAdmobEnabled] = useState(true);
   const [adFrequencyNoteSaves, setAdFrequencyNoteSaves] = useState(3);
+
+  // Monetization & AdMob Management State
+  const [adsConfig, setAdsConfig] = useState<any | null>(null);
+  const [adsDraft, setAdsDraft] = useState<any | null>(null);
+  const [isSavingAdsDraft, setIsSavingAdsDraft] = useState(false);
+  const [isPublishingAds, setIsPublishingAds] = useState(false);
+  const [isRevertingAds, setIsRevertingAds] = useState(false);
+  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [showProductionWarningModal, setShowProductionWarningModal] = useState(false);
+  const [publishReason, setPublishReason] = useState('');
+  const [selectedRevertVersion, setSelectedRevertVersion] = useState<number | null>(null);
 
   const showToast = (msg: string) => {
     setSuccessToast(msg);
@@ -174,7 +278,7 @@ export default function AdminDashboard() {
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const [m, u, p, f, s, a, l, e, pl] = await Promise.all([
+      const [m, u, p, f, s, a, l, e, pl, bc, we, ac, ec] = await Promise.all([
         adminFetch('/admin/overview').catch(() => null),
         adminFetch('/admin/users?limit=40').catch(() => ({ users: [] })),
         adminFetch('/admin/ai/providers').catch(() => []),
@@ -184,12 +288,31 @@ export default function AdminDashboard() {
         adminFetch('/admin/audit?limit=25').catch(() => ({ logs: [] })),
         adminFetch('/admin/system/errors?limit=15').catch(() => []),
         adminFetch('/admin/plans/limits').catch(() => null),
+        adminFetch('/admin/billing/config').catch(() => null),
+        adminFetch('/admin/billing/webhook-events?limit=25').catch(() => []),
+        adminFetch('/admin/ads/config').catch(() => null),
+        adminFetch('/admin/email/config').catch(() => null),
       ]);
 
       if (m) setMetrics(m);
       if (u?.users) setUsersList(u.users);
       if (Array.isArray(p)) setAiProviders(p);
       if (pl) setPlanLimitsConfig(pl);
+      if (bc) setBillingConfig(bc);
+      if (Array.isArray(we)) setWebhookEvents(we);
+      if (ac) {
+        setAdsConfig(ac);
+        setAdsDraft(ac.draft);
+      }
+      if (ec) {
+        setEmailConfig({
+          apiKey: ec.apiKey || '',
+          senderEmail: ec.senderEmail || 'noreply@vynotes.app',
+          senderName: ec.senderName || 'VyNotes Security',
+          isEnabled: ec.isEnabled ?? true,
+          isConfigured: ec.isConfigured ?? false,
+        });
+      }
       if (s) {
         setSystemSettings(s);
         if (s.assemblyai_api_key) {
@@ -226,6 +349,164 @@ export default function AdminDashboard() {
       setErrorMsg(err.message || 'Failed to update plan limits');
     } finally {
       setIsSavingPlanLimits(false);
+    }
+  };
+
+  const handleSaveBillingConfig = async (customConfig?: any) => {
+    setIsSavingBillingConfig(true);
+    setErrorMsg(null);
+    try {
+      const payload = customConfig || billingConfig;
+      const res = await adminFetch('/admin/billing/config', {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      if (res?.config) {
+        setBillingConfig(res.config);
+      }
+      showToast('RevenueCat in-app purchase configuration saved successfully');
+      refreshData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to save billing configuration');
+    } finally {
+      setIsSavingBillingConfig(false);
+    }
+  };
+
+  const handleTestRevenueCat = async () => {
+    setIsTestingRcConnection(true);
+    setRcTestResult(null);
+    try {
+      const res = await adminFetch('/admin/billing/validate-revenuecat', {
+        method: 'POST',
+        body: JSON.stringify({
+          apiKey: billingConfig.serverSecretKey?.includes('•••') ? undefined : billingConfig.serverSecretKey,
+        }),
+      });
+      setRcTestResult(res);
+      if (res.success) {
+        showToast(res.message || 'RevenueCat API authenticated successfully!');
+      } else {
+        setErrorMsg(res.message);
+      }
+    } catch (err: any) {
+      setRcTestResult({
+        success: false,
+        message: err.message || 'Failed to connect to RevenueCat API',
+      });
+      setErrorMsg(err.message || 'RevenueCat connection test failed');
+    } finally {
+      setIsTestingRcConnection(false);
+    }
+  };
+
+  const handleRefreshWebhookEvents = async () => {
+    setIsLoadingWebhookEvents(true);
+    try {
+      const events = await adminFetch('/admin/billing/webhook-events?limit=40');
+      if (Array.isArray(events)) {
+        setWebhookEvents(events);
+        showToast('Webhook event stream refreshed');
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to fetch webhook events');
+    } finally {
+      setIsLoadingWebhookEvents(false);
+    }
+  };
+
+  const handleOverrideUserSubscription = async (userId: string, plan: 'PRO' | 'TRIAL' | 'FREE', durationDays?: number) => {
+    try {
+      const res = await adminFetch(`/admin/billing/users/${userId}/override`, {
+        method: 'POST',
+        body: JSON.stringify({
+          plan,
+          durationDays,
+          reason: overrideReason || 'Administrative override from User Directory',
+          note: `Manual entitlement adjustment by admin`,
+        }),
+      });
+      showToast(res.message || `User subscription overridden to ${plan}`);
+      if (selectedUser?.id === userId) {
+        handleOpenUserDrawer({ ...selectedUser, plan });
+      }
+      refreshData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to apply subscription override');
+    }
+  };
+
+  const handleCopyWebhookUrl = () => {
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'https://appsq-two.vercel.app';
+    const webhookUrl = `${backendUrl}/billing/webhook/revenuecat`;
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(webhookUrl);
+      setCopiedWebhookUrl(true);
+      showToast('Webhook endpoint copied to clipboard');
+      setTimeout(() => setCopiedWebhookUrl(false), 2500);
+    }
+  };
+
+  const handleSaveEmailConfig = async () => {
+    setIsSavingEmailConfig(true);
+    setEmailTestResult(null);
+    try {
+      const payload: any = {
+        senderEmail: emailConfig.senderEmail,
+        senderName: emailConfig.senderName,
+        isEnabled: emailConfig.isEnabled,
+      };
+      if (emailConfig.apiKey && !emailConfig.apiKey.includes('••••')) {
+        payload.apiKey = emailConfig.apiKey;
+      }
+      const res = await adminFetch('/admin/email/config', {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      if (res?.config) {
+        setEmailConfig({
+          apiKey: res.config.apiKey || '',
+          senderEmail: res.config.senderEmail || 'noreply@vynotes.app',
+          senderName: res.config.senderName || 'VyNotes Security',
+          isEnabled: res.config.isEnabled ?? true,
+          isConfigured: res.config.isConfigured ?? false,
+        });
+      }
+      showToast('Brevo email & password reset configuration saved successfully');
+      refreshData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to save email configuration');
+    } finally {
+      setIsSavingEmailConfig(false);
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    if (!testEmailAddress.trim()) {
+      setErrorMsg('Please enter a recipient email address for testing');
+      return;
+    }
+    setIsSendingTestEmail(true);
+    setEmailTestResult(null);
+    try {
+      const res = await adminFetch('/admin/email/test', {
+        method: 'POST',
+        body: JSON.stringify({ testEmail: testEmailAddress.trim() }),
+      });
+      setEmailTestResult(res);
+      if (res.success) {
+        showToast(res.message || 'Test email dispatched successfully via Brevo!');
+      } else {
+        setErrorMsg(res.message);
+      }
+    } catch (err: any) {
+      setEmailTestResult({
+        success: false,
+        message: err.message || 'Failed to dispatch test email',
+      });
+      setErrorMsg(err.message || 'Test email dispatch failed');
+    } finally {
+      setIsSendingTestEmail(false);
     }
   };
 
@@ -345,6 +626,86 @@ export default function AdminDashboard() {
     } finally {
       setIsSavingGlobalSettings(false);
     }
+  };
+
+  // AdMob Validation and Governance Handlers
+  const isValidAppId = (id?: string) => /^ca-app-pub-\d{16}~\d{10}$/.test(id?.trim() || '');
+  const isValidUnitId = (id?: string) => /^ca-app-pub-\d{16}\/\d{10}$/.test(id?.trim() || '');
+
+  const handleSaveAdsDraft = async () => {
+    if (!adsDraft) return;
+    setIsSavingAdsDraft(true);
+    try {
+      const res = await adminFetch('/admin/ads/config', {
+        method: 'PUT',
+        body: JSON.stringify(adsDraft),
+      });
+      showToast('AdMob draft configuration saved');
+      setAdsDraft(res.draft);
+      const updated = await adminFetch('/admin/ads/config');
+      setAdsConfig(updated);
+      setAdsDraft(updated.draft);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to save AdMob draft');
+    } finally {
+      setIsSavingAdsDraft(false);
+    }
+  };
+
+  const handlePublishAds = async () => {
+    setIsPublishingAds(true);
+    try {
+      await adminFetch('/admin/ads/publish', {
+        method: 'POST',
+        body: JSON.stringify({ reason: publishReason.trim() || undefined }),
+      });
+      showToast('AdMob configuration successfully published live!');
+      setShowPublishModal(false);
+      setPublishReason('');
+      const updated = await adminFetch('/admin/ads/config');
+      setAdsConfig(updated);
+      setAdsDraft(updated.draft);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to publish AdMob configuration');
+    } finally {
+      setIsPublishingAds(false);
+    }
+  };
+
+  const handleRevertAds = async (targetVer?: number) => {
+    setIsRevertingAds(true);
+    try {
+      await adminFetch('/admin/ads/revert', {
+        method: 'POST',
+        body: JSON.stringify({ targetVersion: targetVer }),
+      });
+      showToast('AdMob configuration rolled back successfully');
+      setSelectedRevertVersion(null);
+      const updated = await adminFetch('/admin/ads/config');
+      setAdsConfig(updated);
+      setAdsDraft(updated.draft);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to revert AdMob configuration');
+    } finally {
+      setIsRevertingAds(false);
+    }
+  };
+
+  const handleResetToTestDefaults = () => {
+    if (!adsDraft) return;
+    setAdsDraft({
+      ...adsDraft,
+      testMode: true,
+      androidAppId: adsConfig?.googleTestConstants?.androidAppId || 'ca-app-pub-3940256099942544~3347511713',
+      iosAppId: adsConfig?.googleTestConstants?.iosAppId || 'ca-app-pub-3940256099942544~1458002511',
+      androidDefaultBannerUnitId: adsConfig?.googleTestConstants?.androidBannerUnitId || 'ca-app-pub-3940256099942544/6300978111',
+      iosDefaultBannerUnitId: adsConfig?.googleTestConstants?.iosBannerUnitId || 'ca-app-pub-3940256099942544/2934735716',
+      placements: {
+        home_dashboard: { ...adsDraft.placements.home_dashboard, androidUnitId: '', iosUnitId: '' },
+        notes_list: { ...adsDraft.placements.notes_list, androidUnitId: '', iosUnitId: '' },
+      },
+    });
+    showToast('Draft reset to official Google test credentials');
   };
 
   const handleOpenUserDrawer = async (user: any) => {
@@ -582,8 +943,35 @@ export default function AdminDashboard() {
         method: 'POST',
         body: JSON.stringify(newAnnouncement),
       });
-      showToast('Announcement broadcast sent');
-      setNewAnnouncement({ title: '', message: '', targetTier: 'ALL' });
+      showToast(newAnnouncement.publishImmediately ? 'Announcement broadcast dispatched' : 'Draft announcement created');
+      setNewAnnouncement({
+        title: '',
+        message: '',
+        targetTier: 'ALL',
+        priority: 'NORMAL',
+        channel: 'BOTH',
+        publishImmediately: true,
+      });
+      refreshData();
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handlePublishAnnouncement = async (id: string) => {
+    try {
+      await adminFetch(`/admin/announcements/${id}/publish`, { method: 'POST' });
+      showToast('Announcement published and dispatched to target audience');
+      refreshData();
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleRetractAnnouncement = async (id: string) => {
+    try {
+      await adminFetch(`/admin/announcements/${id}/retract`, { method: 'POST' });
+      showToast('Announcement retracted and pending notifications cancelled');
       refreshData();
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -845,6 +1233,7 @@ export default function AdminDashboard() {
         {[
           { id: "overview", label: "Dashboard" },
           { id: "users", label: "Users" },
+          { id: "subscriptions", label: "Purchases" },
           { id: "ai-providers", label: "AI Providers" },
           { id: "notes", label: "Notes" },
           { id: "feature-flags", label: "Flags" },
@@ -894,6 +1283,7 @@ export default function AdminDashboard() {
               {[
                 { id: "overview", label: "Dashboard HQ", icon: Activity, badge: "Live" },
                 { id: "users", label: "User Directory", icon: Users, badge: metrics?.users?.total ? String(metrics.users.total) : undefined },
+                { id: "subscriptions", label: "In-App Purchases", icon: CreditCard, badge: "RevenueCat" },
                 { id: "ai-providers", label: "AI Gateways", icon: BrainCircuit, badge: "Hot-Swap" },
                 { id: "notes", label: "Content & Brain", icon: FileText, badge: "Moderation" },
                 { id: "feature-flags", label: "Feature Flags", icon: Flag, badge: "Dynamic" },
@@ -1280,9 +1670,9 @@ export default function AdminDashboard() {
 
                   <div className="grid grid-cols-2 gap-2.5">
                     {[
-                      { label: "User Access", icon: Users, tab: "users", color: "text-purple-400" },
+                      { label: "Purchases & RC", icon: CreditCard, tab: "subscriptions", color: "text-purple-400" },
                       { label: "AI Gateways", icon: BrainCircuit, tab: "ai-providers", color: "text-pink-400" },
-                      { label: "Content Store", icon: FileText, tab: "notes", color: "text-cyan-400" },
+                      { label: "User Access", icon: Users, tab: "users", color: "text-cyan-400" },
                       { label: "Feature Flags", icon: Flag, tab: "feature-flags", color: "text-amber-400" },
                       { label: "Ad Network", icon: Radio, tab: "ads", color: "text-emerald-400" },
                       { label: "Push Broadcast", icon: Send, tab: "announcements", color: "text-indigo-400" },
@@ -1444,9 +1834,16 @@ export default function AdminDashboard() {
                               </td>
                               <td className="py-3.5 px-4">
                                 {isPro ? (
-                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-300 border border-purple-500/30 flex items-center gap-1.5 w-max shadow-sm">
-                                    <Sparkles className="w-3 h-3 text-purple-400 animate-spin" style={{ animationDuration: '4s' }} /> PRO SUBSCRIBER
-                                  </span>
+                                  <div>
+                                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-300 border border-purple-500/30 flex items-center gap-1.5 w-max shadow-sm">
+                                      <Sparkles className="w-3 h-3 text-purple-400 animate-spin" style={{ animationDuration: '4s' }} /> PRO SUBSCRIBER
+                                    </span>
+                                    {user.subscriptions?.[0] && (
+                                      <span className="text-[9px] text-purple-400/90 font-mono block mt-1">
+                                        via {user.subscriptions[0].store === 'PLAY_STORE' ? 'Google Play' : user.subscriptions[0].store === 'APP_STORE' ? 'App Store' : user.subscriptions[0].store || 'RevenueCat'}
+                                      </span>
+                                    )}
+                                  </div>
                                 ) : isTrial ? (
                                   <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30 flex items-center gap-1.5 w-max">
                                     TRIAL ({user.trialDaysRemaining ?? 7}d left)
@@ -1584,12 +1981,24 @@ export default function AdminDashboard() {
                           </div>
                         </div>
 
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1">Audit Reason for Override</label>
+                          <input
+                            type="text"
+                            value={overrideReason}
+                            onChange={(e) => setOverrideReason(e.target.value)}
+                            placeholder="e.g. VIP Customer Support / QA testing override"
+                            className="w-full px-4 py-2 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-purple-500 font-medium transition-all"
+                          />
+                        </div>
+
                         <div className="flex gap-2">
                           <button
-                            onClick={handleApplyUserPlan}
-                            className="flex-1 py-2 px-3 bg-gradient-to-r from-[#7C3AED] to-[#6366F1] hover:opacity-95 text-white rounded-xl text-xs font-semibold shadow-md shadow-purple-600/20"
+                            onClick={() => handleOverrideUserSubscription(selectedUser.id, editPlan, editDurationDays)}
+                            className="flex-1 py-2 px-3 bg-gradient-to-r from-[#7C3AED] to-[#6366F1] hover:opacity-95 text-white rounded-xl text-xs font-semibold shadow-md shadow-purple-600/20 flex items-center justify-center gap-1.5"
                           >
-                            Apply Plan Override
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            <span>Apply Audited Override</span>
                           </button>
                           <button
                             onClick={() => handleExtendTrial(7)}
@@ -1598,6 +2007,23 @@ export default function AdminDashboard() {
                             +7 Days Trial
                           </button>
                         </div>
+
+                        {selectedUser.subscriptions && selectedUser.subscriptions.length > 0 && (
+                          <div className="p-3.5 bg-black/40 border border-purple-500/20 rounded-2xl space-y-2 mt-2">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-bold text-purple-300">Active Store Subscription</span>
+                              <span className="font-mono px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px]">
+                                {selectedUser.subscriptions[0].store || 'STORE'}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono text-slate-400">
+                              <div>Product: <span className="text-white">{selectedUser.subscriptions[0].productId || 'pro'}</span></div>
+                              <div>Auto-Renew: <span className={selectedUser.subscriptions[0].autoRenewing ? 'text-emerald-400 font-bold' : 'text-amber-400'}>{selectedUser.subscriptions[0].autoRenewing ? 'YES' : 'NO'}</span></div>
+                              <div>Provider: <span className="text-white">{selectedUser.subscriptions[0].provider || 'REVENUECAT'}</span></div>
+                              <div>Expires: <span className="text-white">{selectedUser.subscriptions[0].expiresAt ? new Date(selectedUser.subscriptions[0].expiresAt).toLocaleDateString() : 'Active'}</span></div>
+                            </div>
+                          </div>
+                        )}
 
                         {/* RBAC Role Elevation Control */}
                         <div className="pt-3 border-t border-slate-800/80">
@@ -1711,6 +2137,709 @@ export default function AdminDashboard() {
                           Delete Account
                         </button>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* IN-APP PURCHASES & REVENUECAT SUBSCRIPTION MANAGEMENT */}
+          {/* ========================================================= */}
+          {activeTab === 'subscriptions' && (
+            <div className="space-y-7 animate-in fade-in duration-300">
+              {/* Header */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-pink-500/10 text-pink-400 border border-pink-500/20 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                      <CreditCard className="w-3 h-3 text-pink-400" />
+                      Store & Billing Engine
+                    </span>
+                    <span className="text-xs text-slate-500">• Google Play & App Store via RevenueCat</span>
+                  </div>
+                  <h2 className="text-2xl font-extrabold text-white tracking-tight">
+                    In-App Purchases & Subscription Configuration
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Remotely control store product IDs, RevenueCat credentials, dynamic paywall copy, and real-time webhook synchronization without app store redeployments.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextEnv = billingConfig.environment === 'PRODUCTION' ? 'SANDBOX' : 'PRODUCTION';
+                      setBillingConfig({ ...billingConfig, environment: nextEnv });
+                    }}
+                    className={`px-3 py-2 rounded-xl text-xs font-mono font-bold border transition-all flex items-center gap-1.5 ${
+                      billingConfig.environment === 'PRODUCTION'
+                        ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                        : 'bg-amber-950/60 border-amber-500/40 text-amber-300'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${billingConfig.environment === 'PRODUCTION' ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+                    <span>Env: {billingConfig.environment || 'PRODUCTION'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleTestRevenueCat}
+                    disabled={isTestingRcConnection}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-slate-700 disabled:opacity-50 transition-all"
+                  >
+                    <Play className={`w-3.5 h-3.5 text-purple-400 ${isTestingRcConnection ? 'animate-spin' : ''}`} />
+                    <span>{isTestingRcConnection ? 'Testing API...' : 'Test Connection'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleSaveBillingConfig()}
+                    disabled={isSavingBillingConfig}
+                    className="px-5 py-2 bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#EC4899] hover:opacity-95 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-purple-600/30 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSavingBillingConfig ? 'animate-spin' : ''}`} />
+                    <span>{isSavingBillingConfig ? 'Saving...' : 'Save Configuration'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Banner / Test Result if available */}
+              {rcTestResult && (
+                <div className={`p-4 rounded-2xl border text-xs flex items-center justify-between backdrop-blur-md ${
+                  rcTestResult.success
+                    ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                    : 'bg-red-950/40 border-red-500/40 text-red-200'
+                }`}>
+                  <div className="flex items-center gap-2.5">
+                    {rcTestResult.success ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                    )}
+                    <span>{rcTestResult.message}</span>
+                  </div>
+                  <button onClick={() => setRcTestResult(null)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+              )}
+
+              {/* Bento Row: 3 Overview Stat Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                <div className="glass-panel p-5 rounded-[26px] border-white/10 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">RevenueCat API</span>
+                    <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400">
+                      <Zap className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-xl font-black text-white">
+                    {billingConfig.isConfigured ? 'Connected & Live' : 'Setup Required'}
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    {billingConfig.androidPublicKey || billingConfig.iosPublicKey ? 'Public mobile keys active' : 'Public keys unconfigured'}
+                  </div>
+                </div>
+
+                <div className="glass-panel p-5 rounded-[26px] border-white/10 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Store Products</span>
+                    <div className="p-2 rounded-xl bg-pink-500/10 text-pink-400">
+                      <CreditCard className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-xl font-black text-white">
+                    {billingConfig.products?.filter((p: any) => p.isEnabled).length ?? 2} Active Products
+                  </div>
+                  <div className="text-[11px] text-pink-400">
+                    Google Play & App Store synchronized
+                  </div>
+                </div>
+
+                <div className="glass-panel p-5 rounded-[26px] border-white/10 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Webhook Stream</span>
+                    <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400">
+                      <Activity className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-xl font-black text-white">
+                    {webhookEvents.length} Recent Events
+                  </div>
+                  <div className="text-[11px] text-cyan-400">
+                    Idempotent deduplication enabled
+                  </div>
+                </div>
+              </div>
+
+              {/* Grid: Credentials & Webhook Endpoint + Paywall Copy */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* 1. RevenueCat API Credentials */}
+                <div className="glass-panel border-white/10 rounded-[32px] p-6 md:p-7 space-y-5 shadow-2xl backdrop-blur-2xl">
+                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 bg-purple-500/10 border border-purple-500/20 rounded-xl text-purple-400">
+                        <Key className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white">RevenueCat SDK & API Credentials</h3>
+                        <p className="text-[11px] text-slate-400">Public mobile keys and encrypted backend secrets</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono text-purple-400 bg-purple-950/80 px-2 py-0.5 rounded-md border border-purple-500/30">
+                      AES-256-GCM
+                    </span>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">Android Public SDK Key (Google Play)</label>
+                      <input
+                        type="text"
+                        value={billingConfig.androidPublicKey || ''}
+                        onChange={(e) => setBillingConfig({ ...billingConfig, androidPublicKey: e.target.value })}
+                        placeholder="goog_..."
+                        className="w-full px-4 py-2 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-purple-500 transition-all"
+                      />
+                      <span className="text-[10px] text-slate-500 mt-0.5 block">Shared with mobile app via public configuration endpoint</span>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">iOS Public SDK Key (App Store)</label>
+                      <input
+                        type="text"
+                        value={billingConfig.iosPublicKey || ''}
+                        onChange={(e) => setBillingConfig({ ...billingConfig, iosPublicKey: e.target.value })}
+                        placeholder="appl_..."
+                        className="w-full px-4 py-2 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-purple-500 transition-all"
+                      />
+                      <span className="text-[10px] text-slate-500 mt-0.5 block">Used by iOS builds to initiate Apple In-App Purchases</span>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">RevenueCat Server Secret Key</label>
+                      <input
+                        type="password"
+                        value={billingConfig.serverSecretKey || ''}
+                        onChange={(e) => setBillingConfig({ ...billingConfig, serverSecretKey: e.target.value })}
+                        placeholder="sk_..."
+                        className="w-full px-4 py-2 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-purple-500 transition-all"
+                      />
+                      <span className="text-[10px] text-slate-500 mt-0.5 block">Encrypted at rest on PostgreSQL. Leave masked (•••) to keep current secret intact.</span>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">Webhook Authorization Secret</label>
+                      <input
+                        type="password"
+                        value={billingConfig.webhookSecret || ''}
+                        onChange={(e) => setBillingConfig({ ...billingConfig, webhookSecret: e.target.value })}
+                        placeholder="whsec_... or Bearer token"
+                        className="w-full px-4 py-2 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-purple-500 transition-all"
+                      />
+                      <span className="text-[10px] text-slate-500 mt-0.5 block">Validated on Authorization header of incoming RevenueCat webhook dispatches</span>
+                    </div>
+
+                    <div className="p-3.5 bg-black/40 border border-white/10 rounded-2xl space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-white">RevenueCat Webhook URL</span>
+                        <button
+                          type="button"
+                          onClick={handleCopyWebhookUrl}
+                          className="px-2.5 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg text-[11px] font-mono flex items-center gap-1.5 transition-all"
+                        >
+                          {copiedWebhookUrl ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          <span>{copiedWebhookUrl ? 'Copied!' : 'Copy URL'}</span>
+                        </button>
+                      </div>
+                      <div className="text-[11px] font-mono text-purple-300 break-all select-all bg-purple-950/30 p-2 rounded-xl border border-purple-500/20">
+                        {(process.env.NEXT_PUBLIC_API_URL || 'https://appsq-two.vercel.app')}/billing/webhook/revenuecat
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Paste this exact URL into RevenueCat Dashboard &gt; Project Settings &gt; Integrations &gt; Webhooks.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Paywall Display & Marketing Copy */}
+                <div className="glass-panel border-white/10 rounded-[32px] p-6 md:p-7 space-y-5 shadow-2xl backdrop-blur-2xl">
+                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 bg-pink-500/10 border border-pink-500/20 rounded-xl text-pink-400">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white">Paywall Copy & Display Settings</h3>
+                        <p className="text-[11px] text-slate-400">Over-the-air text, highlights, and safety toggles</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono text-pink-400 bg-pink-950/80 px-2 py-0.5 rounded-md border border-pink-500/30">
+                      LIVE ON MOBILE
+                    </span>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">Paywall Headline</label>
+                      <input
+                        type="text"
+                        value={billingConfig.display?.headline || ''}
+                        onChange={(e) => setBillingConfig({
+                          ...billingConfig,
+                          display: { ...billingConfig.display, headline: e.target.value },
+                        })}
+                        placeholder="Unlock the Full Power of Mindora Pro"
+                        className="w-full px-4 py-2 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-pink-500 transition-all font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">Paywall Subheadline</label>
+                      <textarea
+                        rows={2}
+                        value={billingConfig.display?.subheadline || ''}
+                        onChange={(e) => setBillingConfig({
+                          ...billingConfig,
+                          display: { ...billingConfig.display, subheadline: e.target.value },
+                        })}
+                        placeholder="Infinite context, unlimited speech transcription..."
+                        className="w-full px-4 py-2 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-pink-500 transition-all font-medium resize-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">Pro Feature Highlights (Bullet Points)</label>
+                      <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                        {(billingConfig.display?.proBenefits || []).map((benefit: string, idx: number) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={benefit}
+                              onChange={(e) => {
+                                const updated = [...(billingConfig.display?.proBenefits || [])];
+                                updated[idx] = e.target.value;
+                                setBillingConfig({
+                                  ...billingConfig,
+                                  display: { ...billingConfig.display, proBenefits: updated },
+                                });
+                              }}
+                              className="flex-1 px-3 py-1.5 bg-[#05070D] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = (billingConfig.display?.proBenefits || []).filter((_: any, i: number) => i !== idx);
+                                setBillingConfig({
+                                  ...billingConfig,
+                                  display: { ...billingConfig.display, proBenefits: updated },
+                                });
+                              }}
+                              className="p-1.5 text-slate-500 hover:text-red-400 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = [...(billingConfig.display?.proBenefits || []), 'New premium Pro capability'];
+                          setBillingConfig({
+                            ...billingConfig,
+                            display: { ...billingConfig.display, proBenefits: updated },
+                          });
+                        }}
+                        className="mt-2 px-3 py-1 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-[11px] font-semibold flex items-center gap-1 border border-white/10 transition-all"
+                      >
+                        <Plus className="w-3 h-3 text-purple-400" />
+                        <span>Add Benefit Bullet</span>
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">Legal / Store Trial Disclosure</label>
+                      <input
+                        type="text"
+                        value={billingConfig.display?.trialDisclosure || ''}
+                        onChange={(e) => setBillingConfig({
+                          ...billingConfig,
+                          display: { ...billingConfig.display, trialDisclosure: e.target.value },
+                        })}
+                        placeholder="7 days free, then automatically renews..."
+                        className="w-full px-4 py-2 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-pink-500 transition-all"
+                      />
+                    </div>
+
+                    {/* Paywall Maintenance Mode Toggle */}
+                    <div className="p-4 bg-amber-950/20 border border-amber-500/30 rounded-2xl flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold text-white text-xs flex items-center gap-1.5">
+                          <Lock className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Paywall Maintenance Mode</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          Gracefully display scheduled store maintenance on mobile paywall instead of failing purchases
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const val = !billingConfig.display?.maintenanceMode;
+                          setBillingConfig({
+                            ...billingConfig,
+                            display: { ...billingConfig.display, maintenanceMode: val },
+                          });
+                        }}
+                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                          billingConfig.display?.maintenanceMode ? 'bg-amber-500 shadow-md shadow-amber-500/30' : 'bg-slate-800'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                            billingConfig.display?.maintenanceMode ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Subscription Product Catalog & Mapping Table */}
+              <div className="glass-panel border-white/10 rounded-[30px] overflow-hidden shadow-2xl backdrop-blur-2xl space-y-4 p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-white/10">
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <CreditCard className="w-4 h-4 text-purple-400" />
+                      <span>Store Product Catalog & Package Mappings</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Map RevenueCat packages ($rc_monthly, $rc_annual) to Google Play and Apple App Store in-app purchase product IDs.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingProduct({
+                        id: `product_${Date.now()}`,
+                        revenueCatPackageId: '$rc_monthly',
+                        googlePlayProductId: 'ai_notes_pro_monthly',
+                        appStoreProductId: 'ai_notes_pro_monthly',
+                        billingPeriod: 'MONTHLY',
+                        title: 'Mindora Pro Monthly',
+                        badgeText: '',
+                        trialDays: 7,
+                        order: (billingConfig.products?.length || 0) + 1,
+                        isEnabled: true,
+                      });
+                      setIsProductModalOpen(true);
+                    }}
+                    className="px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-purple-500/30 transition-all shadow-sm"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Product Mapping</span>
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-[#05070D]/90 text-slate-400 font-bold uppercase text-[10px] tracking-wider border-b border-white/10">
+                      <tr>
+                        <th className="py-3 px-4">Product / Title</th>
+                        <th className="py-3 px-4">Period</th>
+                        <th className="py-3 px-4">RC Package ID</th>
+                        <th className="py-3 px-4">Google Play ID</th>
+                        <th className="py-3 px-4">App Store ID</th>
+                        <th className="py-3 px-4">Trial</th>
+                        <th className="py-3 px-4">Badge</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 font-mono text-[11px]">
+                      {(billingConfig.products || []).map((prod: any, idx: number) => (
+                        <tr key={prod.id || idx} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="py-3 px-4 font-sans font-bold text-white text-xs">
+                            {prod.title}
+                            <span className="block font-mono text-[10px] text-slate-500 font-normal">{prod.id}</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[10px] font-bold">
+                              {prod.billingPeriod}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-indigo-300">{prod.revenueCatPackageId}</td>
+                          <td className="py-3 px-4 text-emerald-300">{prod.googlePlayProductId}</td>
+                          <td className="py-3 px-4 text-cyan-300">{prod.appStoreProductId}</td>
+                          <td className="py-3 px-4 text-slate-300">{prod.trialDays ? `${prod.trialDays}d Free` : 'No Trial'}</td>
+                          <td className="py-3 px-4 font-sans text-pink-300">{prod.badgeText || '—'}</td>
+                          <td className="py-3 px-4">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = [...(billingConfig.products || [])];
+                                updated[idx] = { ...updated[idx], isEnabled: !updated[idx].isEnabled };
+                                setBillingConfig({ ...billingConfig, products: updated });
+                              }}
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold border font-sans ${
+                                prod.isEnabled
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700'
+                              }`}
+                            >
+                              {prod.isEnabled ? 'ENABLED' : 'DISABLED'}
+                            </button>
+                          </td>
+                          <td className="py-3 px-4 text-right space-x-1 font-sans">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingProduct({ ...prod });
+                                setIsProductModalOpen(true);
+                              }}
+                              className="px-2.5 py-1 bg-white/5 hover:bg-white/10 text-slate-200 rounded-lg text-xs font-semibold transition-colors"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!confirm(`Delete product mapping "${prod.title}"?`)) return;
+                                const updated = (billingConfig.products || []).filter((_: any, i: number) => i !== idx);
+                                setBillingConfig({ ...billingConfig, products: updated });
+                              }}
+                              className="p-1 text-slate-500 hover:text-red-400 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* 4. Live RevenueCat Webhook Telemetry */}
+              <div className="glass-panel border-white/10 rounded-[30px] overflow-hidden shadow-2xl backdrop-blur-2xl space-y-4 p-6">
+                <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-xl text-cyan-400">
+                      <Activity className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-white">Live Webhook Event Stream</h3>
+                      <p className="text-xs text-slate-400">Real-time store subscription lifecycle notifications captured by NestJS</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRefreshWebhookEvents}
+                    disabled={isLoadingWebhookEvents}
+                    className="px-3.5 py-1.5 bg-white/5 hover:bg-white/10 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-white/10 transition-all"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingWebhookEvents ? 'animate-spin' : ''}`} />
+                    <span>Refresh Stream</span>
+                  </button>
+                </div>
+
+                <div className="divide-y divide-white/5 max-h-96 overflow-y-auto">
+                  {webhookEvents.length > 0 ? (
+                    webhookEvents.map((evt: any, i: number) => {
+                      const type = evt.eventType || 'UNKNOWN';
+                      const isPurchase = type.includes('PURCHASE') || type.includes('RENEWAL');
+                      const isCancel = type.includes('CANCELLATION');
+                      const isExpiry = type.includes('EXPIRATION') || type.includes('REVOCATION');
+                      const isIssue = type.includes('BILLING_ISSUE');
+
+                      const badgeStyle = isPurchase
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                        : isCancel
+                        ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                        : isExpiry
+                        ? 'bg-red-500/10 text-red-400 border-red-500/30'
+                        : isIssue
+                        ? 'bg-orange-500/10 text-orange-400 border-orange-500/30'
+                        : 'bg-purple-500/10 text-purple-400 border-purple-500/30';
+
+                      return (
+                        <div key={evt.id || i} className="py-3 px-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs hover:bg-white/[0.02] rounded-xl transition-colors">
+                          <div className="flex items-center gap-3">
+                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border ${badgeStyle}`}>
+                              {type}
+                            </span>
+                            <div>
+                              <div className="font-mono text-white font-semibold flex items-center gap-2">
+                                <span>{evt.payload?.event?.product_id || evt.payload?.event?.entitlement_id || 'pro'}</span>
+                                <span className="text-[10px] text-slate-500">
+                                  ({evt.payload?.event?.store === 'APP_STORE' ? 'Apple App Store' : 'Google Play'})
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-mono">
+                                User: {evt.payload?.event?.app_user_id || 'anonymous'} • Trans ID: {evt.payload?.event?.transaction_id || evt.eventId || '—'}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 font-mono text-[10px] text-slate-500">
+                            {evt.status && (
+                              <span className={`px-2 py-0.5 rounded-md border font-bold ${
+                                evt.status === 'SUCCESS'
+                                  ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800'
+                                  : evt.status === 'IGNORED'
+                                  ? 'bg-slate-800 text-slate-400 border-slate-700'
+                                  : 'bg-red-950/60 text-red-400 border-red-800'
+                              }`}>
+                                {evt.status} {evt.processingTimeMs ? `(${evt.processingTimeMs}ms)` : ''}
+                              </span>
+                            )}
+                            <span>{new Date(evt.createdAt || Date.now()).toLocaleTimeString()}</span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="p-12 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-2">
+                      <ShieldCheck className="w-8 h-8 text-purple-400/80 mb-1" />
+                      <span className="font-semibold text-slate-300">No Webhook Events Recorded Yet</span>
+                      <span>Incoming transaction events from Google Play Billing and Apple StoreKit will display here in real time.</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Product Modal */}
+              {isProductModalOpen && editingProduct && (
+                <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+                  <div className="w-full max-w-lg glass-panel border-white/15 rounded-[32px] p-7 shadow-2xl space-y-5 backdrop-blur-3xl bg-[#080C16]/95">
+                    <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                      <h3 className="text-base font-bold text-white">Configure Store Product Mapping</h3>
+                      <button onClick={() => setIsProductModalOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+                    </div>
+
+                    <div className="space-y-3.5 text-xs">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1">Display Title</label>
+                          <input
+                            type="text"
+                            value={editingProduct.title || ''}
+                            onChange={(e) => setEditingProduct({ ...editingProduct, title: e.target.value })}
+                            className="w-full px-3 py-2 bg-[#05070D] border border-white/10 rounded-xl text-white focus:outline-none focus:border-purple-500 font-medium"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1">Billing Period</label>
+                          <select
+                            value={editingProduct.billingPeriod || 'MONTHLY'}
+                            onChange={(e) => setEditingProduct({ ...editingProduct, billingPeriod: e.target.value })}
+                            className="w-full px-3 py-2 bg-[#05070D] border border-white/10 rounded-xl text-white focus:outline-none focus:border-purple-500 font-medium"
+                          >
+                            <option value="MONTHLY">MONTHLY</option>
+                            <option value="ANNUAL">ANNUAL</option>
+                            <option value="LIFETIME">LIFETIME</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1">RevenueCat Package ID</label>
+                          <input
+                            type="text"
+                            value={editingProduct.revenueCatPackageId || ''}
+                            onChange={(e) => setEditingProduct({ ...editingProduct, revenueCatPackageId: e.target.value })}
+                            placeholder="$rc_monthly"
+                            className="w-full px-3 py-2 bg-[#05070D] border border-white/10 rounded-xl text-white font-mono focus:outline-none focus:border-purple-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1">Badge Text (Optional)</label>
+                          <input
+                            type="text"
+                            value={editingProduct.badgeText || ''}
+                            onChange={(e) => setEditingProduct({ ...editingProduct, badgeText: e.target.value })}
+                            placeholder="Best Value • Save 40%"
+                            className="w-full px-3 py-2 bg-[#05070D] border border-white/10 rounded-xl text-white focus:outline-none focus:border-purple-500 font-medium"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] text-slate-400 block mb-1">Google Play Product ID</label>
+                        <input
+                          type="text"
+                          value={editingProduct.googlePlayProductId || ''}
+                          onChange={(e) => setEditingProduct({ ...editingProduct, googlePlayProductId: e.target.value })}
+                          placeholder="ai_notes_pro_monthly"
+                          className="w-full px-3 py-2 bg-[#05070D] border border-white/10 rounded-xl text-white font-mono focus:outline-none focus:border-purple-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] text-slate-400 block mb-1">Apple App Store Product ID</label>
+                        <input
+                          type="text"
+                          value={editingProduct.appStoreProductId || ''}
+                          onChange={(e) => setEditingProduct({ ...editingProduct, appStoreProductId: e.target.value })}
+                          placeholder="ai_notes_pro_monthly"
+                          className="w-full px-3 py-2 bg-[#05070D] border border-white/10 rounded-xl text-white font-mono focus:outline-none focus:border-purple-500"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 items-center">
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1">Trial Days</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={editingProduct.trialDays ?? 7}
+                            onChange={(e) => setEditingProduct({ ...editingProduct, trialDays: parseInt(e.target.value, 10) || 0 })}
+                            className="w-full px-3 py-2 bg-[#05070D] border border-white/10 rounded-xl text-white focus:outline-none focus:border-purple-500"
+                          />
+                        </div>
+                        <div className="pt-4 flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="productEnabledCheck"
+                            checked={editingProduct.isEnabled}
+                            onChange={(e) => setEditingProduct({ ...editingProduct, isEnabled: e.target.checked })}
+                            className="rounded accent-purple-500"
+                          />
+                          <label htmlFor="productEnabledCheck" className="text-white font-semibold text-xs cursor-pointer">
+                            Product Active in Store
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-3 border-t border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => setIsProductModalOpen(false)}
+                        className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const existing = [...(billingConfig.products || [])];
+                          const idx = existing.findIndex((p: any) => p.id === editingProduct.id);
+                          if (idx >= 0) {
+                            existing[idx] = editingProduct;
+                          } else {
+                            existing.push(editingProduct);
+                          }
+                          setBillingConfig({ ...billingConfig, products: existing });
+                          setIsProductModalOpen(false);
+                          showToast('Product mapping updated in staging');
+                        }}
+                        className="flex-1 py-2 bg-gradient-to-r from-[#7C3AED] to-[#EC4899] text-white rounded-xl text-xs font-semibold"
+                      >
+                        Apply Changes
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -2515,147 +3644,722 @@ export default function AdminDashboard() {
           {/* ========================================================= */}
           {activeTab === 'ads' && (
             <div className="space-y-6">
+              {/* Header & Controls Bar */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 uppercase tracking-wider flex items-center gap-1.5 font-mono">
                       <Radio className="w-3 h-3 text-indigo-400 animate-pulse" />
-                      Google AdMob Engine
+                      Google AdMob Banner Engine
                     </span>
-                    <span className="text-xs text-slate-500">• Hybrid Monetization Layer</span>
+                    <span className="text-xs text-slate-500">• Monetization & Governance</span>
                   </div>
-                  <h2 className="text-2xl font-extrabold text-white tracking-tight">Ad Network & Placement Rules</h2>
-                  <p className="text-xs text-slate-400">
-                    Real-time control over Google AdMob banner frequencies, interstitial note-save thresholds, and subscriber immunity
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-2xl font-extrabold text-white tracking-tight">Ads & AdMob Management</h2>
+                    {adsConfig?.published && (
+                      <span className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full border font-bold ${
+                        adsConfig.published.status === 'ENABLED'
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                          : adsConfig.published.status === 'TEST_MODE'
+                          ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+                          : adsConfig.published.status === 'AWAITING_CONFIG'
+                          ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                          : 'bg-red-500/10 text-red-400 border-red-500/30'
+                      }`}>
+                        LIVE: {adsConfig.published.status || 'DISABLED'} (v{adsConfig.published.version})
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Authoritative control over Google AdMob banner units, platform toggles, and subscriber immunity
                   </p>
                 </div>
-                <button
-                  onClick={handleSaveAdSettings}
-                  disabled={isSavingGlobalSettings}
-                  className="px-5 py-2.5 bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#6366F1] hover:opacity-95 text-white rounded-2xl text-xs font-bold flex items-center gap-2 shadow-xl shadow-purple-600/25 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSavingGlobalSettings ? "animate-spin" : ""}`} />
-                  <span>{isSavingGlobalSettings ? "Committing Policies..." : "Save Ad Policies"}</span>
-                </button>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleResetToTestDefaults}
+                    className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-white/10 transition-all"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Reset Test IDs</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveAdsDraft}
+                    disabled={isSavingAdsDraft || !adsDraft}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-white/10 transition-all disabled:opacity-50"
+                  >
+                    <Check className={`w-3.5 h-3.5 ${isSavingAdsDraft ? 'animate-spin' : 'text-emerald-400'}`} />
+                    <span>{isSavingAdsDraft ? 'Saving Draft...' : 'Save Draft'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPublishModal(true)}
+                    disabled={isPublishingAds || !adsDraft}
+                    className="px-5 py-2 bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#6366F1] hover:opacity-95 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xl shadow-purple-600/25 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-white" />
+                    <span>Publish to Live</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Bento Grid: 3 Policy Cards */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* 1. Master AdMob Kill-Switch */}
-                <div className="glass-panel glass-panel-hover border-white/10 rounded-[30px] p-6.5 shadow-2xl backdrop-blur-2xl space-y-5 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 w-36 h-36 bg-purple-600/10 rounded-full blur-3xl pointer-events-none group-hover:bg-purple-600/20 transition-all"></div>
-                  
+              {/* Banner Only Policy Banner */}
+              <div className="p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-start gap-3">
+                <ShieldCheck className="w-5 h-5 text-indigo-400 mt-0.5 flex-shrink-0" />
+                <div className="text-xs leading-relaxed">
+                  <span className="font-bold text-white">Strict Banner-Only Advertising Policy: </span>
+                  <span className="text-slate-300">
+                    Banner ads are the ONLY supported advertising format in the application. Video ads, full-screen interstitials, and rewarded ads are strictly blocked across all platforms to protect user focus and note-taking flow.
+                  </span>
+                </div>
+              </div>
+
+              {/* Validation Warnings if any */}
+              {adsConfig?.validation?.errors && adsConfig.validation.errors.length > 0 && adsDraft?.isEnabled && (
+                <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/25 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
+                  <div className="space-y-1">
+                    <span className="text-xs font-bold text-red-300">Configuration Format Issues Detected:</span>
+                    <ul className="text-xs text-red-400 list-disc list-inside space-y-0.5">
+                      {adsConfig.validation.errors.map((err: string, idx: number) => (
+                        <li key={idx}>{err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* Production Mode Warning if test IDs active */}
+              {adsDraft && !adsDraft.testMode && adsDraft.isEnabled && (
+                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs text-amber-300 leading-relaxed">
+                    <span className="font-bold">Production Mode Alert: </span>
+                    Production serving is enabled. Make sure you have entered real Google AdMob Banner Ad Unit IDs. If Google test IDs are used in production mode, ad serving will fail or generate zero revenue.
+                  </div>
+                </div>
+              )}
+
+              {/* Grid 1: Master Controls & Mode */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Global Master Switch */}
+                <div className="glass-panel border-white/10 rounded-2xl p-5 space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-2xl text-purple-400">
-                        <Radio className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-white">Master Ad Status</h3>
-                        <p className="text-[11px] text-slate-400">Global AdMob SDK serving</p>
-                      </div>
-                    </div>
-                    <span className={`text-[10px] font-mono px-2.5 py-1 rounded-full border font-bold ${
-                      admobEnabled ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-red-500/10 text-red-400 border-red-500/30"
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">Global Serving</span>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                      adsDraft?.isEnabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
                     }`}>
-                      {admobEnabled ? "ACTIVE" : "SUPPRESSED"}
+                      {adsDraft?.isEnabled ? 'ENABLED' : 'DISABLED'}
                     </span>
                   </div>
-
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    When active, banner and interstitial units render on free iOS & Android mobile devices. All PRO subscribers and active Trial users are automatically immune.
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    Master kill-switch. When disabled, all mobile banner requests and renderings cease immediately.
                   </p>
-
-                  <div className="pt-3 border-t border-white/10 flex items-center justify-between">
-                    <span className="text-xs text-slate-300 font-semibold">Serve Mobile Ad Units</span>
+                  <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                    <span className="text-xs text-slate-300">Enable All Ads</span>
                     <button
                       type="button"
-                      onClick={() => setAdmobEnabled(!admobEnabled)}
-                      className={`relative inline-flex h-7 w-13 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none ${
-                        admobEnabled ? 'bg-gradient-to-r from-purple-600 to-fuchsia-600 shadow-md shadow-purple-600/30' : 'bg-slate-800'
+                      onClick={() => setAdsDraft(adsDraft ? { ...adsDraft, isEnabled: !adsDraft.isEnabled } : null)}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                        adsDraft?.isEnabled ? 'bg-purple-600' : 'bg-slate-800'
                       }`}
                     >
-                      <span
-                        className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-300 ease-in-out ${
-                          admobEnabled ? 'translate-x-6' : 'translate-x-0'
-                        }`}
-                      />
+                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        adsDraft?.isEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
                     </button>
                   </div>
                 </div>
 
-                {/* 2. Interstitial Frequency */}
-                <div className="glass-panel glass-panel-hover border-white/10 rounded-[30px] p-6.5 shadow-2xl backdrop-blur-2xl space-y-5 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 w-36 h-36 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none group-hover:bg-indigo-600/20 transition-all"></div>
-
+                {/* Test Mode Switch */}
+                <div className="glass-panel border-white/10 rounded-2xl p-5 space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-indigo-400">
-                        <Sliders className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-white">Interstitial Interval</h3>
-                        <p className="text-[11px] text-slate-400">Free note-save frequency</p>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 font-bold">
-                      CAP: {adFrequencyNoteSaves}
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">AdMob Mode</span>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                      adsDraft?.testMode ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                    }`}>
+                      {adsDraft?.testMode ? 'TEST MODE' : 'PRODUCTION'}
                     </span>
                   </div>
-
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Specifies how many note creation or audio capture saves must occur on free mobile devices before an interstitial ad is triggered.
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    Test Mode serves official Google test banners without policy risk during QA and development.
                   </p>
-
-                  <div className="space-y-2 pt-1 border-t border-white/10">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-300 font-medium">Trigger every</span>
-                      <span className="text-indigo-400 font-mono font-bold text-sm">{adFrequencyNoteSaves} note saves</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="15"
-                      value={adFrequencyNoteSaves}
-                      onChange={(e) => setAdFrequencyNoteSaves(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                      className="w-full accent-indigo-400 cursor-pointer"
-                    />
-                    <div className="flex justify-between text-[10px] font-mono text-slate-500">
-                      <span>1 (Aggressive)</span>
-                      <span>5 (Balanced)</span>
-                      <span>15 (Gentle)</span>
-                    </div>
+                  <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                    <span className="text-xs text-slate-300">Test Mode</span>
+                    <button
+                      type="button"
+                      onClick={() => setAdsDraft(adsDraft ? { ...adsDraft, testMode: !adsDraft.testMode } : null)}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                        adsDraft?.testMode ? 'bg-blue-600' : 'bg-slate-800'
+                      }`}
+                    >
+                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        adsDraft?.testMode ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </button>
                   </div>
                 </div>
 
-                {/* 3. Pro Immunity Guarantee */}
-                <div className="glass-panel glass-panel-hover border-white/10 rounded-[30px] p-6.5 shadow-2xl backdrop-blur-2xl space-y-5 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 w-36 h-36 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none group-hover:bg-emerald-600/20 transition-all"></div>
-
+                {/* Android Switch */}
+                <div className="glass-panel border-white/10 rounded-2xl p-5 space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-emerald-400">
-                        <ShieldCheck className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-white">Pro Ad-Free Tier</h3>
-                        <p className="text-[11px] text-slate-400">100% Ad suppression rule</p>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-bold">
-                      ENFORCED
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">Android Platform</span>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                      adsDraft?.androidEnabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-700 text-slate-400'
+                    }`}>
+                      {adsDraft?.androidEnabled ? 'ON' : 'OFF'}
                     </span>
                   </div>
-
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    The backend API and Flutter client check token claims on session boot. PRO and active TRIAL tokens automatically suppress AdMob SDK initialization.
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    Enable or disable banner serving on Android devices independently.
                   </p>
+                  <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                    <span className="text-xs text-slate-300">Android Ads</span>
+                    <button
+                      type="button"
+                      onClick={() => setAdsDraft(adsDraft ? { ...adsDraft, androidEnabled: !adsDraft.androidEnabled } : null)}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                        adsDraft?.androidEnabled ? 'bg-purple-600' : 'bg-slate-800'
+                      }`}
+                    >
+                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        adsDraft?.androidEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </button>
+                  </div>
+                </div>
 
-                  <div className="p-3.5 bg-black/40 border border-white/10 rounded-2xl text-[11px] font-mono text-slate-400">
-                    Rule: <span className="text-emerald-400 font-bold">plan === 'PRO' || 'TRIAL' → adMob.disable()</span>
+                {/* iOS Switch */}
+                <div className="glass-panel border-white/10 rounded-2xl p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">iOS Platform</span>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                      adsDraft?.iosEnabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-700 text-slate-400'
+                    }`}>
+                      {adsDraft?.iosEnabled ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    Enable or disable banner serving on iOS devices independently.
+                  </p>
+                  <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                    <span className="text-xs text-slate-300">iOS Ads</span>
+                    <button
+                      type="button"
+                      onClick={() => setAdsDraft(adsDraft ? { ...adsDraft, iosEnabled: !adsDraft.iosEnabled } : null)}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                        adsDraft?.iosEnabled ? 'bg-purple-600' : 'bg-slate-800'
+                      }`}
+                    >
+                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        adsDraft?.iosEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </button>
                   </div>
                 </div>
               </div>
+
+              {/* Bento Grid 2: Placements & Pro Immunity */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Placement 1: Home Dashboard */}
+                <div className="glass-panel border-white/10 rounded-3xl p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-white">Home Dashboard Banner</h3>
+                      <p className="text-[11px] text-slate-400 font-mono">placement: home_dashboard</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!adsDraft) return;
+                        setAdsDraft({
+                          ...adsDraft,
+                          placements: {
+                            ...adsDraft.placements,
+                            home_dashboard: {
+                              ...adsDraft.placements.home_dashboard,
+                              enabled: !adsDraft.placements.home_dashboard.enabled,
+                            },
+                          },
+                        });
+                      }}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                        adsDraft?.placements?.home_dashboard?.enabled ? 'bg-purple-600' : 'bg-slate-800'
+                      }`}
+                    >
+                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        adsDraft?.placements?.home_dashboard?.enabled ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Sleek banner card positioned between quick metric statistics and recent notes on the Home screen.
+                  </p>
+
+                  <div className="space-y-3 pt-2 border-t border-white/5">
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                        Android Unit ID Override <span className="text-slate-500 font-normal">(Optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Leave blank to use default banner unit ID"
+                        value={adsDraft?.placements?.home_dashboard?.androidUnitId || ''}
+                        onChange={(e) => {
+                          const val = e.target.value.trim();
+                          setAdsDraft({
+                            ...adsDraft,
+                            placements: {
+                              ...adsDraft.placements,
+                              home_dashboard: { ...adsDraft.placements.home_dashboard, androidUnitId: val },
+                            },
+                          });
+                        }}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                        iOS Unit ID Override <span className="text-slate-500 font-normal">(Optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Leave blank to use default banner unit ID"
+                        value={adsDraft?.placements?.home_dashboard?.iosUnitId || ''}
+                        onChange={(e) => {
+                          const val = e.target.value.trim();
+                          setAdsDraft({
+                            ...adsDraft,
+                            placements: {
+                              ...adsDraft.placements,
+                              home_dashboard: { ...adsDraft.placements.home_dashboard, iosUnitId: val },
+                            },
+                          });
+                        }}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Placement 2: Notes List */}
+                <div className="glass-panel border-white/10 rounded-3xl p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-white">Notes Directory Banner</h3>
+                      <p className="text-[11px] text-slate-400 font-mono">placement: notes_list</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!adsDraft) return;
+                        setAdsDraft({
+                          ...adsDraft,
+                          placements: {
+                            ...adsDraft.placements,
+                            notes_list: {
+                              ...adsDraft.placements.notes_list,
+                              enabled: !adsDraft.placements.notes_list.enabled,
+                            },
+                          },
+                        });
+                      }}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                        adsDraft?.placements?.notes_list?.enabled ? 'bg-purple-600' : 'bg-slate-800'
+                      }`}
+                    >
+                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        adsDraft?.placements?.notes_list?.enabled ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Unobtrusive bottom banner displayed above the floating dock on the Notes directory screen.
+                  </p>
+
+                  <div className="space-y-3 pt-2 border-t border-white/5">
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                        Android Unit ID Override <span className="text-slate-500 font-normal">(Optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Leave blank to use default banner unit ID"
+                        value={adsDraft?.placements?.notes_list?.androidUnitId || ''}
+                        onChange={(e) => {
+                          const val = e.target.value.trim();
+                          setAdsDraft({
+                            ...adsDraft,
+                            placements: {
+                              ...adsDraft.placements,
+                              notes_list: { ...adsDraft.placements.notes_list, androidUnitId: val },
+                            },
+                          });
+                        }}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                        iOS Unit ID Override <span className="text-slate-500 font-normal">(Optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Leave blank to use default banner unit ID"
+                        value={adsDraft?.placements?.notes_list?.iosUnitId || ''}
+                        onChange={(e) => {
+                          const val = e.target.value.trim();
+                          setAdsDraft({
+                            ...adsDraft,
+                            placements: {
+                              ...adsDraft.placements,
+                              notes_list: { ...adsDraft.placements.notes_list, iosUnitId: val },
+                            },
+                          });
+                        }}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Placement 3: Pro Subscriber Immunity */}
+                <div className="glass-panel border-white/10 rounded-3xl p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white">Subscriber Immunity</h3>
+                        <p className="text-[11px] text-slate-400">Zero Ad Requests Guaranteed</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-bold">
+                      AUTHORITATIVE
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Active Pro subscribers and active trial users NEVER receive ads. The mobile client disables AdMob SDK initialization and hides all banner widgets immediately.
+                  </p>
+
+                  <div className="p-3 bg-black/40 border border-white/5 rounded-2xl space-y-2 text-[11px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Target Audience:</span>
+                      <span className="font-mono text-indigo-400 font-bold">FREE Plan Only</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Pro Users Ad Requests:</span>
+                      <span className="font-mono text-emerald-400 font-bold">0 (Blocked)</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Client Check Interval:</span>
+                      <span className="font-mono text-slate-300 font-bold">{adsDraft?.refreshIntervalSec || 300}s</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Grid 3: AdMob IDs Management */}
+              <div className="glass-panel border-white/10 rounded-3xl p-6 space-y-6">
+                <div>
+                  <h3 className="text-base font-bold text-white">AdMob Application & Default Unit IDs</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Configure official AdMob App IDs and Default Banner Unit IDs. App IDs are packaged in app binaries, while Banner Unit IDs update dynamically over-the-air.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Android Column */}
+                  <div className="space-y-4 p-5 rounded-2xl bg-white/[0.02] border border-white/5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">Android AdMob Settings</h4>
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-500">Android SDK 21+</span>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-semibold text-slate-300">Android AdMob App ID</label>
+                        {isValidAppId(adsDraft?.androidAppId) ? (
+                          <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono">
+                            <Check className="w-3 h-3" /> Valid App ID
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-amber-400 font-mono">ca-app-pub-...~...</span>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={adsDraft?.androidAppId || ''}
+                        onChange={(e) => setAdsDraft({ ...adsDraft, androidAppId: e.target.value.trim() })}
+                        placeholder="ca-app-pub-3940256099942544~3347511713"
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-semibold text-slate-300">Android Default Banner Unit ID</label>
+                        {isValidUnitId(adsDraft?.androidDefaultBannerUnitId) ? (
+                          <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono">
+                            <Check className="w-3 h-3" /> Valid Unit ID
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-amber-400 font-mono">ca-app-pub-.../...</span>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={adsDraft?.androidDefaultBannerUnitId || ''}
+                        onChange={(e) => setAdsDraft({ ...adsDraft, androidDefaultBannerUnitId: e.target.value.trim() })}
+                        placeholder="ca-app-pub-3940256099942544/6300978111"
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* iOS Column */}
+                  <div className="space-y-4 p-5 rounded-2xl bg-white/[0.02] border border-white/5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-blue-400"></span>
+                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">iOS AdMob Settings</h4>
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-500">iOS 12+</span>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-semibold text-slate-300">iOS AdMob App ID</label>
+                        {isValidAppId(adsDraft?.iosAppId) ? (
+                          <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono">
+                            <Check className="w-3 h-3" /> Valid App ID
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-amber-400 font-mono">ca-app-pub-...~...</span>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={adsDraft?.iosAppId || ''}
+                        onChange={(e) => setAdsDraft({ ...adsDraft, iosAppId: e.target.value.trim() })}
+                        placeholder="ca-app-pub-3940256099942544~1458002511"
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-semibold text-slate-300">iOS Default Banner Unit ID</label>
+                        {isValidUnitId(adsDraft?.iosDefaultBannerUnitId) ? (
+                          <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono">
+                            <Check className="w-3 h-3" /> Valid Unit ID
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-amber-400 font-mono">ca-app-pub-.../...</span>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={adsDraft?.iosDefaultBannerUnitId || ''}
+                        onChange={(e) => setAdsDraft({ ...adsDraft, iosDefaultBannerUnitId: e.target.value.trim() })}
+                        placeholder="ca-app-pub-3940256099942544/2934735716"
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Version History & Rollback Table */}
+              <div className="glass-panel border-white/10 rounded-3xl p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2.5 bg-purple-500/10 border border-purple-500/20 rounded-xl text-purple-400">
+                      <History className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white">AdMob Version History & Rollback Audit</h3>
+                      <p className="text-[11px] text-slate-400">Revert published ad network configuration to any previous release</p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-mono text-slate-400">
+                    {adsConfig?.history?.length || 0} Historical Releases
+                  </span>
+                </div>
+
+                {adsConfig?.history && adsConfig.history.length > 0 ? (
+                  <div className="overflow-x-auto rounded-2xl border border-white/5">
+                    <table className="w-full text-left text-xs text-slate-300">
+                      <thead className="bg-white/[0.03] uppercase tracking-wider text-[10px] font-bold text-slate-400 font-mono">
+                        <tr>
+                          <th className="py-3 px-4">Version</th>
+                          <th className="py-3 px-4">Mode</th>
+                          <th className="py-3 px-4">Status</th>
+                          <th className="py-3 px-4">Published At</th>
+                          <th className="py-3 px-4">Publisher</th>
+                          <th className="py-3 px-4">Reason / Notes</th>
+                          <th className="py-3 px-4 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {adsConfig.history.map((entry: any) => (
+                          <tr key={entry.version} className="hover:bg-white/[0.02] transition-colors font-mono">
+                            <td className="py-3 px-4 font-bold text-white">v{entry.version}</td>
+                            <td className="py-3 px-4">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                                entry.config.testMode ? 'bg-blue-500/10 text-blue-400' : 'bg-amber-500/10 text-amber-400'
+                              }`}>
+                                {entry.config.testMode ? 'TEST' : 'PROD'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                                entry.config.isEnabled ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                              }`}>
+                                {entry.config.isEnabled ? 'ENABLED' : 'DISABLED'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-slate-400">
+                              {entry.publishedAt ? new Date(entry.publishedAt).toLocaleString() : 'N/A'}
+                            </td>
+                            <td className="py-3 px-4 text-slate-300">{entry.publishedBy || 'admin'}</td>
+                            <td className="py-3 px-4 text-slate-400 font-sans truncate max-w-xs">{entry.reason || 'Routine update'}</td>
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedRevertVersion(entry.version)}
+                                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-purple-300 hover:text-white rounded-lg text-[11px] font-sans font-semibold border border-purple-500/20 transition-all"
+                              >
+                                Revert to v{entry.version}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-8 text-center text-xs text-slate-500 rounded-2xl bg-white/[0.01] border border-dashed border-white/5">
+                    No previous releases archived yet. Prior states are stored when updates are published.
+                  </div>
+                )}
+              </div>
+
+              {/* Publish Confirmation Modal */}
+              {showPublishModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+                  <div className="bg-[#12121A] border border-white/10 rounded-3xl p-6 max-w-lg w-full space-y-5 shadow-2xl">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-2xl text-purple-400">
+                        <Sparkles className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-white">Publish AdMob Configuration</h3>
+                        <p className="text-xs text-slate-400">This will immediately update public client endpoints</p>
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Global Ads Serving:</span>
+                        <span className={`font-bold ${adsDraft?.isEnabled ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {adsDraft?.isEnabled ? 'ENABLED' : 'DISABLED'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">AdMob Mode:</span>
+                        <span className={`font-bold ${adsDraft?.testMode ? 'text-blue-400' : 'text-amber-400'}`}>
+                          {adsDraft?.testMode ? 'TEST MODE' : 'PRODUCTION MODE'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">New Version:</span>
+                        <span className="font-mono text-white font-bold">
+                          v{(adsConfig?.published?.version || 1) + 1}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1.5">
+                        Publish Reason / Audit Note <span className="text-slate-500">(Optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Switched to production banner units for launch"
+                        value={publishReason}
+                        onChange={(e) => setPublishReason(e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowPublishModal(false)}
+                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handlePublishAds}
+                        disabled={isPublishingAds}
+                        className="px-5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-purple-600/30 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        {isPublishingAds ? 'Publishing...' : 'Confirm & Publish'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Revert Confirmation Modal */}
+              {selectedRevertVersion !== null && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+                  <div className="bg-[#12121A] border border-white/10 rounded-3xl p-6 max-w-md w-full space-y-5 shadow-2xl">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-amber-400">
+                        <History className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-white">Rollback AdMob Configuration</h3>
+                        <p className="text-xs text-slate-400">Revert published settings to v{selectedRevertVersion}</p>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Are you sure you want to rollback live ad settings to version <strong>v{selectedRevertVersion}</strong>? This will create a new release archiving the current state and restore previous ad unit IDs and switches immediately.
+                    </p>
+
+                    <div className="flex items-center justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRevertVersion(null)}
+                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRevertAds(selectedRevertVersion)}
+                        disabled={isRevertingAds}
+                        className="px-5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-amber-600/30 transition-all disabled:opacity-50"
+                      >
+                        {isRevertingAds ? 'Rolling back...' : `Confirm Rollback to v${selectedRevertVersion}`}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -2720,7 +4424,7 @@ export default function AdminDashboard() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div>
                         <label className="text-[11px] font-semibold text-slate-300 block mb-1.5">Target Audience Tier</label>
                         <select
@@ -2728,17 +4432,36 @@ export default function AdminDashboard() {
                           onChange={(e) => setNewAnnouncement({ ...newAnnouncement, targetTier: e.target.value })}
                           className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
                         >
-                          <option value="ALL">All Mobile Users (Universal)</option>
-                          <option value="FREE">Free Tier Users Only</option>
+                          <option value="ALL">All Users (Universal)</option>
+                          <option value="FREE">Free Tier Only</option>
+                          <option value="TRIAL">Trial Users Only</option>
                           <option value="PRO">Pro Subscribers Only</option>
                         </select>
                       </div>
                       <div>
                         <label className="text-[11px] font-semibold text-slate-300 block mb-1.5">Priority / Urgency</label>
-                        <div className="px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-slate-400 flex items-center justify-between">
-                          <span>Standard Push Banner</span>
-                          <span className="w-2 h-2 rounded-full bg-fuchsia-400 animate-ping"></span>
-                        </div>
+                        <select
+                          value={newAnnouncement.priority}
+                          onChange={(e) => setNewAnnouncement({ ...newAnnouncement, priority: e.target.value })}
+                          className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
+                        >
+                          <option value="LOW">Low (Informational)</option>
+                          <option value="NORMAL">Normal (Standard)</option>
+                          <option value="HIGH">High (Important)</option>
+                          <option value="URGENT">Urgent (Critical Alert)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-300 block mb-1.5">Delivery Channel</label>
+                        <select
+                          value={newAnnouncement.channel}
+                          onChange={(e) => setNewAnnouncement({ ...newAnnouncement, channel: e.target.value })}
+                          className="w-full px-4 py-2.5 bg-[#05070D] border border-white/10 rounded-2xl text-xs text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 font-medium transition-all"
+                        >
+                          <option value="BOTH">Push & In-App (Recommended)</option>
+                          <option value="PUSH">Push Notification Only</option>
+                          <option value="IN_APP">In-App Banner Only</option>
+                        </select>
                       </div>
                     </div>
 
@@ -2845,33 +4568,107 @@ export default function AdminDashboard() {
 
                 <div className="divide-y divide-white/5">
                   {announcements.length > 0 ? (
-                    announcements.map((ann) => (
-                      <div key={ann.id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-white">{ann.title}</span>
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/30 font-bold">
-                              {ann.targetTier || 'ALL'}
-                            </span>
-                            <span className="text-[10px] text-slate-500 font-mono">
-                              {new Date(ann.createdAt).toLocaleString()}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-400 max-w-2xl">{ann.message}</p>
-                        </div>
+                    announcements.map((ann) => {
+                      const isPublished = ann.status === 'PUBLISHED' || (!ann.status && ann.publishedAt);
+                      const isRetracted = ann.status === 'RETRACTED';
+                      const isDraft = ann.status === 'DRAFT' || (!isPublished && !isRetracted);
 
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteAnnouncement(ann.id)}
-                            className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>Remove</span>
-                          </button>
+                      return (
+                        <div key={ann.id} className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors">
+                          <div className="space-y-1.5 flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs font-bold text-white">{ann.title}</span>
+                              
+                              {/* Status Badge */}
+                              {isPublished && (
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                  PUBLISHED
+                                </span>
+                              )}
+                              {isDraft && (
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-300 border border-slate-500/30 font-bold">
+                                  DRAFT
+                                </span>
+                              )}
+                              {isRetracted && (
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 font-bold">
+                                  RETRACTED
+                                </span>
+                              )}
+
+                              {/* Target Tier */}
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/30">
+                                {ann.targetTier || 'ALL'}
+                              </span>
+
+                              {/* Priority */}
+                              {ann.priority && ann.priority !== 'NORMAL' && (
+                                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+                                  ann.priority === 'URGENT' 
+                                    ? 'bg-red-500/10 text-red-300 border-red-500/30 font-bold' 
+                                    : ann.priority === 'HIGH' 
+                                    ? 'bg-orange-500/10 text-orange-300 border-orange-500/30' 
+                                    : 'bg-blue-500/10 text-blue-300 border-blue-500/30'
+                                }`}>
+                                  {ann.priority}
+                                </span>
+                              )}
+
+                              <span className="text-[10px] text-slate-500 font-mono">
+                                {new Date(ann.createdAt).toLocaleString()}
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-slate-300 max-w-3xl leading-relaxed">{ann.message}</p>
+
+                            {/* Delivery metrics */}
+                            {ann.totalTargeted !== undefined && ann.totalTargeted !== null && (
+                              <div className="flex items-center gap-4 text-[10px] font-mono text-slate-400 pt-0.5">
+                                <span>Targeted: <strong className="text-white">{ann.totalTargeted}</strong></span>
+                                <span>Delivered: <strong className="text-emerald-400">{ann.deliveredCount ?? 0}</strong></span>
+                                {ann.failedCount > 0 && <span>Failed: <strong className="text-rose-400">{ann.failedCount}</strong></span>}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 self-start md:self-center shrink-0">
+                            {/* Publish action for drafts or retracted */}
+                            {!isPublished && (
+                              <button
+                                type="button"
+                                onClick={() => handlePublishAnnouncement(ann.id)}
+                                className="px-3 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all"
+                              >
+                                <Send className="w-3.5 h-3.5" />
+                                <span>Publish</span>
+                              </button>
+                            )}
+
+                            {/* Retract action for published announcements */}
+                            {isPublished && (
+                              <button
+                                type="button"
+                                onClick={() => handleRetractAnnouncement(ann.id)}
+                                className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all"
+                              >
+                                <AlertCircle className="w-3.5 h-3.5" />
+                                <span>Retract</span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAnnouncement(ann.id)}
+                              className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Remove</span>
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <div className="p-12 text-center text-xs text-slate-500">
                       No active announcements. Compose your first broadcast message above.
@@ -3278,6 +5075,178 @@ export default function AdminDashboard() {
                       </button>
                     </div>
                   </div>
+                </div>
+
+                {/* 3. Brevo Transactional Email & Password Reset Management */}
+                <div className="lg:col-span-2 glass-panel border-white/10 rounded-[32px] p-7 space-y-6 shadow-2xl backdrop-blur-2xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-white/10 gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400">
+                        <Mail className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-bold text-white">Brevo Email & Password Reset Dispatch</h3>
+                          <span className={`px-2.5 py-0.5 rounded-full font-mono text-[10px] font-bold border ${
+                            emailConfig.isEnabled && emailConfig.isConfigured
+                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                              : emailConfig.isConfigured
+                              ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                              : "bg-slate-800 text-slate-400 border-white/10"
+                          }`}>
+                            {emailConfig.isEnabled && emailConfig.isConfigured
+                              ? "ACTIVE & VERIFIED"
+                              : emailConfig.isConfigured
+                              ? "CONFIGURED (DISABLED)"
+                              : "PENDING API KEY"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400">
+                          Transactional email gateway for 6-digit verification codes and automated password reset workflows
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-slate-400 font-medium">Service Enabled:</span>
+                      <button
+                        type="button"
+                        onClick={() => setEmailConfig((prev) => ({ ...prev, isEnabled: !prev.isEnabled }))}
+                        className={`relative inline-flex h-7 w-13 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none ${
+                          emailConfig.isEnabled ? 'bg-blue-600 shadow-md shadow-blue-600/30' : 'bg-slate-800'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-300 ease-in-out ${
+                            emailConfig.isEnabled ? 'translate-x-6' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    {/* API Key */}
+                    <div className="space-y-1.5 md:col-span-1">
+                      <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                        <span>Brevo API Key (v3)</span>
+                        {emailConfig.isConfigured && (
+                          <span className="text-[10px] text-emerald-400 font-mono">Configured</span>
+                        )}
+                      </label>
+                      <div className="relative">
+                        <Key className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="password"
+                          value={emailConfig.apiKey}
+                          onChange={(e) => setEmailConfig((prev) => ({ ...prev, apiKey: e.target.value }))}
+                          placeholder={emailConfig.isConfigured ? "••••••••••••••••••••" : "xkeysib-..."}
+                          className="w-full pl-9 pr-3 py-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50 font-mono"
+                        />
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        Get your API key from your Brevo Dashboard → SMTP & API.
+                      </p>
+                    </div>
+
+                    {/* Sender Email */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-300">Sender Email Address</label>
+                      <input
+                        type="email"
+                        value={emailConfig.senderEmail}
+                        onChange={(e) => setEmailConfig((prev) => ({ ...prev, senderEmail: e.target.value }))}
+                        placeholder="noreply@vynotes.app"
+                        className="w-full px-3 py-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50"
+                      />
+                      <p className="text-[11px] text-slate-500">
+                        Must match an authorized sender domain in Brevo.
+                      </p>
+                    </div>
+
+                    {/* Sender Name */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-300">Sender Display Name</label>
+                      <input
+                        type="text"
+                        value={emailConfig.senderName}
+                        onChange={(e) => setEmailConfig((prev) => ({ ...prev, senderName: e.target.value }))}
+                        placeholder="VyNotes Security"
+                        className="w-full px-3 py-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50"
+                      />
+                      <p className="text-[11px] text-slate-500">
+                        Name shown to users when receiving password reset OTP emails.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Save button and Test Dispatch row */}
+                  <div className="pt-4 border-t border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <button
+                      onClick={handleSaveEmailConfig}
+                      disabled={isSavingEmailConfig}
+                      className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
+                    >
+                      {isSavingEmailConfig ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Saving Brevo Configuration...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Save Brevo Credentials</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Test Email Dispatch box */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="email"
+                        value={testEmailAddress}
+                        onChange={(e) => setTestEmailAddress(e.target.value)}
+                        placeholder="admin@example.com"
+                        className="px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50 w-52"
+                      />
+                      <button
+                        onClick={handleSendTestEmail}
+                        disabled={isSendingTestEmail || (!emailConfig.isConfigured && !emailConfig.apiKey)}
+                        className="px-4 py-2 bg-white/5 hover:bg-white/10 disabled:opacity-40 text-slate-200 border border-white/10 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap"
+                      >
+                        {isSendingTestEmail ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Send className="w-3.5 h-3.5 text-blue-400" />
+                        )}
+                        <span>Send Test Email</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Live test alert banner */}
+                  {emailTestResult && (
+                    <div className={`p-4 rounded-2xl border text-xs flex items-center justify-between ${
+                      emailTestResult.success
+                        ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+                        : "bg-red-500/10 text-red-300 border-red-500/20"
+                    }`}>
+                      <div className="flex items-center gap-2.5">
+                        {emailTestResult.success ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                        )}
+                        <span>{emailTestResult.message}</span>
+                      </div>
+                      <button
+                        onClick={() => setEmailTestResult(null)}
+                        className="text-slate-400 hover:text-white text-[11px] underline ml-4"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

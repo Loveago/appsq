@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, Headers } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Headers, Query } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -6,6 +6,11 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 @Controller('billing')
 export class BillingController {
   constructor(private readonly billingService: BillingService) {}
+
+  @Get('public-config')
+  async getPublicConfig(@Query('platform') platform?: string) {
+    return this.billingService.getPublicSubscriptionConfig(platform);
+  }
 
   @Post('webhook/revenuecat')
   async revenueCatWebhook(

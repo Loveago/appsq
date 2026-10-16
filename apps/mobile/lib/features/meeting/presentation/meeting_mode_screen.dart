@@ -1227,7 +1227,7 @@ class _MeetingModeScreenState extends State<MeetingModeScreen>
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'Meeting Mode is available exclusively on Mindora Pro. Upgrade to unlock multi-speaker diarization and continuous meeting intelligence.',
+                  'Meeting Mode is available exclusively on VyNotes Pro. Upgrade to unlock multi-speaker diarization and continuous meeting intelligence.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.darkTextSecondary, fontSize: 13, height: 1.5),
                 ),

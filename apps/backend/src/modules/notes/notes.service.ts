@@ -143,6 +143,12 @@ export class NotesService {
       data: { deletedAt: new Date() },
     });
 
+    // Cancel any active reminders associated with this note to prevent dead navigation
+    await this.prisma.reminder.updateMany({
+      where: { noteId: id, status: { in: ['PENDING', 'SNOOZED'] } },
+      data: { status: 'CANCELLED' },
+    }).catch(() => null);
+
     return { success: true, deletedNoteId: id };
   }
 }

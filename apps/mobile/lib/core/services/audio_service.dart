@@ -60,6 +60,36 @@ class AudioRecordingService {
 
   AudioRecordingService._();
 
+  /// Resolves an audio file path that might be stored as an absolute path or relative to documents directory
+  static Future<String> resolveAudioPath(String path) async {
+    if (path.isEmpty || path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    final file = File(path);
+    if (file.existsSync()) {
+      return path;
+    }
+    // Check if path is relative or if app sandbox directory changed across installs
+    try {
+      final docDir = await getApplicationDocumentsDirectory();
+      // If path contains 'recordings/', extract from there
+      if (path.contains('recordings/')) {
+        final relPart = path.substring(path.indexOf('recordings/'));
+        final candidate = '${docDir.path}/$relPart';
+        if (File(candidate).existsSync()) {
+          return candidate;
+        }
+      }
+      // Check direct filename in recordings
+      final filename = path.split(Platform.pathSeparator).last;
+      final inRec = '${docDir.path}/recordings/$filename';
+      if (File(inRec).existsSync()) {
+        return inRec;
+      }
+    } catch (_) {}
+    return path;
+  }
+
   RecordingStatus get status => _status;
   bool get isRecording => _status == RecordingStatus.recording;
   bool get isPaused => _status == RecordingStatus.paused;

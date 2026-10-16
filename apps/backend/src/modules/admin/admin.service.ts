@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { BillingService } from '../billing/billing.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import OpenAI from 'openai';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly billingService: BillingService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // ==========================================
@@ -223,6 +225,19 @@ export class AdminService {
             lastActiveAt: true,
             lastLoginAt: true,
             createdAt: true,
+            subscriptions: {
+              where: { status: 'ACTIVE' },
+              take: 1,
+              select: {
+                id: true,
+                provider: true,
+                status: true,
+                autoRenewing: true,
+                expiresAt: true,
+                store: true,
+                productId: true,
+              },
+            },
             _count: {
               select: {
                 notes: true,
@@ -297,6 +312,10 @@ export class AdminService {
         lastLoginAt: true,
         createdAt: true,
         updatedAt: true,
+        subscriptions: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+        },
         _count: {
           select: {
             notes: true,
@@ -948,19 +967,41 @@ export class AdminService {
       title: string;
       message: string;
       targetTier?: string;
+      category?: string;
+      priority?: string;
+      channel?: string;
       actionUrl?: string;
       actionLabel?: string;
+      scheduledFor?: string;
       expiresAt?: string;
+      publishImmediately?: boolean;
     },
   ) {
+    if (!dto.title || dto.title.trim().length === 0) {
+      throw new BadRequestException('Announcement title is required');
+    }
+    if (!dto.message || dto.message.trim().length === 0) {
+      throw new BadRequestException('Announcement message is required');
+    }
+
+    const scheduledDate = dto.scheduledFor ? new Date(dto.scheduledFor) : null;
+    const expiresDate = dto.expiresAt ? new Date(dto.expiresAt) : null;
+
     const announcement = await this.prisma.announcement.create({
       data: {
-        title: dto.title,
-        message: dto.message,
+        title: dto.title.trim(),
+        message: dto.message.trim(),
         targetTier: dto.targetTier || 'ALL',
+        category: dto.category || 'ANNOUNCEMENT',
+        priority: dto.priority || 'NORMAL',
+        channel: dto.channel || 'BOTH',
         actionUrl: dto.actionUrl,
         actionLabel: dto.actionLabel,
-        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+        status: dto.publishImmediately ? 'DRAFT' : (scheduledDate ? 'SCHEDULED' : 'DRAFT'),
+        scheduledFor: scheduledDate,
+        expiresAt: expiresDate,
+        createdByAdminId: admin.id,
+        isActive: true,
       },
     });
 
@@ -970,10 +1011,193 @@ export class AdminService {
       action: 'CREATE_ANNOUNCEMENT',
       targetType: 'ANNOUNCEMENT',
       targetId: announcement.id,
-      details: { title: dto.title, targetTier: dto.targetTier },
+      details: {
+        title: dto.title,
+        targetTier: dto.targetTier,
+        channel: dto.channel,
+        priority: dto.priority,
+      },
     });
 
+    if (dto.publishImmediately) {
+      return this.publishAnnouncement(admin, announcement.id);
+    }
+
     return announcement;
+  }
+
+  /**
+   * Authoritative batch publisher for announcements across target tiers
+   */
+  async publishAnnouncement(admin: { id: string; email: string }, id: string) {
+    const announcement = await this.prisma.announcement.findUnique({
+      where: { id },
+    });
+
+    if (!announcement) {
+      throw new NotFoundException('Announcement not found');
+    }
+
+    if (announcement.status === 'PUBLISHED') {
+      throw new BadRequestException('Announcement is already published');
+    }
+
+    // Determine target audience query based on authoritative server tier
+    const userWhere: any = {
+      accountStatus: { not: 'DELETED' },
+      isSuspended: false,
+    };
+
+    if (announcement.targetTier === 'FREE') {
+      userWhere.subscriptionTier = 'FREE';
+      userWhere.plan = 'FREE';
+    } else if (announcement.targetTier === 'TRIAL') {
+      userWhere.plan = 'TRIAL';
+    } else if (announcement.targetTier === 'PRO') {
+      userWhere.OR = [{ subscriptionTier: 'PRO' }, { plan: 'PRO' }];
+    }
+
+    const totalTargeted = await this.prisma.user.count({ where: userWhere });
+
+    // Mark as publishing
+    await this.prisma.announcement.update({
+      where: { id },
+      data: { status: 'PUBLISHING', totalTargeted },
+    });
+
+    // Chunked batch delivery in batches of 50
+    const batchSize = 50;
+    let deliveredCount = 0;
+    let failedCount = 0;
+
+    for (let skip = 0; skip < totalTargeted; skip += batchSize) {
+      const users = await this.prisma.user.findMany({
+        where: userWhere,
+        select: { id: true },
+        skip,
+        take: batchSize,
+      });
+
+      for (const u of users) {
+        try {
+          const idempotencyKey = `announcement_${announcement.id}_${u.id}`;
+          const res = await this.notificationsService.createNotification({
+            userId: u.id,
+            title: announcement.title,
+            body: announcement.message,
+            category: 'ANNOUNCEMENT',
+            priority: announcement.priority as any,
+            channel: announcement.channel as any,
+            deepLink: announcement.actionUrl || `mindora://announcements/${announcement.id}`,
+            targetType: 'ANNOUNCEMENT',
+            targetId: announcement.id,
+            expiresAt: announcement.expiresAt || undefined,
+            idempotencyKey,
+          });
+
+          if (res) {
+            deliveredCount++;
+          }
+        } catch {
+          failedCount++;
+        }
+      }
+    }
+
+    const published = await this.prisma.announcement.update({
+      where: { id },
+      data: {
+        status: 'PUBLISHED',
+        publishedAt: new Date(),
+        totalTargeted,
+        deliveredCount,
+        failedCount,
+        isActive: true,
+      },
+    });
+
+    await this.logAdminAction({
+      adminId: admin.id,
+      adminEmail: admin.email,
+      action: 'PUBLISH_ANNOUNCEMENT',
+      targetType: 'ANNOUNCEMENT',
+      targetId: id,
+      details: {
+        title: announcement.title,
+        targetTier: announcement.targetTier,
+        totalTargeted,
+        deliveredCount,
+        failedCount,
+      },
+    });
+
+    return published;
+  }
+
+  /**
+   * Retract / cancel a broadcast announcement
+   */
+  async retractAnnouncement(admin: { id: string; email: string }, id: string) {
+    const announcement = await this.prisma.announcement.findUnique({ where: { id } });
+    if (!announcement) {
+      throw new NotFoundException('Announcement not found');
+    }
+
+    const updated = await this.prisma.announcement.update({
+      where: { id },
+      data: {
+        status: 'RETRACTED',
+        isActive: false,
+        retractedAt: new Date(),
+      },
+    });
+
+    // Suppress unread or pending notifications linked to this announcement
+    await this.prisma.notification.updateMany({
+      where: { targetId: id, targetType: 'ANNOUNCEMENT' },
+      data: { deliveryStatus: 'CANCELLED' },
+    }).catch(() => null);
+
+    await this.logAdminAction({
+      adminId: admin.id,
+      adminEmail: admin.email,
+      action: 'RETRACT_ANNOUNCEMENT',
+      targetType: 'ANNOUNCEMENT',
+      targetId: id,
+      details: { title: announcement.title },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Get announcement delivery stats
+   */
+  async getAnnouncementStats(id: string) {
+    const announcement = await this.prisma.announcement.findUnique({ where: { id } });
+    if (!announcement) {
+      throw new NotFoundException('Announcement not found');
+    }
+
+    const unreadCount = await this.prisma.notification.count({
+      where: { targetId: id, targetType: 'ANNOUNCEMENT', isRead: false },
+    });
+    const readCount = await this.prisma.notification.count({
+      where: { targetId: id, targetType: 'ANNOUNCEMENT', isRead: true },
+    });
+
+    return {
+      id: announcement.id,
+      title: announcement.title,
+      status: announcement.status,
+      targetTier: announcement.targetTier,
+      totalTargeted: announcement.totalTargeted,
+      deliveredCount: announcement.deliveredCount,
+      failedCount: announcement.failedCount,
+      readCount,
+      unreadCount,
+      publishedAt: announcement.publishedAt,
+    };
   }
 
   async deleteAnnouncement(admin: { id: string; email: string }, id: string) {

@@ -5,8 +5,8 @@ plugins {
 }
 
 android {
-    namespace = "com.example.mindora_mobile"
-    compileSdk = flutter.compileSdkVersion
+    namespace = "com.vynotes.crazytech"
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -15,7 +15,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "ai.mindora.app"
+        applicationId = "com.vynotes.crazytech"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION

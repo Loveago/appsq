@@ -13,6 +13,7 @@ import {
   ExtractedContextSchema,
   MeetingDistillationSchema,
   DailyBriefingSchema,
+  SmartDocumentExtractionSchema,
 } from './schemas/extraction.schema';
 import { BillingService } from '../billing/billing.service';
 
@@ -175,33 +176,52 @@ export class AiService {
     const { client, model, providerName } = await this.getAiClient();
     if (client) {
       try {
-        const prompt = `You are Mindora AI, an executive context extraction system.
-Analyze the following user input and return a pure JSON object adhering strictly to this schema:
+        const systemPrompt = `You are Mindora AI's Master General-Purpose Task Extraction Engine.
+Your objective is to deeply understand any content (notes, cooking instructions, technical documentation, study plans, business procedures, shopping lists, meeting transcripts, travel plans, fitness routines, personal thoughts) and extract structured, actionable tasks.
+
+CRITICAL EXTRACTION GUIDELINES:
+1. PROCEDURAL STEPS: Notes explaining how to do something (e.g. preparing Banku, baking bread, installing Docker, repairing equipment, onboarding a client) contain clear sequential actions even if they never use the word "task" or "todo". Extract the meaningful steps, preserve their sequential order (stepNumber: 1, 2, ...), and retain crucial quantities, timings, temperatures, and conditions in description.
+2. EXPLICIT ACTIONS: Extract direct commitments, requests, or obligations ("Need to email client", "Submit assignment by Friday").
+3. PREREQUISITES & RESOURCES: Identify items to acquire or prepare before starting (ingredients to buy, tools to gather, software prerequisites). Categorize appropriately (PURCHASE or PREPARATION).
+4. SUGGESTIONS vs COMMITMENTS: Do not convert mere speculative musings, quoted historical facts, or passive descriptions into tasks. Mark optional recommendations with isSuggestion: true.
+5. ZERO HALLUCINATION: Ground every task strictly in the source text. Do not invent unmentioned steps or dates.
+
+Return a pure JSON object conforming strictly to this schema:
 {
-  "people": ["Name1", "Name2"],
-  "projects": ["Project Name"],
-  "deadlines": ["Due Date/Time or Tomorrow"],
+  "suggestedTitle": "Actionable concise title representing the note",
+  "summary": "1-2 sentence overview of the content and its purpose",
+  "people": ["Extracted person names or empty list"],
+  "projects": ["Extracted project/subject name e.g. Cooking, Technical, Work"],
+  "deadlines": ["Mentioned deadlines/dates or empty list"],
   "tasks": [
     {
-      "title": "Clear action verb task description",
+      "title": "Clear action-oriented task title (e.g. 'Mix corn dough and cassava dough with water')",
+      "description": "Full procedural detail, quantities, timing, or conditions (e.g. '2 parts corn dough to 1 part cassava dough, smooth out lumps')",
       "priority": "LOW" | "MEDIUM" | "HIGH" | "URGENT",
-      "dueDate": "YYYY-MM-DD or readable deadline or null"
+      "dueDate": "YYYY-MM-DD or readable deadline or null",
+      "category": "Cooking" | "Shopping" | "Technical" | "Work" | "Study" | "Personal" | "General",
+      "taskType": "EXPLICIT" | "PROCEDURAL" | "PURCHASE" | "PREPARATION" | "FOLLOWUP" | "SUGGESTION",
+      "stepNumber": 1 | 2 | null,
+      "dependencies": ["Step or task that must precede this"],
+      "quantity": "Amount/measurement if applicable or null",
+      "isPrerequisite": false,
+      "isSuggestion": false,
+      "confidence": 0.95
     }
   ],
-  "relatedTopics": ["Topic1", "Topic2"],
-  "suggestedTitle": "Short punchy executive title"
+  "relatedTopics": ["Relevant topic keywords"]
 }
-
-User input:
-"""${content}"""
 
 Return ONLY valid JSON without markdown formatting or codeblocks.`;
 
         const completion = await client.chat.completions.create({
           model,
-          messages: [{ role: 'user', content: prompt }],
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Input content to extract tasks from:\n"""${content}"""` },
+          ],
           temperature: 0.1,
-          max_tokens: 400,
+          max_tokens: 2000,
         });
 
         const raw = completion.choices[0]?.message?.content?.trim();
@@ -211,78 +231,259 @@ Return ONLY valid JSON without markdown formatting or codeblocks.`;
           return ExtractedContextSchema.parse(parsed) as unknown as ExtractedContextResult;
         }
       } catch (err: any) {
-        console.warn(`LLM extractContext failed with provider ${providerName}, falling back to heuristic parsing:`, err);
+        console.warn(`LLM extractContext failed with provider ${providerName}, falling back to general heuristic parsing:`, err);
       }
     }
 
-    // Dynamic heuristic parser based on user's actual text
+    // High-fidelity general-purpose heuristic parser when LLM is offline
+    const lines = content.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
     const words = content.toLowerCase();
     const people: string[] = [];
-    const tasks: Array<{ title: string; priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'; dueDate: string | null }> = [];
+    const tasks: any[] = [];
     const projects: string[] = [];
     const deadlines: string[] = [];
 
-    // Extract dynamic capitalised names if present
+    // Capitalized name detection
     const nameMatches = content.match(/\b([A-Z][a-z]{2,})\b/g) || [];
     for (const name of nameMatches) {
-      if (!['The', 'This', 'That', 'With', 'From', 'Need', 'Have', 'Will', 'Must', 'Tomorrow', 'Today'].includes(name) && !people.includes(name)) {
+      if (!['The', 'This', 'That', 'With', 'From', 'Need', 'Have', 'Will', 'Must', 'Tomorrow', 'Today', 'First', 'Then', 'Step', 'Note'].includes(name) && !people.includes(name)) {
         people.push(name);
       }
     }
 
-    if (words.includes('website') || words.includes('web')) projects.push('Website Project');
-    if (words.includes('delivery')) projects.push('Delivery App');
-    if (words.includes('stripe') || words.includes('payment')) projects.push('Finance');
+    // Infer subject/category
+    let detectedCategory = 'General';
+    if (words.includes('banku') || words.includes('recipe') || words.includes('cook') || words.includes('bake') || words.includes('dough') || words.includes('ingredient')) {
+      detectedCategory = 'Cooking';
+      projects.push(words.includes('banku') ? 'Banku Preparation' : 'Culinary & Cooking');
+    } else if (words.includes('buy') || words.includes('grocery') || words.includes('store') || words.includes('market')) {
+      detectedCategory = 'Shopping';
+      projects.push('Shopping & Errands');
+    } else if (words.includes('install') || words.includes('docker') || words.includes('server') || words.includes('code') || words.includes('bug')) {
+      detectedCategory = 'Technical';
+      projects.push('Technical & Dev');
+    } else if (words.includes('exam') || words.includes('lecture') || words.includes('study') || words.includes('chapter')) {
+      detectedCategory = 'Study';
+      projects.push('Academic & Study');
+    } else if (words.includes('website') || words.includes('client') || words.includes('payment') || words.includes('stripe')) {
+      detectedCategory = 'Work';
+      projects.push(words.includes('website') || words.includes('web') ? 'Website Project' : 'Work Projects');
+    }
 
-    if (words.includes('september')) deadlines.push('Before September 01');
     if (words.includes('tomorrow')) deadlines.push('Tomorrow');
+    if (words.includes('today')) deadlines.push('Today');
+    if (words.includes('friday')) deadlines.push('Friday');
 
-    // Detect tasks from lines or keywords
-    const lines = content.split('\n');
+    // General-purpose procedural & actionable line parser
+    let currentStep = 1;
     for (const line of lines) {
-      const trimmed = line.trim().replace(/^[-*•\d.]\s*/, '');
-      if (
-        trimmed.toLowerCase().includes('need to') ||
-        trimmed.toLowerCase().includes('finish') ||
-        trimmed.toLowerCase().includes('call') ||
-        trimmed.toLowerCase().includes('review') ||
-        trimmed.toLowerCase().includes('send') ||
-        trimmed.toLowerCase().includes('create') ||
-        trimmed.toLowerCase().includes('do')
-      ) {
+      const lLower = line.toLowerCase();
+      const isBulletOrNum = /^(\d+[.)]|\*|-|•|\[[ xX]?\])\s+/.test(line);
+      const cleanLine = line.replace(/^(\d+[.)]|\*|-|•|\[[ xX]?\])\s+/, '').trim();
+
+      // Check for procedural/action indicators
+      const hasActionVerb = /^(mix|stir|cook|knead|add|boil|pour|heat|combine|wash|cut|slice|prepare|gather|install|run|configure|setup|deploy|review|check|submit|send|call|email|write|update|verify|ensure|create|buy|order|purchase)\b/i.test(cleanLine);
+      const hasExplicitMarker = lLower.includes('need to') || lLower.includes('must') || lLower.includes('todo') || lLower.includes('action:') || lLower.includes('step');
+
+      const cleanLower = cleanLine.toLowerCase();
+      if (isBulletOrNum || hasActionVerb || hasExplicitMarker) {
+        const isPurchase = cleanLower.startsWith('buy') || cleanLower.startsWith('order') || cleanLower.startsWith('purchase');
+        const isProcedural = !isPurchase && (isBulletOrNum || hasActionVerb || lLower.includes('step'));
+
         tasks.push({
-          title: trimmed.replace(/^(i need to|we need to|please|todo:)\s+/i, '').trim(),
+          title: cleanLine.replace(/^(i need to|we need to|todo:|action:)\s+/i, '').trim(),
+          description: line !== cleanLine ? line : null,
           priority: isPro ? 'HIGH' : 'MEDIUM',
-          dueDate: words.includes('tomorrow') ? 'Tomorrow' : words.includes('today') ? 'Today' : null,
+          dueDate: lLower.includes('tomorrow') ? 'Tomorrow' : lLower.includes('today') ? 'Today' : null,
+          category: detectedCategory,
+          taskType: isPurchase ? 'PURCHASE' : (isProcedural ? 'PROCEDURAL' : 'EXPLICIT'),
+          stepNumber: isProcedural ? currentStep++ : null,
+          dependencies: [],
+          quantity: null,
+          isPrerequisite: false,
+          isSuggestion: false,
+          confidence: 0.88,
         });
       }
     }
 
-    if (tasks.length === 0 && lines.length > 0 && lines[0].trim().length > 3) {
-      tasks.push({
-        title: lines[0].trim().slice(0, 80),
-        priority: 'MEDIUM',
-        dueDate: null,
-      });
-    }
+    // If no actionable or procedural tasks were found, tasks remain empty to avoid hallucinations
 
-    const firstLine = lines[0]?.trim() || '';
-    const suggestedTitle = firstLine.length > 5 && firstLine.length < 50
-      ? firstLine
-      : people.length > 0
-      ? `Notes with ${people.slice(0, 2).join(' & ')}`
-      : 'Quick Capture';
+    const firstLine = lines[0] || 'Note Tasks';
+    const suggestedTitle = firstLine.length < 50 && !firstLine.includes('.') ? firstLine : (projects[0] || 'Extracted Tasks');
 
     const rawResult = {
       people,
       projects: projects.length > 0 ? projects : ['General'],
       deadlines: deadlines.length > 0 ? deadlines : ['No fixed deadline'],
       tasks,
-      relatedTopics: ['Productivity', 'Action Items'],
+      relatedTopics: [detectedCategory, 'Productivity'],
       suggestedTitle,
+      summary: lines.slice(0, 2).join(' '),
     };
 
     return ExtractedContextSchema.parse(rawResult) as unknown as ExtractedContextResult;
+  }
+
+  async extractSmartDocument(
+    content: string,
+    userId?: string,
+    imageHint?: { ocrConfidence?: number; detectedType?: string; isHandwritten?: boolean },
+  ): Promise<any> {
+    if (userId) {
+      await this.checkAndTrackQuota(userId, 1500);
+    }
+
+    const { client, model, providerName } = await this.getAiClient();
+    if (client) {
+      try {
+        const systemPrompt = `You are Mindora AI's Master Document and Handwritten Notes Intelligence Engine.
+Your role is to deeply analyze, classify, and extract structured knowledge from scanned documents, receipts, handwritten notes, recipes, and cookbooks.
+
+STRICT PRINCIPLES:
+1. ZERO HALLUCINATION: Do NOT invent ingredients, measurements, dates, or tasks that are not present or heavily implied.
+2. UNCERTAIN / AMBIGUOUS ITEMS: If handwriting or text is ambiguous, smudge-prone, or low confidence, populate "uncertainItems" with the snippet, best guess, and reason rather than inventing a confident fact.
+3. RECIPES & COOKBOOKS:
+   - Identify whether the document is a single recipe or a multi-recipe cookbook/page.
+   - For recipes: Separate Ingredients (with exact quantity, unit, preparation method e.g. "diced", "sifted") from Preparation and Cooking steps.
+   - Generate a clean consolidated "shoppingListItems" list (aggregating ingredients and standardizing quantities).
+   - Differentiate "prepTasks" (washing, slicing, measuring, preheating) from "cookingTasks" (baking, boiling, simmering with time/temp/parallelization flags).
+4. TASKS & ACTIONABILITY:
+   - Separate explicit user commitments from ambient ideas or suggestions ("isExplicitCommitment").
+   - Categorize tasks accurately: SHOPPING, PREPARATION, COOKING, WORK, STUDY, ERRAND, GENERAL.
+5. DOCUMENT TYPES:
+   Must be one of: RECIPE, COOKBOOK, SHOPPING_LIST, MEETING_NOTES, STUDY_NOTES, PROJECT_PLAN, RECEIPT_EXPENSES, GENERAL_NOTE.
+
+Return a pure JSON object adhering strictly to the SmartDocumentExtractionSchema. Do not wrap in markdown or backticks.`;
+
+        const userPrompt = `Input document text:
+"""${content}"""
+
+Metadata hints:
+OCR Confidence: ${imageHint?.ocrConfidence ?? 0.9}
+Detected Type Hint: ${imageHint?.detectedType ?? 'GENERAL'}
+Is Handwritten: ${imageHint?.isHandwritten ?? false}`;
+
+        const completion = await client.chat.completions.create({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.15,
+          max_tokens: 2500,
+        });
+
+        const raw = completion.choices[0]?.message?.content?.trim();
+        if (raw) {
+          const cleaned = raw.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+          const parsed = JSON.parse(cleaned);
+          const validated = SmartDocumentExtractionSchema.parse(parsed);
+
+          if (userId && this.billingService) {
+            const totalTokens = completion.usage?.total_tokens || 800;
+            await this.billingService.recordAiTokenUsage(userId, totalTokens, {
+              feature: 'SMART_DOCUMENT_EXTRACTION',
+              model,
+            }).catch(() => {});
+          }
+
+          return validated;
+        }
+      } catch (err) {
+        console.warn(`Smart document extraction failed via provider ${providerName}:`, err);
+      }
+    }
+
+    // Heuristic fallback for smart document extraction
+    const lower = content.toLowerCase();
+    const isRecipe = lower.includes('ingredient') || lower.includes('recipe') || lower.includes('cup') || lower.includes('tbsp') || lower.includes('tsp') || lower.includes('bake') || lower.includes('preheat');
+    const isShopping = lower.includes('buy') || lower.includes('grocery') || lower.includes('market') || lower.includes('store');
+    const lines = content.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+
+    const docType = isRecipe ? 'RECIPE' : isShopping ? 'SHOPPING_LIST' : 'GENERAL_NOTE';
+    const title = lines.length > 0 && lines[0].length < 60 ? lines[0] : (isRecipe ? 'Extracted Recipe' : 'Scanned Document');
+
+    const ingredients: any[] = [];
+    const shoppingList: string[] = [];
+    const prepTasks: any[] = [];
+    const cookingTasks: any[] = [];
+    const generalTasks: any[] = [];
+
+    let currentSection = 'general';
+    let stepNum = 1;
+
+    for (const line of lines) {
+      const l = line.toLowerCase();
+      if (l.includes('ingredient')) {
+        currentSection = 'ingredients';
+        continue;
+      } else if (l.includes('instruction') || l.includes('direction') || l.includes('method') || l.includes('preparation')) {
+        currentSection = 'instructions';
+        continue;
+      }
+
+      if (currentSection === 'ingredients' || (isRecipe && /^\d+(\s*[/.]\d+)?\s*(cup|tbsp|tsp|g|kg|oz|ml|lb|clove|slice|pinch)/i.test(line))) {
+        const rawIng = line.replace(/^[-*•]\s*/, '').trim();
+        ingredients.push({
+          raw: rawIng,
+          name: rawIng,
+          quantity: null,
+          unit: null,
+          preparation: null,
+          isOptional: rawIng.toLowerCase().includes('optional'),
+          alternatives: [],
+        });
+        shoppingList.push(rawIng);
+      } else if (currentSection === 'instructions' || isRecipe) {
+        const isCook = l.includes('bake') || l.includes('boil') || l.includes('simmer') || l.includes('fry') || l.includes('roast') || l.includes('cook');
+        const taskObj = {
+          stepNumber: stepNum++,
+          instruction: line.replace(/^[-*•\d.]\s*/, '').trim(),
+          phase: isCook ? 'COOK' : 'PREP',
+          estimatedMinutes: null,
+          temperature: null,
+          equipment: [],
+          canRunInParallel: false,
+          safetyWarning: null,
+        };
+        if (isCook) {
+          cookingTasks.push(taskObj);
+        } else {
+          prepTasks.push(taskObj);
+        }
+      } else {
+        if (line.startsWith('-') || line.startsWith('*') || l.includes('need to') || l.includes('todo')) {
+          generalTasks.push({
+            title: line.replace(/^[-*•]\s*/, '').trim(),
+            category: 'GENERAL',
+            priority: 'MEDIUM',
+            dueDate: null,
+            isExplicitCommitment: true,
+            dependencies: [],
+          });
+        }
+      }
+    }
+
+    return {
+      documentType: docType,
+      title,
+      summary: lines.slice(0, 3).join(' '),
+      confidenceScore: imageHint?.ocrConfidence ?? 0.85,
+      isRecipe,
+      servings: null,
+      prepTimeMinutes: null,
+      cookTimeMinutes: null,
+      ingredients,
+      shoppingListItems: shoppingList,
+      prepTasks,
+      cookingTasks,
+      detectedRecipes: [],
+      actionableTasks: generalTasks,
+      uncertainItems: [],
+      metadata: {},
+    };
   }
 
   async summarizeNote(content: string, userId?: string): Promise<string> {

@@ -487,6 +487,25 @@ class _TasksScreenViewState extends ConsumerState<_TasksScreenView> {
                               color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
                             ),
                           ),
+                          if (task.stepNumber != null) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'STEP ${task.stepNumber}',
+                                style: TextStyle(
+                                  fontSize: 8.5,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.5,
+                                  color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ],
                           if (task.isAiExtracted) ...[
                             const SizedBox(width: 8),
                             Container(
@@ -539,6 +558,20 @@ class _TasksScreenViewState extends ConsumerState<_TasksScreenView> {
                               : (isDark ? AppColors.darkTextPrimary : AppColors.textPrimary),
                         ),
                       ),
+
+                      if (task.description != null && task.description!.trim().isNotEmpty && task.description!.trim() != task.title.trim()) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          task.description!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w400,
+                            color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                          ),
+                        ),
+                      ],
 
                       if (task.sourceNote != null) ...[
                         const SizedBox(height: 8),

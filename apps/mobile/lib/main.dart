@@ -16,6 +16,8 @@ import 'features/paywall/presentation/paywall_screen.dart';
 import 'core/network/api_client.dart';
 import 'core/storage/local_storage_service.dart';
 import 'core/providers/app_state_providers.dart';
+import 'core/services/revenuecat_service.dart';
+import 'core/services/ad_service.dart';
 
 void main() {
   runZonedGuarded(() async {
@@ -79,6 +81,15 @@ void main() {
   } catch (e) {
     debugPrint('Error loading smart lists: $e');
   }
+
+  unawaited(RevenueCatService.instance.initialize().catchError((e) {
+    debugPrint('RevenueCatService background init notice: $e');
+  }));
+
+  final isInitialPro = savedProfile?.isPro == true;
+  unawaited(AdService.instance.initialize(isPro: isInitialPro).catchError((e) {
+    debugPrint('AdService background init notice: $e');
+  }));
 
     runApp(
       ProviderScope(
@@ -233,7 +244,7 @@ class _MindoraAppState extends ConsumerState<MindoraApp> {
     final isAuthenticated = ref.watch(isAuthenticatedProvider);
 
     return MaterialApp(
-      title: 'Mindora',
+      title: 'VyNotes',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,

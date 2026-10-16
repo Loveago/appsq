@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/widgets/fade_slide_in.dart';
@@ -22,22 +23,14 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _serverUrlController = TextEditingController();
 
   String? _errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    _serverUrlController.text = ApiClient.instance.currentBaseUrl;
-  }
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _serverUrlController.dispose();
     super.dispose();
   }
 
@@ -45,7 +38,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
     final fullName = _nameController.text.trim();
-    final serverUrl = _serverUrlController.text.trim();
 
     if (email.isEmpty || !email.contains('@')) {
       setState(() => _errorMessage = 'Please enter a valid email address');
@@ -66,10 +58,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       _isLoading = true;
       _errorMessage = null;
     });
-
-    if (serverUrl.isNotEmpty) {
-      ApiClient.instance.updateBaseUrl(serverUrl);
-    }
 
     try {
       Map<String, dynamic> result;
@@ -110,97 +98,256 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     }
   }
 
-  void _showServerSettingsModal(bool isDark) {
+  Future<void> _handleGoogleSignIn() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final googleSignIn = GoogleSignIn(
+        scopes: ['email', 'profile'],
+      );
+      final account = await googleSignIn.signIn();
+      if (account == null) {
+        setState(() => _isLoading = false);
+        return; // User cancelled
+      }
+
+      final auth = await account.authentication;
+      final idToken = auth.idToken ?? '';
+
+      final result = await ApiClient.instance.signInWithGoogle(
+        idToken: idToken,
+        email: account.email,
+        fullName: account.displayName,
+        avatarUrl: account.photoUrl,
+      );
+
+      final userData = result['user'] as Map<dynamic, dynamic>? ?? {};
+      final returnedEmail = userData['email']?.toString() ?? account.email;
+      final returnedName = userData['fullName']?.toString() ?? account.displayName ?? 'VyNotes User';
+      final isPro = userData['subscriptionTier'] == 'PRO';
+      final tokensUsed = (userData['monthlyAiTokensUsed'] as num?)?.toInt() ?? 0;
+
+      ref.read(userProfileProvider.notifier).setUser(
+        email: returnedEmail,
+        fullName: returnedName,
+        isPro: isPro,
+        monthlyAiTokensUsed: tokensUsed,
+      );
+
+      if (!mounted) return;
+      widget.onAuthSuccess();
+    } catch (err) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Google Sign-In failed. Please try again or use email.';
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _showForgotPasswordModal(bool isDark) {
+    final resetEmailController = TextEditingController(text: _emailController.text.trim());
+    final otpController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    bool codeSent = false;
+    bool isSubmitting = false;
+    String? modalError;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).viewInsets.bottom + 24),
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurface : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border.all(
-              color: isDark ? AppColors.darkBorderHighlight : AppColors.surfaceBorder,
-              width: 0.8,
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: isDark ? AppColors.darkBorderHighlight : Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF131722) : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                border: Border.all(
+                  color: isDark ? AppColors.darkBorderHighlight : AppColors.surfaceBorder,
+                  width: 0.8,
                 ),
               ),
-              const SizedBox(height: 16),
-              Text(
-                'Backend API Server',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Set your deployed Render backend URL or local test IP:',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 14),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: BoxDecoration(
-                  color: isDark ? AppColors.darkSurfaceSubtle : AppColors.surfaceSubtle,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
-                    width: 0.8,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isDark ? AppColors.darkBorderHighlight : Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
                   ),
-                ),
-                child: TextField(
-                  controller: _serverUrlController,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                  const SizedBox(height: 18),
+                  Text(
+                    codeSent ? 'Enter Verification Code' : 'Reset Your Password',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                    ),
                   ),
-                  decoration: const InputDecoration(
-                    hintText: 'https://mindora-backend.onrender.com',
-                    border: InputBorder.none,
+                  const SizedBox(height: 6),
+                  Text(
+                    codeSent
+                        ? 'Enter the 6-digit verification code sent via Brevo to ${resetEmailController.text} and your new password.'
+                        : 'Enter your registered email address. We will send you a 6-digit verification code.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                      height: 1.4,
+                    ),
                   ),
-                ),
+                  if (modalError != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      modalError!,
+                      style: const TextStyle(fontSize: 12, color: AppColors.rose, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  if (!codeSent) ...[
+                    _buildTextField(
+                      controller: resetEmailController,
+                      hintText: 'account@example.com',
+                      icon: Icons.alternate_email_rounded,
+                      isDark: isDark,
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 18),
+                    ElevatedButton(
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              final email = resetEmailController.text.trim();
+                              if (email.isEmpty || !email.contains('@')) {
+                                setModalState(() => modalError = 'Please enter a valid email address');
+                                return;
+                              }
+                              setModalState(() {
+                                isSubmitting = true;
+                                modalError = null;
+                              });
+                              try {
+                                await ApiClient.instance.forgotPassword(email);
+                                setModalState(() {
+                                  isSubmitting = false;
+                                  codeSent = true;
+                                });
+                              } catch (e) {
+                                setModalState(() {
+                                  isSubmitting = false;
+                                  modalError = 'Could not request code: $e';
+                                });
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: isSubmitting
+                          ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text(
+                              'Send Verification Code',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            ),
+                    ),
+                  ] else ...[
+                    _buildTextField(
+                      controller: otpController,
+                      hintText: '6-digit code (e.g. 123456)',
+                      icon: Icons.shield_outlined,
+                      isDark: isDark,
+                      keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildTextField(
+                      controller: newPasswordController,
+                      hintText: 'New password (min 6 characters)',
+                      icon: Icons.lock_outline_rounded,
+                      isDark: isDark,
+                      obscureText: true,
+                    ),
+                    const SizedBox(height: 18),
+                    ElevatedButton(
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              final email = resetEmailController.text.trim();
+                              final code = otpController.text.trim();
+                              final newPass = newPasswordController.text.trim();
+
+                              if (code.length < 6) {
+                                setModalState(() => modalError = 'Please enter the 6-digit code');
+                                return;
+                              }
+                              if (newPass.length < 6) {
+                                setModalState(() => modalError = 'New password must be at least 6 characters');
+                                return;
+                              }
+
+                              setModalState(() {
+                                isSubmitting = true;
+                                modalError = null;
+                              });
+
+                              try {
+                                await ApiClient.instance.resetPassword(
+                                  email: email,
+                                  code: code,
+                                  newPassword: newPass,
+                                );
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Password reset successfully! You can now sign in.'),
+                                      backgroundColor: AppColors.emerald,
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                setModalState(() {
+                                  isSubmitting = false;
+                                  modalError = 'Password reset failed: $e';
+                                });
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: isSubmitting
+                          ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text(
+                              'Update Password',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            ),
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    ApiClient.instance.updateBaseUrl(_serverUrlController.text);
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Connected to: ${_serverUrlController.text}')),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Text('Save Server URL', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -223,7 +370,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Top Logo & Badge
+                    // Top Logo & Branding
                     Center(
                       child: Container(
                         width: 58,
@@ -238,26 +385,26 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                           boxShadow: [
                             BoxShadow(
                               color: AppColors.primary.withValues(alpha: isDark ? 0.22 : 0.08),
-                              blurRadius: 24,
-                              offset: const Offset(0, 6),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
                             ),
                           ],
                         ),
                         child: const Icon(
                           Icons.psychology_rounded,
-                          color: AppColors.primary,
                           size: 32,
+                          color: AppColors.primary,
                         ),
                       ),
                     ),
                     const SizedBox(height: 18),
                     Center(
                       child: Text(
-                        'MINDORA',
+                        'VYNOTES',
                         style: TextStyle(
-                          fontSize: 20,
+                          fontSize: 22,
                           fontWeight: FontWeight.w800,
-                          letterSpacing: 2.0,
+                          letterSpacing: 2.5,
                           color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
                         ),
                       ),
@@ -273,7 +420,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 30),
 
                     // Error Message Callout
                     if (_errorMessage != null) ...[
@@ -318,33 +465,37 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         children: [
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setState(() {
-                                _isSignUp = false;
-                                _errorMessage = null;
-                              }),
+                              onTap: () {
+                                if (_isSignUp) {
+                                  setState(() {
+                                    _isSignUp = false;
+                                    _errorMessage = null;
+                                  });
+                                }
+                              },
                               child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
+                                duration: const Duration(milliseconds: 200),
                                 padding: const EdgeInsets.symmetric(vertical: 9),
                                 decoration: BoxDecoration(
                                   color: !_isSignUp
-                                      ? (isDark ? AppColors.darkSurface : Colors.white)
+                                      ? (isDark ? AppColors.darkSurfaceElevated : Colors.white)
                                       : Colors.transparent,
                                   borderRadius: BorderRadius.circular(10),
                                   boxShadow: !_isSignUp
                                       ? [
                                           BoxShadow(
-                                            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
-                                            blurRadius: 6,
-                                            offset: const Offset(0, 2),
+                                            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 1),
                                           ),
                                         ]
-                                      : [],
+                                      : null,
                                 ),
-                                alignment: Alignment.center,
                                 child: Text(
                                   'Sign In',
+                                  textAlign: TextAlign.center,
                                   style: TextStyle(
-                                    fontSize: 12.5,
+                                    fontSize: 13,
                                     fontWeight: !_isSignUp ? FontWeight.w700 : FontWeight.w500,
                                     color: !_isSignUp
                                         ? (isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)
@@ -356,33 +507,37 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                           ),
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setState(() {
-                                _isSignUp = true;
-                                _errorMessage = null;
-                              }),
+                              onTap: () {
+                                if (!_isSignUp) {
+                                  setState(() {
+                                    _isSignUp = true;
+                                    _errorMessage = null;
+                                  });
+                                }
+                              },
                               child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
+                                duration: const Duration(milliseconds: 200),
                                 padding: const EdgeInsets.symmetric(vertical: 9),
                                 decoration: BoxDecoration(
                                   color: _isSignUp
-                                      ? (isDark ? AppColors.darkSurface : Colors.white)
+                                      ? (isDark ? AppColors.darkSurfaceElevated : Colors.white)
                                       : Colors.transparent,
                                   borderRadius: BorderRadius.circular(10),
                                   boxShadow: _isSignUp
                                       ? [
                                           BoxShadow(
-                                            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
-                                            blurRadius: 6,
-                                            offset: const Offset(0, 2),
+                                            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 1),
                                           ),
                                         ]
-                                      : [],
+                                      : null,
                                 ),
-                                alignment: Alignment.center,
                                 child: Text(
                                   'Sign Up',
+                                  textAlign: TextAlign.center,
                                   style: TextStyle(
-                                    fontSize: 12.5,
+                                    fontSize: 13,
                                     fontWeight: _isSignUp ? FontWeight.w700 : FontWeight.w500,
                                     color: _isSignUp
                                         ? (isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)
@@ -395,15 +550,16 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 22),
+                    const SizedBox(height: 20),
 
-                    // Full Name (Only in Sign Up)
+                    // Name Field (Sign Up Only)
                     if (_isSignUp) ...[
                       _buildTextField(
                         controller: _nameController,
                         hintText: 'Full Name',
                         icon: Icons.person_outline_rounded,
                         isDark: isDark,
+                        keyboardType: TextInputType.name,
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -413,30 +569,55 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       controller: _emailController,
                       hintText: 'Email Address',
                       icon: Icons.alternate_email_rounded,
-                      keyboardType: TextInputType.emailAddress,
                       isDark: isDark,
+                      keyboardType: TextInputType.emailAddress,
                     ),
                     const SizedBox(height: 12),
 
                     // Password Field
                     _buildTextField(
                       controller: _passwordController,
-                      hintText: 'Password',
+                      hintText: 'Password (min 6 chars)',
                       icon: Icons.lock_outline_rounded,
-                      obscureText: _obscurePassword,
                       isDark: isDark,
+                      obscureText: _obscurePassword,
                       suffixIcon: IconButton(
                         icon: Icon(
-                          _obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                          _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
                           size: 18,
                           color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
                         ),
                         onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                       ),
                     ),
-                    const SizedBox(height: 24),
 
-                    // Submit Primary Action Button
+                    // Forgot Password Link (Sign In only)
+                    if (!_isSignUp) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => _showForgotPasswordModal(isDark),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text(
+                            'Forgot password?',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 20),
+
+                    // Primary Action Button (Sign In / Sign Up)
                     ElevatedButton(
                       onPressed: _isLoading ? null : _handleAuth,
                       style: ElevatedButton.styleFrom(
@@ -465,6 +646,81 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     ),
                     const SizedBox(height: 16),
 
+                    // Divider with OR
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Divider(
+                            color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                            thickness: 0.8,
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          child: Text(
+                            'OR',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Divider(
+                            color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                            thickness: 0.8,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Google Sign-In Button
+                    OutlinedButton(
+                      onPressed: _isLoading ? null : _handleGoogleSignIn,
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        side: BorderSide(
+                          color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                          width: 0.9,
+                        ),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        backgroundColor: isDark ? AppColors.darkSurfaceSubtle : Colors.white,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white,
+                            ),
+                            child: const Text(
+                              'G',
+                              style: TextStyle(
+                                color: Color(0xFF4285F4),
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14,
+                                fontFamily: 'sans-serif',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            _isSignUp ? 'Sign up with Google' : 'Continue with Google',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+
                     // Quick Demo / Skip as Guest
                     TextButton(
                       onPressed: () async {
@@ -481,42 +737,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                           fontSize: 12,
                           color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-
-                    // Server Settings Affordance (Render URL configuration)
-                    GestureDetector(
-                      onTap: () => _showServerSettingsModal(isDark),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.cloud_outlined,
-                            size: 13,
-                            color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
-                          ),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              'Server: ${_serverUrlController.text.replaceFirst('https://', '').replaceFirst('http://', '')}',
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                              style: TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 10.5,
-                                color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.settings_outlined,
-                            size: 11,
-                            color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
-                          ),
-                        ],
                       ),
                     ),
                   ],
@@ -539,7 +759,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     Widget? suffixIcon,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
       decoration: BoxDecoration(
         color: isDark ? AppColors.darkSurface : Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -548,35 +767,29 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           width: 0.8,
         ),
       ),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 17,
+      child: TextField(
+        controller: controller,
+        obscureText: obscureText,
+        keyboardType: keyboardType,
+        style: TextStyle(
+          fontSize: 13,
+          color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+        ),
+        decoration: InputDecoration(
+          hintText: hintText,
+          hintStyle: TextStyle(
+            fontSize: 13,
             color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              obscureText: obscureText,
-              keyboardType: keyboardType,
-              style: TextStyle(
-                fontSize: 13.5,
-                color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-              ),
-              decoration: InputDecoration(
-                hintText: hintText,
-                hintStyle: TextStyle(
-                  fontSize: 13,
-                  color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
-                ),
-                border: InputBorder.none,
-              ),
-            ),
+          prefixIcon: Icon(
+            icon,
+            size: 18,
+            color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
           ),
-          if (suffixIcon != null) suffixIcon,
-        ],
+          suffixIcon: suffixIcon,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        ),
       ),
     );
   }

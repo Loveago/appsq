@@ -1,5 +1,5 @@
 name: mindora_mobile
-description: "Mindora: Your AI Second Brain mobile application"
+description: "VyNotes: Your AI Second Brain mobile application"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -25,6 +25,10 @@ dependencies:
   speech_to_text: ^7.5.0
   google_mlkit_text_recognition: ^0.14.0
   permission_handler: ^11.3.1
+  share_plus: ^10.1.2
+  purchases_flutter: ^8.5.0
+  google_mobile_ads: ^5.2.0
+  google_sign_in: ^6.2.2
 
 dev_dependencies:
   flutter_test:

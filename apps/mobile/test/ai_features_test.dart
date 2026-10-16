@@ -17,7 +17,7 @@ void main() {
 
     // Verify header and empty state
     expect(find.text('Neural Query'), findsOneWidget);
-    expect(find.text('Ask Mindora Anything'), findsOneWidget);
+    expect(find.text('Ask VyNotes Anything'), findsOneWidget);
 
     // Tap suggested prompt chip
     await tester.tap(find.text('Summarize my recent thoughts'));
@@ -69,12 +69,11 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text('NEURAL THOUGHT EXTRACTION'), findsOneWidget);
-    expect(find.text('RAW CAPTURE'), findsOneWidget);
-    expect(find.text('STRUCTURED GRAPH ENTITIES'), findsOneWidget);
+    expect(find.text('SECOND BRAIN DOCUMENT INTELLIGENCE'), findsOneWidget);
+    expect(find.textContaining('ACTIONABLE COMMITMENTS'), findsOneWidget);
 
-    // Ensure action items header and button are visible
-    final buttonFinder = find.text('Sync & Commit to Neural Brain');
+    // Ensure action items commit button is visible and tap it
+    final buttonFinder = find.byType(ElevatedButton);
     await tester.ensureVisible(buttonFinder);
     await tester.pumpAndSettle();
 

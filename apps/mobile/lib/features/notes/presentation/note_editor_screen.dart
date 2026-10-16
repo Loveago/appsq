@@ -10,6 +10,7 @@ import '../../../../core/providers/app_state_providers.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/widgets/audio_playback_bar.dart';
 import '../../../../core/services/audio_service.dart';
+import 'package:intl/intl.dart';
 import 'ai_extract_sheet.dart';
 
 class NoteEditorScreen extends StatelessWidget {
@@ -31,6 +32,18 @@ class NoteEditorScreen extends StatelessWidget {
     this.initialImagePaths = const [],
     this.initialAudioPath,
   });
+
+  factory NoteEditorScreen.fromNote(NoteModel note) {
+    return NoteEditorScreen(
+      noteId: note.id,
+      initialTitle: note.title,
+      initialContent: note.content,
+      tag: note.tag,
+      tagColor: note.tagColor,
+      initialImagePaths: note.imagePaths,
+      initialAudioPath: note.audioPath,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -320,6 +333,150 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
     );
   }
 
+  void _openSetReminderDialog() {
+    _saveNote();
+    final noteTitle = _titleController.text.trim().isNotEmpty
+        ? _titleController.text.trim()
+        : 'Review Note';
+    final reminderTitleController = TextEditingController(text: 'Review: $noteTitle');
+    DateTime selectedDateTime = DateTime.now().add(const Duration(hours: 2));
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? AppColors.darkSurface
+          : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (modalCtx, setModalState) {
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: MediaQuery.of(modalCtx).viewInsets.bottom + 20,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Set Note Reminder',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      onPressed: () => Navigator.of(modalCtx).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: reminderTitleController,
+                  decoration: InputDecoration(
+                    labelText: 'Reminder Title',
+                    filled: true,
+                    fillColor: Theme.of(context).brightness == Brightness.dark
+                        ? AppColors.darkSurfaceElevated
+                        : AppColors.surfaceSubtle,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.calendar_today_rounded, size: 14),
+                        label: Text(DateFormat('MMM d').format(selectedDateTime)),
+                        onPressed: () async {
+                          final date = await showDatePicker(
+                            context: modalCtx,
+                            initialDate: selectedDateTime,
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime.now().add(const Duration(days: 365)),
+                          );
+                          if (date != null) {
+                            setModalState(() {
+                              selectedDateTime = DateTime(
+                                date.year,
+                                date.month,
+                                date.day,
+                                selectedDateTime.hour,
+                                selectedDateTime.minute,
+                              );
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.access_time_rounded, size: 14),
+                        label: Text(DateFormat('h:mm a').format(selectedDateTime)),
+                        onPressed: () async {
+                          final time = await showTimePicker(
+                            context: modalCtx,
+                            initialTime: TimeOfDay.fromDateTime(selectedDateTime),
+                          );
+                          if (time != null) {
+                            setModalState(() {
+                              selectedDateTime = DateTime(
+                                selectedDateTime.year,
+                                selectedDateTime.month,
+                                selectedDateTime.day,
+                                time.hour,
+                                time.minute,
+                              );
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () async {
+                      await ref.read(remindersProvider.notifier).addReminder(
+                            title: reminderTitleController.text.trim(),
+                            remindAt: selectedDateTime,
+                            noteId: _currentNoteId,
+                          );
+                      if (modalCtx.mounted) {
+                        Navigator.of(modalCtx).pop();
+                      }
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Reminder scheduled for this note')),
+                        );
+                      }
+                    },
+                    child: const Text('Schedule Reminder', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _triggerAiAction(String action) async {
     if (action == 'extract') {
       showModalBottomSheet(
@@ -353,24 +510,17 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
       try {
         final res = await ApiClient.instance.extractContext(_contentController.text);
         final tasksRaw = (res['tasks'] as List<dynamic>?) ?? [];
-        final titles = <String>[];
-        for (final t in tasksRaw) {
-          if (t is Map && t['title'] != null) {
-            titles.add(t['title'].toString());
-          } else if (t is String) {
-            titles.add(t);
-          }
-        }
-        if (titles.isNotEmpty) {
+        if (tasksRaw.isNotEmpty) {
+          final noteTitle = _titleController.text.trim();
           ref.read(tasksProvider.notifier).addExtractedTasks(
-            titles,
-            project: _titleController.text.isNotEmpty ? _titleController.text : 'Note Tasks',
-            sourceNote: _titleController.text,
+            tasksRaw,
+            project: noteTitle.isNotEmpty ? noteTitle : 'Note Tasks',
+            sourceNote: noteTitle.isNotEmpty ? noteTitle : 'Untitled Note',
           );
           if (!mounted) return;
           setState(() {
             _isProcessingAi = false;
-            _aiFeedbackMessage = 'Successfully extracted & added ${titles.length} tasks to your Tasks board!';
+            _aiFeedbackMessage = 'Successfully extracted & added ${tasksRaw.length} task(s) to your Tasks board!';
           });
           return;
         }
@@ -485,6 +635,16 @@ class _NoteEditorScreenViewState extends ConsumerState<_NoteEditorScreenView> {
             ),
           ),
           actions: [
+            // Set Reminder button
+            IconButton(
+              tooltip: 'Set Reminder',
+              icon: Icon(
+                Icons.alarm_add_rounded,
+                size: 20,
+                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+              ),
+              onPressed: _openSetReminderDialog,
+            ),
             // Delete Note button
             IconButton(
               tooltip: 'Delete Note',

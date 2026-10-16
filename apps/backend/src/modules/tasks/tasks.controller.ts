@@ -1,21 +1,26 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { TasksService } from './tasks.service';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AiService } from '../ai/ai.service';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(OptionalJwtAuthGuard)
 @Controller('tasks')
 export class TasksController {
-  constructor(private readonly tasksService: TasksService) {}
+  constructor(
+    private readonly tasksService: TasksService,
+    private readonly aiService: AiService,
+  ) {}
 
   @Get()
-  async findAll(@CurrentUser('id') userId: string, @Query('status') status?: string) {
-    return this.tasksService.findAll(userId, status);
+  async findAll(@CurrentUser('id') userId?: string, @Query('status') status?: string) {
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.tasksService.findAll(effectiveUserId, status);
   }
 
   @Post()
   async create(
-    @CurrentUser('id') userId: string,
+    @CurrentUser('id') userId: string | undefined,
     @Body()
     body: {
       title: string;
@@ -28,16 +33,19 @@ export class TasksController {
       isAiExtracted?: boolean;
     },
   ) {
-    return this.tasksService.create(userId, body);
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.tasksService.create(effectiveUserId, body);
   }
 
   @Put(':id/toggle')
-  async toggleStatus(@Param('id') id: string, @CurrentUser('id') userId: string) {
-    return this.tasksService.toggleStatus(id, userId);
+  async toggleStatus(@Param('id') id: string, @CurrentUser('id') userId?: string) {
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.tasksService.toggleStatus(id, effectiveUserId);
   }
 
   @Delete(':id')
-  async delete(@Param('id') id: string, @CurrentUser('id') userId: string) {
-    return this.tasksService.delete(id, userId);
+  async delete(@Param('id') id: string, @CurrentUser('id') userId?: string) {
+    const effectiveUserId = userId || (await this.aiService.getOrCreateDefaultGuestId());
+    return this.tasksService.delete(id, effectiveUserId);
   }
 }

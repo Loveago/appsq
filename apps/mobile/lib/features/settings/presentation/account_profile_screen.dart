@@ -256,7 +256,7 @@ class _AccountProfileScreenState extends ConsumerState<AccountProfileScreen> {
       await _fetchAccountData();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('7-Day Mindora Pro Trial Activated!')),
+          const SnackBar(content: Text('7-Day VyNotes Pro Trial Activated!')),
         );
       }
     } catch (e) {
@@ -341,8 +341,21 @@ class _AccountProfileScreenState extends ConsumerState<AccountProfileScreen> {
     final email = _profileData?['email'] ?? profile.email;
     final plan = _entitlementsData?['plan'] ?? (_profileData?['plan'] ?? (profile.isPro ? 'PRO' : 'FREE'));
     final isPro = plan == 'PRO';
-    final isTrial = plan == 'TRIAL' || (_entitlementsData?['isTrialActive'] == true);
-    final trialDays = _entitlementsData?['trialDaysRemaining'] ?? 0;
+    final isTrial = plan == 'TRIAL' || (_entitlementsData?['isTrialActive'] == true) || (_entitlementsData?['trial']?['active'] == true);
+    final isExpired = plan == 'EXPIRED' || _entitlementsData?['subscriptionStatus'] == 'EXPIRED';
+
+    final trialDays = _entitlementsData?['trialDaysRemaining'] ??
+        _entitlementsData?['trial']?['daysRemaining'] ??
+        0;
+
+    final subDays = _entitlementsData?['subscriptionDaysRemaining'] ??
+        _entitlementsData?['subscription']?['daysRemaining'] ??
+        _entitlementsData?['daysRemaining'] ??
+        0;
+
+    final expiresAtStr = _entitlementsData?['expiresAt']?.toString() ??
+        _entitlementsData?['subscription']?['expiresAt']?.toString() ??
+        _entitlementsData?['trial']?['endsAt']?.toString();
 
     final usage = _entitlementsData?['usage'] as Map<String, dynamic>?;
     final limits = _entitlementsData?['limits'] as Map<String, dynamic>?;
@@ -418,7 +431,7 @@ class _AccountProfileScreenState extends ConsumerState<AccountProfileScreen> {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        fullName.isNotEmpty ? fullName : 'Mindora Member',
+                        fullName.isNotEmpty ? fullName : 'VyNotes Member',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
@@ -499,7 +512,11 @@ class _AccountProfileScreenState extends ConsumerState<AccountProfileScreen> {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                isPro ? 'Mindora Pro' : (isTrial ? 'Free Trial Active' : 'Free Tier'),
+                                isPro
+                                    ? 'VyNotes Pro'
+                                    : (isTrial
+                                        ? 'Free Trial Active'
+                                        : (isExpired ? 'Subscription Expired' : 'Free Tier')),
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,
@@ -517,8 +534,34 @@ class _AccountProfileScreenState extends ConsumerState<AccountProfileScreen> {
                                 border: Border.all(color: AppColors.amber.withValues(alpha: 0.4)),
                               ),
                               child: Text(
-                                '$trialDays days left',
+                                '$trialDays ${trialDays == 1 ? 'day' : 'days'} left',
                                 style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.amber),
+                              ),
+                            )
+                          else if (isPro && subDays > 0)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF8B5CF6).withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFF8B5CF6).withValues(alpha: 0.4)),
+                              ),
+                              child: Text(
+                                '$subDays ${subDays == 1 ? 'day' : 'days'} remaining',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF8B5CF6)),
+                              ),
+                            )
+                          else if (isExpired)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.redAccent.withValues(alpha: 0.4)),
+                              ),
+                              child: const Text(
+                                'Expired',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.redAccent),
                               ),
                             ),
                         ],
@@ -526,10 +569,14 @@ class _AccountProfileScreenState extends ConsumerState<AccountProfileScreen> {
                       const SizedBox(height: 10),
                       Text(
                         isPro
-                            ? 'You have unlimited access to multi-modal second brain intelligence.'
+                            ? (expiresAtStr != null && expiresAtStr.length >= 10
+                                ? 'Active Pro subscription • Valid until ${expiresAtStr.substring(0, 10)}. Unlimited Second Brain intelligence.'
+                                : 'You have unlimited access to multi-modal second brain intelligence.')
                             : (isTrial
                                 ? 'Your 7-day full access trial is currently running. Upgrade anytime to keep unlimited intelligence.'
-                                : 'Experience unlimited AI models, fast OCR scanning, and extended audio recording.'),
+                                : (isExpired
+                                    ? 'Your previous plan has expired. Upgrade anytime to restore Pro capabilities.'
+                                    : 'Experience unlimited AI models, fast OCR scanning, and extended audio recording.')),
                         style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary, height: 1.4),
                       ),
                       const SizedBox(height: 14),

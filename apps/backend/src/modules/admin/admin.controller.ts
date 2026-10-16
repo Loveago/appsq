@@ -14,6 +14,7 @@ import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../../common/guards/admin.guard';
 import { BillingService } from '../billing/billing.service';
+import { EmailService } from '../auth/email.service';
 
 @UseGuards(JwtAuthGuard, AdminGuard)
 @Controller('admin')
@@ -21,7 +22,41 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly billingService: BillingService,
+    private readonly emailService: EmailService,
   ) {}
+
+  // 1d. BREVO EMAIL & PASSWORD RESET CONFIGURATION
+  @Get('email/config')
+  async getEmailConfig() {
+    const config = await this.emailService.getConfig();
+    return {
+      isEnabled: config.isEnabled,
+      senderEmail: config.senderEmail,
+      senderName: config.senderName,
+      apiKeyMasked: config.apiKey ? `${config.apiKey.slice(0, 8)}...${config.apiKey.slice(-4)}` : '',
+      isConfigured: !!(config.apiKey && config.senderEmail),
+    };
+  }
+
+  @Put('email/config')
+  async updateEmailConfig(@Req() req: any, @Body() body: any) {
+    return this.emailService.updateConfig(req.user, body);
+  }
+
+  @Post('email/test')
+  async sendTestEmail(@Body('to') toEmail: string) {
+    const success = await this.emailService.sendEmail(
+      toEmail || 'test@vynotes.ai',
+      'VyNotes Brevo Test Email',
+      '<h2>VyNotes Email Integration Test</h2><p>Your Brevo transactional email configuration is active and working properly.</p>',
+    );
+    return {
+      success,
+      message: success
+        ? 'Test email dispatched successfully via Brevo'
+        : 'Failed to send test email. Please check your Brevo API key and verified sender email.',
+    };
+  }
 
   // 1. DASHBOARD & SYSTEM OVERVIEW
   @Get('overview')
@@ -38,6 +73,36 @@ export class AdminController {
   @Put('plans/limits')
   async updatePlanLimits(@Req() req: any, @Body() body: any) {
     return this.billingService.updatePlanLimitsConfig(req.user, body);
+  }
+
+  // 1c. REVENUECAT SUBSCRIPTIONS & BILLING CONFIGURATION
+  @Get('billing/config')
+  async getSubscriptionConfig() {
+    return this.billingService.getAdminSubscriptionConfig();
+  }
+
+  @Put('billing/config')
+  async updateSubscriptionConfig(@Req() req: any, @Body() body: any) {
+    return this.billingService.updateAdminSubscriptionConfig(req.user, body);
+  }
+
+  @Post('billing/validate-revenuecat')
+  async validateRevenueCatConnection(@Body('secretKey') secretKey?: string) {
+    return this.billingService.validateRevenueCatConnection(secretKey);
+  }
+
+  @Get('billing/webhook-events')
+  async getWebhookEvents(@Query('limit') limit?: string) {
+    return this.billingService.getRecentWebhookEvents(limit ? parseInt(limit, 10) : 30);
+  }
+
+  @Post('billing/users/:id/override')
+  async manualSubscriptionOverride(
+    @Req() req: any,
+    @Param('id') userId: string,
+    @Body() body: { plan: 'PRO' | 'FREE' | 'TRIAL'; durationDays?: number; reason: string },
+  ) {
+    return this.billingService.manualSubscriptionOverride(req.user, userId, body);
   }
 
   // 2. USER MANAGEMENT
@@ -202,16 +267,37 @@ export class AdminController {
   @Post('announcements')
   async createAnnouncement(
     @Req() req: any,
-    @Body() dto: {
+    @Body()
+    dto: {
       title: string;
       message: string;
       targetTier?: string;
+      category?: string;
+      priority?: string;
+      channel?: string;
       actionUrl?: string;
       actionLabel?: string;
+      scheduledFor?: string;
       expiresAt?: string;
+      publishImmediately?: boolean;
     },
   ) {
     return this.adminService.createAnnouncement(req.user, dto);
+  }
+
+  @Post('announcements/:id/publish')
+  async publishAnnouncement(@Req() req: any, @Param('id') id: string) {
+    return this.adminService.publishAnnouncement(req.user, id);
+  }
+
+  @Post('announcements/:id/retract')
+  async retractAnnouncement(@Req() req: any, @Param('id') id: string) {
+    return this.adminService.retractAnnouncement(req.user, id);
+  }
+
+  @Get('announcements/:id/stats')
+  async getAnnouncementStats(@Param('id') id: string) {
+    return this.adminService.getAnnouncementStats(id);
   }
 
   @Delete('announcements/:id')

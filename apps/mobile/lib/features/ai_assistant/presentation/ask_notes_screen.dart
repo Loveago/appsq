@@ -1116,7 +1116,7 @@ class _AskNotesScreenViewState extends ConsumerState<_AskNotesScreenView> {
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          'Ask Mindora Anything',
+                          'Ask VyNotes Anything',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
