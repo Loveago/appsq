@@ -15,6 +15,7 @@ import { VoiceNotesModule } from './modules/voice-notes/voice-notes.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { RemindersModule } from './modules/reminders/reminders.module';
 import { AdsModule } from './modules/ads/ads.module';
+import { CloudSyncModule } from './modules/sync/cloud-sync.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -35,6 +36,7 @@ import { AppController } from './app.controller';
     NotificationsModule,
     RemindersModule,
     AdsModule,
+    CloudSyncModule,
   ],
   controllers: [AppController],
 })

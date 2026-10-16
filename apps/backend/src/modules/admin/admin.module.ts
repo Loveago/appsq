@@ -4,9 +4,10 @@ import { AdminController } from './admin.controller';
 import { BillingModule } from '../billing/billing.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuthModule } from '../auth/auth.module';
+import { CloudSyncModule } from '../sync/cloud-sync.module';
 
 @Module({
-  imports: [BillingModule, NotificationsModule, AuthModule],
+  imports: [BillingModule, NotificationsModule, AuthModule, CloudSyncModule],
   controllers: [AdminController],
   providers: [AdminService],
   exports: [AdminService],

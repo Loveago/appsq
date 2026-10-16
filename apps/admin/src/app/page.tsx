@@ -53,6 +53,10 @@ import {
   MessageSquare,
   Copy,
   Mail,
+  Cloud,
+  CloudOff,
+  Database,
+  RotateCcw,
 } from 'lucide-react';
 import { adminFetch, getAdminToken, setAdminToken, clearAdminToken } from '../lib/api';
 
@@ -68,7 +72,8 @@ type Tab =
   | 'announcements'
   | 'audit-logs'
   | 'system-health'
-  | 'settings';
+  | 'settings'
+  | 'cloud-sync';
 
 export default function AdminDashboard() {
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -253,6 +258,59 @@ export default function AdminDashboard() {
   const [publishReason, setPublishReason] = useState('');
   const [selectedRevertVersion, setSelectedRevertVersion] = useState<number | null>(null);
 
+  // Cloud Notes Sync & Retention State
+  const [syncConfig, setSyncConfig] = useState<{
+    enabled: boolean;
+    maxNoteSizeBytes: number;
+    proQuotaBytes: number;
+    disabledRetentionDays: number;
+    proGracePeriodDays: number;
+    proExpiredRecoveryDays: number;
+    tombstoneRetentionDays: number;
+  }>({
+    enabled: true,
+    maxNoteSizeBytes: 524288,
+    proQuotaBytes: 26214400,
+    disabledRetentionDays: 90,
+    proGracePeriodDays: 30,
+    proExpiredRecoveryDays: 60,
+    tombstoneRetentionDays: 30,
+  });
+  const [syncTelemetry, setSyncTelemetry] = useState<{
+    activeSyncUsers: number;
+    totalCloudStorageBytes: number;
+    pendingExpirationCount: number;
+    tombstonesCount: number;
+  }>({
+    activeSyncUsers: 0,
+    totalCloudStorageBytes: 0,
+    pendingExpirationCount: 0,
+    tombstonesCount: 0,
+  });
+  const [isSavingSyncConfig, setIsSavingSyncConfig] = useState(false);
+  const [isExecutingCleanup, setIsExecutingCleanup] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<any | null>(null);
+
+  // Google Sign-In & OAuth Authentication State
+  const [googleAuthConfig, setGoogleAuthConfig] = useState<{
+    isEnabled: boolean;
+    webClientId: string;
+    iosClientId: string;
+    androidClientId: string;
+    packageName: string;
+    isConfigured: boolean;
+  }>({
+    isEnabled: true,
+    webClientId: '',
+    iosClientId: '',
+    androidClientId: '',
+    packageName: 'com.vynotes.crazytech',
+    isConfigured: false,
+  });
+  const [isSavingGoogleAuth, setIsSavingGoogleAuth] = useState(false);
+  const [copiedShaCommand, setCopiedShaCommand] = useState(false);
+  const [copiedPackageName, setCopiedPackageName] = useState(false);
+
   const showToast = (msg: string) => {
     setSuccessToast(msg);
     setTimeout(() => setSuccessToast(null), 4000);
@@ -278,7 +336,7 @@ export default function AdminDashboard() {
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const [m, u, p, f, s, a, l, e, pl, bc, we, ac, ec] = await Promise.all([
+      const [m, u, p, f, s, a, l, e, pl, bc, we, ac, ec, sc, gc] = await Promise.all([
         adminFetch('/admin/overview').catch(() => null),
         adminFetch('/admin/users?limit=40').catch(() => ({ users: [] })),
         adminFetch('/admin/ai/providers').catch(() => []),
@@ -292,6 +350,8 @@ export default function AdminDashboard() {
         adminFetch('/admin/billing/webhook-events?limit=25').catch(() => []),
         adminFetch('/admin/ads/config').catch(() => null),
         adminFetch('/admin/email/config').catch(() => null),
+        adminFetch('/admin/sync/config').catch(() => null),
+        adminFetch('/admin/auth/google-config').catch(() => null),
       ]);
 
       if (m) setMetrics(m);
@@ -311,6 +371,20 @@ export default function AdminDashboard() {
           senderName: ec.senderName || 'VyNotes Security',
           isEnabled: ec.isEnabled ?? true,
           isConfigured: ec.isConfigured ?? false,
+        });
+      }
+      if (sc) {
+        if (sc.config) setSyncConfig(sc.config);
+        if (sc.telemetry) setSyncTelemetry(sc.telemetry);
+      }
+      if (gc) {
+        setGoogleAuthConfig({
+          isEnabled: gc.isEnabled ?? true,
+          webClientId: gc.webClientId || '',
+          iosClientId: gc.iosClientId || '',
+          androidClientId: gc.androidClientId || '',
+          packageName: gc.packageName || 'com.vynotes.crazytech',
+          isConfigured: gc.isConfigured ?? false,
         });
       }
       if (s) {
@@ -333,6 +407,69 @@ export default function AdminDashboard() {
       setErrorMsg(err.message || 'Error fetching data from server');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSaveSyncConfig = async (customConfig?: any) => {
+    setIsSavingSyncConfig(true);
+    try {
+      const payload = customConfig || syncConfig;
+      const res = await adminFetch('/admin/sync/config', {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      if (res?.config) {
+        setSyncConfig(res.config);
+      }
+      showToast('Cloud Notes Sync & Retention policy saved successfully');
+      refreshData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to save cloud sync configuration');
+    } finally {
+      setIsSavingSyncConfig(false);
+    }
+  };
+
+  const handleRunRetentionCleanup = async (dryRun: boolean) => {
+    setIsExecutingCleanup(true);
+    setCleanupResult(null);
+    try {
+      const res = await adminFetch('/admin/sync/cleanup', {
+        method: 'POST',
+        body: JSON.stringify({ dryRun }),
+      });
+      setCleanupResult(res);
+      showToast(
+        dryRun
+          ? `Dry-Run completed: ${res.scannedCount ?? 0} scanned, ${res.purgedNotesCount ?? 0} notes ready for purge`
+          : `Retention purge executed: ${res.purgedNotesCount ?? 0} notes & ${res.purgedTombstonesCount ?? 0} tombstones purged`,
+      );
+      if (!dryRun) {
+        refreshData();
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to execute retention cleanup');
+    } finally {
+      setIsExecutingCleanup(false);
+    }
+  };
+
+  const handleSaveGoogleAuthConfig = async () => {
+    setIsSavingGoogleAuth(true);
+    try {
+      const res = await adminFetch('/admin/auth/google-config', {
+        method: 'PUT',
+        body: JSON.stringify(googleAuthConfig),
+      });
+      if (res?.config) {
+        setGoogleAuthConfig(res.config);
+      }
+      showToast('Google Sign-In OAuth credentials saved successfully');
+      refreshData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to save Google OAuth configuration');
+    } finally {
+      setIsSavingGoogleAuth(false);
     }
   };
 
@@ -1234,6 +1371,7 @@ export default function AdminDashboard() {
           { id: "overview", label: "Dashboard" },
           { id: "users", label: "Users" },
           { id: "subscriptions", label: "Purchases" },
+          { id: "cloud-sync", label: "Cloud Sync" },
           { id: "ai-providers", label: "AI Providers" },
           { id: "notes", label: "Notes" },
           { id: "feature-flags", label: "Flags" },
@@ -1284,6 +1422,7 @@ export default function AdminDashboard() {
                 { id: "overview", label: "Dashboard HQ", icon: Activity, badge: "Live" },
                 { id: "users", label: "User Directory", icon: Users, badge: metrics?.users?.total ? String(metrics.users.total) : undefined },
                 { id: "subscriptions", label: "In-App Purchases", icon: CreditCard, badge: "RevenueCat" },
+                { id: "cloud-sync", label: "Cloud Notes Sync", icon: Cloud, badge: syncConfig.enabled ? "Pro Only" : "Off" },
                 { id: "ai-providers", label: "AI Gateways", icon: BrainCircuit, badge: "Hot-Swap" },
                 { id: "notes", label: "Content & Brain", icon: FileText, badge: "Moderation" },
                 { id: "feature-flags", label: "Feature Flags", icon: Flag, badge: "Dynamic" },
@@ -5248,6 +5387,624 @@ export default function AdminDashboard() {
                     </div>
                   )}
                 </div>
+
+                {/* 3. Google Sign-In & Mobile OAuth Credentials */}
+                <div className="glass-panel border-white/10 rounded-[32px] p-7 space-y-6 shadow-2xl backdrop-blur-2xl lg:col-span-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400">
+                        <Key className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-bold text-white">Google Sign-In & OAuth Configuration</h3>
+                          <span className={`px-2.5 py-0.5 rounded-full font-mono text-[10px] font-bold border ${
+                            googleAuthConfig.isConfigured && googleAuthConfig.isEnabled
+                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                              : !googleAuthConfig.isEnabled
+                              ? "bg-red-500/10 text-red-400 border-red-500/30"
+                              : "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                          }`}>
+                            {!googleAuthConfig.isEnabled ? "DISABLED" : googleAuthConfig.isConfigured ? "OAUTH ACTIVE" : "AWAITING CLIENT IDS"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Manage Google OAuth 2.0 Client IDs for Android (`com.vynotes.crazytech`), iOS, and backend ID token verification.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-slate-400 font-medium">Enable Google Auth:</span>
+                      <button
+                        type="button"
+                        onClick={() => setGoogleAuthConfig((prev) => ({ ...prev, isEnabled: !prev.isEnabled }))}
+                        className={`relative inline-flex h-7 w-13 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none ${
+                          googleAuthConfig.isEnabled ? 'bg-gradient-to-r from-purple-600 to-pink-600' : 'bg-slate-800'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-300 ease-in-out ${
+                            googleAuthConfig.isEnabled ? 'translate-x-6' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Input Fields Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Web Client ID / Server Client ID */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                        <span>Web Client ID (Server Client ID)</span>
+                        <span className="text-[10px] font-mono text-purple-400">CRITICAL FOR BOTH ANDROID & IOS</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={googleAuthConfig.webClientId}
+                        onChange={(e) => setGoogleAuthConfig((prev) => ({ ...prev, webClientId: e.target.value.trim() }))}
+                        placeholder="e.g. 1234567890-abcdefg.apps.googleusercontent.com"
+                        className="w-full px-3.5 py-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-purple-500/50 font-mono"
+                      />
+                      <p className="text-[11px] text-slate-500">
+                        Created under &quot;Web application&quot; in Google Cloud Console. Used by the mobile app to obtain ID tokens for backend exchange.
+                      </p>
+                    </div>
+
+                    {/* iOS Client ID */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                        <span>iOS Client ID (Optional for Web/Android)</span>
+                        <span className="text-[10px] font-mono text-blue-400">iOS APP STORE BUILD</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={googleAuthConfig.iosClientId}
+                        onChange={(e) => setGoogleAuthConfig((prev) => ({ ...prev, iosClientId: e.target.value.trim() }))}
+                        placeholder="e.g. 1234567890-iosclient.apps.googleusercontent.com"
+                        className="w-full px-3.5 py-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-purple-500/50 font-mono"
+                      />
+                      <p className="text-[11px] text-slate-500">
+                        Created under &quot;iOS&quot; in Google Cloud Console with Bundle ID `com.vynotes.crazytech`.
+                      </p>
+                    </div>
+
+                    {/* Android Package Name */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                        <span>Android Package Name</span>
+                        <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
+                          <Lock className="w-3 h-3" /> VERIFIED
+                        </span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={googleAuthConfig.packageName}
+                          className="flex-1 px-3.5 py-2.5 bg-black/60 border border-white/10 rounded-xl text-xs text-emerald-400 font-mono cursor-not-allowed"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (navigator?.clipboard?.writeText) {
+                              navigator.clipboard.writeText(googleAuthConfig.packageName);
+                              setCopiedPackageName(true);
+                              showToast('Package name copied to clipboard');
+                              setTimeout(() => setCopiedPackageName(false), 2500);
+                            }
+                          }}
+                          className="px-3 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 rounded-xl text-xs font-medium transition-all flex items-center gap-1"
+                        >
+                          {copiedPackageName ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedPackageName ? 'Copied' : 'Copy'}</span>
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        Must match the Android client entry in your Google Cloud / Firebase console.
+                      </p>
+                    </div>
+
+                    {/* SHA-1 & SHA-256 Command Box */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                        <span>SHA-1 / SHA-256 Fingerprint Extraction</span>
+                        <span className="text-[10px] font-mono text-amber-400">REQUIRED FOR ANDROID</span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value="cd android && ./gradlew signingReport"
+                          className="flex-1 px-3.5 py-2.5 bg-black/60 border border-white/10 rounded-xl text-xs text-amber-300 font-mono cursor-default"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (navigator?.clipboard?.writeText) {
+                              navigator.clipboard.writeText('cd android && ./gradlew signingReport');
+                              setCopiedShaCommand(true);
+                              showToast('Gradle signingReport command copied');
+                              setTimeout(() => setCopiedShaCommand(false), 2500);
+                            }
+                          }}
+                          className="px-3 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 rounded-xl text-xs font-medium transition-all flex items-center gap-1"
+                        >
+                          {copiedShaCommand ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedShaCommand ? 'Copied' : 'Copy'}</span>
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        Run this in terminal to generate SHA-1 fingerprint for your Android OAuth client in Google Cloud Console.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Save button and Guide Toggle */}
+                  <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <button
+                      type="button"
+                      onClick={handleSaveGoogleAuthConfig}
+                      disabled={isSavingGoogleAuth}
+                      className="px-6 py-2.5 bg-gradient-to-r from-red-600 via-purple-600 to-pink-600 hover:opacity-95 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-purple-600/20 flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {isSavingGoogleAuth ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Saving OAuth Credentials...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Save Google OAuth Credentials</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Step-by-Step Setup Guide Callout */}
+                  <div className="p-5 rounded-2xl bg-black/40 border border-white/10 space-y-4">
+                    <div className="flex items-center gap-2 text-white font-bold text-xs">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span>Google Cloud Console &amp; Firebase Setup Instructions</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-300">
+                      <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1.5">
+                        <div className="font-semibold text-white flex items-center gap-1.5">
+                          <span className="w-5 h-5 rounded-full bg-purple-500/20 text-purple-400 text-center leading-5 text-[10px] font-bold">1</span>
+                          <span>OAuth Consent Screen</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                          In Google Cloud Console, configure your OAuth Consent Screen with User Support Email and add scopes: `email`, `profile`, `openid`.
+                        </p>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1.5">
+                        <div className="font-semibold text-white flex items-center gap-1.5">
+                          <span className="w-5 h-5 rounded-full bg-purple-500/20 text-purple-400 text-center leading-5 text-[10px] font-bold">2</span>
+                          <span>Create Web Client ID</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                          Create an OAuth Client of type <strong>Web application</strong>. Paste that Client ID into the <strong>Web Client ID</strong> field above.
+                        </p>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1.5">
+                        <div className="font-semibold text-white flex items-center gap-1.5">
+                          <span className="w-5 h-5 rounded-full bg-purple-500/20 text-purple-400 text-center leading-5 text-[10px] font-bold">3</span>
+                          <span>Android Client ID</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                          Create an OAuth Client of type <strong>Android</strong>. Enter Package Name <code className="text-purple-300">com.vynotes.crazytech</code> and your SHA-1 fingerprint.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* CLOUD NOTES SYNC & RETENTION TAB */}
+          {activeTab === 'cloud-sync' && (
+            <div className="space-y-6">
+              {/* Header & Controls Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                      <Cloud className="w-3 h-3 text-purple-400 animate-pulse" />
+                      Local-First Cloud Synchronization
+                    </span>
+                    <span className="text-xs text-slate-500">• Pro Gating & Storage Lifecycle</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-2xl font-extrabold text-white tracking-tight">Cloud Notes Sync & Retention</h2>
+                    <span className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full border font-bold ${
+                      syncConfig.enabled
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                        : 'bg-red-500/10 text-red-400 border-red-500/30'
+                    }`}>
+                      {syncConfig.enabled ? 'ACTIVE (PRO ONLY)' : 'SYNC DISABLED GLOBALLY'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Manage cloud sync quotas, text-only isolation policies, Pro entitlement enforcement, and non-destructive retention lifecycles.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => handleRunRetentionCleanup(true)}
+                    disabled={isExecutingCleanup}
+                    className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-white/10 transition-all disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isExecutingCleanup ? 'animate-spin' : 'text-purple-400'}`} />
+                    <span>Dry-Run Scan</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveSyncConfig()}
+                    disabled={isSavingSyncConfig}
+                    className="px-5 py-2 bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#6366F1] hover:opacity-95 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xl shadow-purple-600/25 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                  >
+                    <Check className={`w-3.5 h-3.5 ${isSavingSyncConfig ? 'animate-spin' : ''}`} />
+                    <span>{isSavingSyncConfig ? 'Saving...' : 'Save Sync Policy'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Telemetry Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-xl">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-400">Active Sync Users</span>
+                    <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                      <Users className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    <div className="text-2xl font-black text-white font-mono">{syncTelemetry.activeSyncUsers}</div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Pro users with cloud sync turned ON</p>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-xl">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-400">Total Cloud Text Storage</span>
+                    <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                      <Database className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    <div className="text-2xl font-black text-white font-mono">
+                      {(syncTelemetry.totalCloudStorageBytes / (1024 * 1024)).toFixed(2)} <span className="text-sm font-normal text-slate-400">MB</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Strictly text & markdown bytes stored</p>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-xl">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-400">Pending Expirations</span>
+                    <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      <AlertTriangle className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    <div className="text-2xl font-black text-white font-mono">{syncTelemetry.pendingExpirationCount}</div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">In retention window (disabled sync / lapsed Pro)</p>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-xl">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-400">Tombstones Retained</span>
+                    <div className="p-2 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20">
+                      <Trash2 className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    <div className="text-2xl font-black text-white font-mono">{syncTelemetry.tombstonesCount}</div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Soft-deletes waiting for client propagation</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Master Sync & Quota Rules Card */}
+              <div className="p-6 rounded-2xl bg-[#0F172A]/80 border border-white/10 backdrop-blur-xl space-y-6">
+                <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                      <Sliders className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-white">Master Cloud Sync & Quota Controls</h3>
+                      <p className="text-xs text-slate-400">Enable or disable cloud sync globally and set per-user text limits.</p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={syncConfig.enabled}
+                      onChange={(e) => setSyncConfig((prev) => ({ ...prev, enabled: e.target.checked }))}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-purple-600 peer-checked:to-pink-600"></div>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                      <span>Pro Storage Quota per User</span>
+                      <span className="text-[11px] font-mono text-purple-400">
+                        {Math.round(syncConfig.proQuotaBytes / (1024 * 1024))} MB default
+                      </span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="1"
+                        max="500"
+                        value={Math.round(syncConfig.proQuotaBytes / (1024 * 1024))}
+                        onChange={(e) => {
+                          const mb = parseInt(e.target.value, 10) || 1;
+                          setSyncConfig((prev) => ({ ...prev, proQuotaBytes: mb * 1024 * 1024 }));
+                        }}
+                        className="flex-1 px-3.5 py-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500/50 font-mono"
+                      />
+                      <span className="text-xs text-slate-400 px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl font-mono">
+                        MB / User
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      25 MB text stores ~12,500 full markdown notes. Uploads exceeding quota are rejected with HTTP 400 Bad Request.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                      <span>Max Single Note Size</span>
+                      <span className="text-[11px] font-mono text-purple-400">
+                        {Math.round(syncConfig.maxNoteSizeBytes / 1024)} KB limit
+                      </span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="32"
+                        max="5120"
+                        value={Math.round(syncConfig.maxNoteSizeBytes / 1024)}
+                        onChange={(e) => {
+                          const kb = parseInt(e.target.value, 10) || 32;
+                          setSyncConfig((prev) => ({ ...prev, maxNoteSizeBytes: kb * 1024 }));
+                        }}
+                        className="flex-1 px-3.5 py-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500/50 font-mono"
+                      />
+                      <span className="text-xs text-slate-400 px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl font-mono">
+                        KB / Note
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      512 KB allows ~250,000 words per note while shielding the database from oversized payloads.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Retention Policy Lifecycle Card */}
+              <div className="p-6 rounded-2xl bg-[#0F172A]/80 border border-white/10 backdrop-blur-xl space-y-6">
+                <div className="flex items-center gap-3 border-b border-white/5 pb-4">
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <RotateCcw className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white">Cloud Retention & Expiration Policy</h3>
+                    <p className="text-xs text-slate-400">Set grace periods, recovery windows, and soft-delete tombstone lifecycles.</p>
+                  </div>
+                </div>
+
+                {/* Local-First Safety Banner */}
+                <div className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-200 flex items-start gap-3">
+                  <ShieldCheck className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold text-white">Local-First Safety Guarantee</div>
+                    <p className="text-indigo-300 mt-0.5 leading-relaxed">
+                      Server retention cleanup NEVER deletes notes from user devices. Disabling sync and Deleting Cloud Data are completely separate actions: turning sync OFF initiates the 90-day retention countdown for cloud copies, while local notes remain 100% accessible offline.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-300">Disabled Sync Retention</label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="1"
+                        max="365"
+                        value={syncConfig.disabledRetentionDays}
+                        onChange={(e) => setSyncConfig((prev) => ({ ...prev, disabledRetentionDays: parseInt(e.target.value, 10) || 1 }))}
+                        className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-purple-500/50"
+                      />
+                      <span className="text-[11px] text-slate-400 font-mono">days</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500">Days retained in cloud after user disables sync</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-300">Pro Grace Period</label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        max="90"
+                        value={syncConfig.proGracePeriodDays}
+                        onChange={(e) => setSyncConfig((prev) => ({ ...prev, proGracePeriodDays: parseInt(e.target.value, 10) || 0 }))}
+                        className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-purple-500/50"
+                      />
+                      <span className="text-[11px] text-slate-400 font-mono">days</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500">Full sync remains active during payment retries</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-300">Pro Recovery Window</label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="1"
+                        max="180"
+                        value={syncConfig.proExpiredRecoveryDays}
+                        onChange={(e) => setSyncConfig((prev) => ({ ...prev, proExpiredRecoveryDays: parseInt(e.target.value, 10) || 1 }))}
+                        className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-purple-500/50"
+                      />
+                      <span className="text-[11px] text-slate-400 font-mono">days</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500">Read-only cloud retention before marking expired</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-300">Tombstone Retention</label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="1"
+                        max="90"
+                        value={syncConfig.tombstoneRetentionDays}
+                        onChange={(e) => setSyncConfig((prev) => ({ ...prev, tombstoneRetentionDays: parseInt(e.target.value, 10) || 1 }))}
+                        className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-purple-500/50"
+                      />
+                      <span className="text-[11px] text-slate-400 font-mono">days</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500">Lifespan of deletion tombstones for devices</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Strict Text-Only Isolation Policy Card */}
+              <div className="p-6 rounded-2xl bg-[#0F172A]/80 border border-white/10 backdrop-blur-xl space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white">Strict Text-Only Isolation Architecture</h3>
+                    <p className="text-xs text-slate-400">Media exclusion rules verified both client-side and server-side.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/20 space-y-2">
+                    <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>PERMITTED CLOUD DATA (SYNCHRONIZED)</span>
+                    </div>
+                    <ul className="text-xs text-slate-300 space-y-1.5 list-disc list-inside">
+                      <li>Note titles, Markdown, and plain text body</li>
+                      <li>Category, tag arrays, folder associations</li>
+                      <li>Pin states and favorite flags</li>
+                      <li>Server revision integers & client edit timestamps</li>
+                    </ul>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-red-500/5 border border-red-500/20 space-y-2">
+                    <div className="flex items-center gap-2 text-red-400 text-xs font-bold">
+                      <AlertCircle className="w-4 h-4" />
+                      <span>STRICTLY EXCLUDED & REJECTED BY SERVER</span>
+                    </div>
+                    <ul className="text-xs text-slate-300 space-y-1.5 list-disc list-inside">
+                      <li>Voice memos and microphone audio files</li>
+                      <li>Meeting recordings and live audio streams</li>
+                      <li>Scanned documents, photos, and OCR images</li>
+                      <li>Binary blobs, base64 data URIs, and attachment buffers</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Scheduled Maintenance & On-Demand Cleanup Runner Card */}
+              <div className="p-6 rounded-2xl bg-[#0F172A]/80 border border-white/10 backdrop-blur-xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                      <RefreshCw className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-white">Retention Cleaner & Storage Reclaim</h3>
+                      <p className="text-xs text-slate-400">Scan database for expired cloud notes and stale tombstones.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleRunRetentionCleanup(true)}
+                      disabled={isExecutingCleanup}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/10 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {isExecutingCleanup ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 text-blue-400" />}
+                      <span>Dry-Run Scan</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm('Execute live retention cleanup? Expired server-side cloud notes and stale tombstones will be permanently removed. Local notes on user devices are not affected.')) {
+                          handleRunRetentionCleanup(false);
+                        }
+                      }}
+                      disabled={isExecutingCleanup}
+                      className="px-4 py-2 bg-red-600/80 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-red-600/20 flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Execute Cleanup Now</span>
+                    </button>
+                  </div>
+                </div>
+
+                {cleanupResult && (
+                  <div className="p-4 rounded-xl bg-purple-950/40 border border-purple-500/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-md ${
+                          cleanupResult.dryRun ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        }`}>
+                          {cleanupResult.dryRun ? 'DRY-RUN SCAN RESULTS' : 'RETENTION PURGE EXECUTED'}
+                        </span>
+                        <span className="text-xs text-slate-400">Processed in {cleanupResult.executionDurationMs ?? 0}ms</span>
+                      </div>
+                      <button
+                        onClick={() => setCleanupResult(null)}
+                        className="text-slate-400 hover:text-white text-xs underline"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                      <div className="p-2.5 rounded-lg bg-black/40 border border-white/5">
+                        <div className="text-slate-400 text-[11px]">Notes Scanned</div>
+                        <div className="text-base font-bold text-white font-mono mt-0.5">{cleanupResult.scannedCount ?? 0}</div>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-black/40 border border-white/5">
+                        <div className="text-slate-400 text-[11px]">{cleanupResult.dryRun ? 'Purge Candidates' : 'Notes Purged'}</div>
+                        <div className="text-base font-bold text-amber-400 font-mono mt-0.5">{cleanupResult.purgedNotesCount ?? 0}</div>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-black/40 border border-white/5">
+                        <div className="text-slate-400 text-[11px]">Tombstones Cleaned</div>
+                        <div className="text-base font-bold text-purple-400 font-mono mt-0.5">{cleanupResult.purgedTombstonesCount ?? 0}</div>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-black/40 border border-white/5">
+                        <div className="text-slate-400 text-[11px]">Storage Reclaimed</div>
+                        <div className="text-base font-bold text-emerald-400 font-mono mt-0.5">
+                          {((cleanupResult.reclaimedBytes ?? 0) / 1024).toFixed(1)} KB
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

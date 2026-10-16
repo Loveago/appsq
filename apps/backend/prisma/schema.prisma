@@ -96,6 +96,12 @@ model User {
   monthlyAiTokensUsed   Int              @default(0)
   aiQuotaResetAt        DateTime         @default(now())
 
+  // Cloud Notes Sync (Pro-only)
+  cloudSyncEnabled      Boolean          @default(false)
+  cloudSyncDisabledAt   DateTime?
+  cloudStorageBytes     Int              @default(0)
+  cloudStorageQuotaBytes Int             @default(26214400) // 25 MB default text allowance
+
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
 
@@ -157,6 +163,10 @@ model Note {
   embedding Unsupported("vector(1536)")?
 
   version           Int      @default(1)
+  serverRevision    Int      @default(1)
+  clientModifiedAt  DateTime?
+  pendingExpirationAt DateTime?
+  expirationReason  String?
   deletedAt         DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -172,6 +182,9 @@ model Note {
   @@index([userId])
   @@index([projectId])
   @@index([createdAt])
+  @@index([userId, updatedAt])
+  @@index([userId, deletedAt])
+  @@index([pendingExpirationAt])
 }
 
 model KnowledgeConnection {
@@ -636,9 +649,11 @@ model UserDevice {
   token       String   @unique
   platform    String   // "ANDROID", "IOS", "WEB"
   deviceModel String?
+  deviceName  String?
   appVersion  String?
   isActive    Boolean  @default(true)
   lastSeenAt  DateTime @default(now())
+  lastSyncAt  DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

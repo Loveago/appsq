@@ -13,6 +13,26 @@ import { PrismaService } from '../../database/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { EmailService } from './email.service';
 
+export interface GoogleAuthConfig {
+  isEnabled: boolean;
+  webClientId: string;
+  iosClientId: string;
+  androidClientId: string;
+  packageName: string;
+  isConfigured: boolean;
+}
+
+const GOOGLE_AUTH_SETTING_KEY = 'google_oauth_config';
+
+const DEFAULT_GOOGLE_AUTH_CONFIG: GoogleAuthConfig = {
+  isEnabled: true,
+  webClientId: '',
+  iosClientId: '',
+  androidClientId: '',
+  packageName: 'com.vynotes.crazytech',
+  isConfigured: false,
+};
+
 @Injectable()
 export class AuthService implements OnModuleInit {
   private readonly logger = new Logger(AuthService.name);
@@ -419,6 +439,11 @@ export class AuthService implements OnModuleInit {
       throw new BadRequestException('Email is required for Google authentication');
     }
 
+    const config = await this.getGoogleAuthConfig();
+    if (!config.isEnabled) {
+      throw new BadRequestException('Google Sign-In is currently disabled by administrator');
+    }
+
     const cleanEmail = payload.email.trim().toLowerCase();
     let verifiedName = payload.fullName?.trim() || '';
     let verifiedPicture = payload.avatarUrl?.trim() || '';
@@ -565,6 +590,103 @@ export class AuthService implements OnModuleInit {
     return {
       success: true,
       message: 'Password successfully reset. You may now sign in with your new credentials.',
+    };
+  }
+
+  /**
+   * Retrieves Google OAuth configuration from database or env fallbacks
+   */
+  async getGoogleAuthConfig(): Promise<GoogleAuthConfig> {
+    try {
+      const setting = await this.prisma.systemSetting.findUnique({
+        where: { key: GOOGLE_AUTH_SETTING_KEY },
+      });
+      if (!setting || !setting.value) {
+        const envWebClient = process.env.GOOGLE_WEB_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || '';
+        const envIosClient = process.env.GOOGLE_IOS_CLIENT_ID || '';
+        return {
+          ...DEFAULT_GOOGLE_AUTH_CONFIG,
+          webClientId: envWebClient,
+          iosClientId: envIosClient,
+          isConfigured: Boolean(envWebClient),
+        };
+      }
+      const val = setting.value as any;
+      const webClientId = val.webClientId || process.env.GOOGLE_WEB_CLIENT_ID || '';
+      return {
+        isEnabled: val.isEnabled ?? DEFAULT_GOOGLE_AUTH_CONFIG.isEnabled,
+        webClientId,
+        iosClientId: val.iosClientId || process.env.GOOGLE_IOS_CLIENT_ID || '',
+        androidClientId: val.androidClientId || '',
+        packageName: val.packageName || DEFAULT_GOOGLE_AUTH_CONFIG.packageName,
+        isConfigured: Boolean(webClientId),
+      };
+    } catch (err: any) {
+      this.logger.warn(`Could not load google_oauth_config: ${err.message}`);
+      return { ...DEFAULT_GOOGLE_AUTH_CONFIG };
+    }
+  }
+
+  /**
+   * Admin: Update Google OAuth configuration
+   */
+  async updateGoogleAuthConfig(admin: any, dto: Partial<GoogleAuthConfig>) {
+    const current = await this.getGoogleAuthConfig();
+    const updated: GoogleAuthConfig = {
+      ...current,
+      ...dto,
+      isConfigured: Boolean(dto.webClientId !== undefined ? dto.webClientId : current.webClientId),
+    };
+
+    await this.prisma.systemSetting.upsert({
+      where: { key: GOOGLE_AUTH_SETTING_KEY },
+      update: {
+        value: updated as any,
+        description: 'Google Sign-In OAuth credentials for Android, iOS, and Web',
+      },
+      create: {
+        key: GOOGLE_AUTH_SETTING_KEY,
+        value: updated as any,
+        description: 'Google Sign-In OAuth credentials for Android, iOS, and Web',
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        adminId: admin?.id || 'system',
+        adminEmail: admin?.email || 'admin@vynotes.ai',
+        action: 'UPDATE_GOOGLE_OAUTH_CONFIG',
+        targetType: 'SETTING',
+        targetId: GOOGLE_AUTH_SETTING_KEY,
+        details: {
+          isEnabled: updated.isEnabled,
+          hasWebClientId: Boolean(updated.webClientId),
+          hasIosClientId: Boolean(updated.iosClientId),
+          packageName: updated.packageName,
+        } as any,
+      },
+    }).catch(() => {});
+
+    return {
+      success: true,
+      config: updated,
+      message: 'Google Sign-In OAuth configuration updated successfully',
+    };
+  }
+
+  /**
+   * Public Auth Configuration for client apps (Android/iOS)
+   */
+  async getPublicAuthConfig() {
+    const google = await this.getGoogleAuthConfig();
+    return {
+      google: {
+        isEnabled: google.isEnabled,
+        webClientId: google.webClientId,
+        iosClientId: google.iosClientId,
+        packageName: google.packageName,
+        isConfigured: google.isConfigured,
+      },
     };
   }
 }

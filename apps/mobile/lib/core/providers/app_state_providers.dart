@@ -200,32 +200,44 @@ final isProProvider = Provider<bool>((ref) {
 // Ad suppression flag (true when editor is open or recording audio)
 final adSuppressionProvider = StateProvider<bool>((ref) => false);
 
-// Notes State Notifier
+// Notes State Notifier with Local-First Persistence & Cloud Sync Queue
 class NotesNotifier extends StateNotifier<List<NoteModel>> {
   NotesNotifier() : super([]);
+
+  void setNotesQuietly(List<NoteModel> notes) {
+    state = notes;
+    LocalStorageService.instance.saveNotes(state);
+  }
 
   void setNotes(List<NoteModel> notes) {
     state = notes;
     LocalStorageService.instance.saveNotes(state);
     for (final note in notes) {
-      ApiClient.instance.createNote(
-        id: note.id,
-        title: note.title,
-        content: note.content,
-        projectId: note.projectId,
-      ).catchError((_) => null);
+      LocalStorageService.instance.enqueueCloudSyncItem({
+        'id': note.id,
+        'title': note.title,
+        'content': note.content,
+        'isPinned': note.isPinned,
+        'clientRevision': 1,
+        'clientModifiedAt': DateTime.now().toIso8601String(),
+        'isDeleted': false,
+      });
     }
   }
 
   void addNote(NoteModel note) {
     state = [note, ...state];
     LocalStorageService.instance.saveNotes(state);
-    ApiClient.instance.createNote(
-      id: note.id,
-      title: note.title,
-      content: note.content,
-      projectId: note.projectId,
-    ).catchError((_) => null);
+    // Enqueue strictly text metadata into persistent local sync queue
+    LocalStorageService.instance.enqueueCloudSyncItem({
+      'id': note.id,
+      'title': note.title,
+      'content': note.content,
+      'isPinned': note.isPinned,
+      'clientRevision': 1,
+      'clientModifiedAt': DateTime.now().toIso8601String(),
+      'isDeleted': false,
+    });
   }
 
   void updateNote(NoteModel updatedNote) {
@@ -234,18 +246,31 @@ class NotesNotifier extends StateNotifier<List<NoteModel>> {
         if (n.id == updatedNote.id) updatedNote else n,
     ];
     LocalStorageService.instance.saveNotes(state);
-    ApiClient.instance.updateNote(
-      updatedNote.id,
-      title: updatedNote.title,
-      content: updatedNote.content,
-      isPinned: updatedNote.isPinned,
-    ).catchError((_) => false);
+    // Enqueue strictly text metadata into persistent local sync queue
+    LocalStorageService.instance.enqueueCloudSyncItem({
+      'id': updatedNote.id,
+      'title': updatedNote.title,
+      'content': updatedNote.content,
+      'isPinned': updatedNote.isPinned,
+      'clientRevision': 1,
+      'clientModifiedAt': DateTime.now().toIso8601String(),
+      'isDeleted': false,
+    });
   }
 
   void deleteNote(String id) {
     state = state.where((n) => n.id != id).toList();
     LocalStorageService.instance.saveNotes(state);
-    ApiClient.instance.deleteNote(id).catchError((_) => false);
+    // Enqueue tombstone into persistent local sync queue
+    LocalStorageService.instance.enqueueCloudSyncItem({
+      'id': id,
+      'title': '',
+      'content': '',
+      'isPinned': false,
+      'clientRevision': 1,
+      'clientModifiedAt': DateTime.now().toIso8601String(),
+      'isDeleted': true,
+    });
   }
 
   void togglePin(String id) {
@@ -256,7 +281,15 @@ class NotesNotifier extends StateNotifier<List<NoteModel>> {
     LocalStorageService.instance.saveNotes(state);
     final target = state.where((n) => n.id == id).firstOrNull;
     if (target != null) {
-      ApiClient.instance.updateNote(id, isPinned: target.isPinned).catchError((_) => false);
+      LocalStorageService.instance.enqueueCloudSyncItem({
+        'id': target.id,
+        'title': target.title,
+        'content': target.content,
+        'isPinned': target.isPinned,
+        'clientRevision': 1,
+        'clientModifiedAt': DateTime.now().toIso8601String(),
+        'isDeleted': false,
+      });
     }
   }
 }

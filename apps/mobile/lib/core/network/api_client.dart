@@ -179,6 +179,24 @@ class ApiClient {
     }
   }
 
+  /// Fetch Public Authentication Configuration (Google OAuth IDs, etc.)
+  Future<Map<String, dynamic>> getAuthConfig() async {
+    try {
+      final response = await _dio.get('/auth/config');
+      if (response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } catch (_) {}
+    return {
+      'google': {
+        'isEnabled': true,
+        'webClientId': '',
+        'iosClientId': '',
+        'packageName': 'com.vynotes.crazytech',
+      }
+    };
+  }
+
   /// Request Password Reset Verification Code via Brevo
   Future<Map<String, dynamic>> forgotPassword(String email) async {
     try {
@@ -434,6 +452,109 @@ class ApiClient {
   Future<bool> deleteNote(String id) async {
     try {
       final response = await _dio.delete('/notes/$id');
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// =========================================================================
+  /// CLOUD SYNC & PRO RETENTION APIS (Text Notes Only)
+  /// =========================================================================
+
+  /// Fetch Cloud Sync Status, Quotas, and Expiration State
+  Future<Map<String, dynamic>> getCloudSyncStatus() async {
+    if (_isTesting) {
+      return {
+        'isPro': true,
+        'cloudSyncEnabled': true,
+        'cloudStorageBytes': 10240,
+        'cloudStorageQuotaBytes': 26214400,
+        'activeNotesCount': 5,
+        'pendingExpirationCount': 0,
+      };
+    }
+    try {
+      final response = await _dio.get('/notes/sync/status');
+      if (response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } catch (e) {
+      debugPrint('ApiClient getCloudSyncStatus error: $e');
+    }
+    return {
+      'isPro': false,
+      'cloudSyncEnabled': false,
+      'cloudStorageBytes': 0,
+      'cloudStorageQuotaBytes': 26214400,
+      'activeNotesCount': 0,
+      'pendingExpirationCount': 0,
+    };
+  }
+
+  /// Enable Cloud Sync for Pro User
+  Future<Map<String, dynamic>> enableCloudSync() async {
+    final response = await _dio.post('/notes/sync/enable');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Disable Cloud Sync (Preserves local notes, sets 90-day retention on cloud)
+  Future<Map<String, dynamic>> disableCloudSync() async {
+    final response = await _dio.post('/notes/sync/disable');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Permanently Delete Cloud Copies & Metadata
+  Future<Map<String, dynamic>> deleteCloudData() async {
+    final response = await _dio.post('/notes/sync/delete-cloud-data');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Pull Incremental Changes & Tombstones Since Timestamp
+  Future<Map<String, dynamic>> pullCloudNotes({
+    String? lastSyncTimestamp,
+    int? limit,
+  }) async {
+    final response = await _dio.post(
+      '/notes/sync/pull',
+      data: {
+        if (lastSyncTimestamp != null) 'lastSyncTimestamp': lastSyncTimestamp,
+        if (limit != null) 'limit': limit,
+      },
+    );
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Push Batched Local Note Changes (Strict Text-Only)
+  Future<Map<String, dynamic>> pushCloudNotes({
+    required List<Map<String, dynamic>> items,
+    String? deviceToken,
+  }) async {
+    final response = await _dio.post(
+      '/notes/sync/push',
+      data: {
+        'items': items,
+        if (deviceToken != null) 'deviceToken': deviceToken,
+      },
+    );
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// List Active Registered Devices and Sessions
+  Future<List<Map<String, dynamic>>> getCloudDevices() async {
+    try {
+      final response = await _dio.get('/notes/sync/devices');
+      if (response.data is List) {
+        return (response.data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Revoke a Specific Device Session
+  Future<bool> revokeCloudDevice(String deviceId) async {
+    try {
+      final response = await _dio.delete('/notes/sync/devices/$deviceId');
       return response.statusCode == 200 || response.statusCode == 201;
     } catch (_) {
       return false;

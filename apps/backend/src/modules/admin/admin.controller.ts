@@ -15,6 +15,9 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../../common/guards/admin.guard';
 import { BillingService } from '../billing/billing.service';
 import { EmailService } from '../auth/email.service';
+import { AuthService } from '../auth/auth.service';
+import { CloudSyncService } from '../sync/cloud-sync.service';
+import { PrismaService } from '../../database/prisma.service';
 
 @UseGuards(JwtAuthGuard, AdminGuard)
 @Controller('admin')
@@ -23,7 +26,21 @@ export class AdminController {
     private readonly adminService: AdminService,
     private readonly billingService: BillingService,
     private readonly emailService: EmailService,
+    private readonly authService: AuthService,
+    private readonly cloudSyncService: CloudSyncService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  // 1e. GOOGLE SIGN-IN & OAUTH AUTHENTICATION CONFIGURATION
+  @Get('auth/google-config')
+  async getGoogleAuthConfig() {
+    return this.authService.getGoogleAuthConfig();
+  }
+
+  @Put('auth/google-config')
+  async updateGoogleAuthConfig(@Req() req: any, @Body() body: any) {
+    return this.authService.updateGoogleAuthConfig(req.user, body);
+  }
 
   // 1d. BREVO EMAIL & PASSWORD RESET CONFIGURATION
   @Get('email/config')
@@ -339,5 +356,44 @@ export class AdminController {
   @Delete('notes/:id')
   async deleteNote(@Req() req: any, @Param('id') id: string) {
     return this.adminService.deleteNote(req.user, id);
+  }
+
+  // 9. CLOUD SYNC & RETENTION POLICY CONTROLS
+  @Get('sync/config')
+  async getSyncConfig() {
+    const config = await this.cloudSyncService.getRetentionConfig();
+    const activeSyncUsers = await this.prisma.user.count({ where: { cloudSyncEnabled: true } });
+    const storageStats = await this.prisma.user.aggregate({
+      _sum: { cloudStorageBytes: true },
+    });
+    const pendingExpirationCount = await this.prisma.note.count({
+      where: { pendingExpirationAt: { not: null } },
+    });
+    const tombstonesCount = await this.prisma.note.count({
+      where: { deletedAt: { not: null } },
+    });
+
+    return {
+      config,
+      telemetry: {
+        activeSyncUsers,
+        totalCloudStorageBytes: storageStats._sum.cloudStorageBytes || 0,
+        pendingExpirationCount,
+        tombstonesCount,
+      },
+    };
+  }
+
+  @Put('sync/config')
+  async updateSyncConfig(@Req() req: any, @Body() body: any) {
+    return this.cloudSyncService.updateRetentionConfig(body, req.user?.email || 'admin@vynotes.ai');
+  }
+
+  @Post('sync/cleanup')
+  async executeCleanup(@Req() req: any, @Body('dryRun') dryRun?: boolean) {
+    return this.cloudSyncService.cleanupExpiredCloudNotes(
+      dryRun ?? false,
+      req.user?.email || 'admin@vynotes.ai',
+    );
   }
 }

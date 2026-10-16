@@ -7,6 +7,8 @@ import '../../../../core/storage/local_storage_service.dart';
 import '../../../../main.dart';
 import '../../paywall/presentation/paywall_screen.dart';
 import 'account_profile_screen.dart';
+import 'cloud_sync_screen.dart';
+import '../../../../core/services/cloud_sync_service.dart';
 
 class SettingsScreen extends ConsumerWidget {
   final VoidCallback? onBack;
@@ -514,7 +516,56 @@ class SettingsScreen extends ConsumerWidget {
               child: Column(
               children: [
                 ListTile(
-                  leading: const Icon(Icons.file_download_outlined, size: 20, color: AppColors.primary),
+                  leading: const Icon(Icons.cloud_sync_rounded, size: 20, color: AppColors.primary),
+                  title: Row(
+                    children: [
+                      Text(
+                        'Cloud Sync & Retention',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: profile.isPro ? AppColors.primary.withValues(alpha: 0.15) : AppColors.textMuted.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'PRO',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            color: profile.isPro ? AppColors.primary : (isDark ? AppColors.darkTextMuted : AppColors.textMuted),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  subtitle: Text(
+                    'Automatic cross-device sync for text notes & active devices',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+                    ),
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const CloudSyncScreen()),
+                    );
+                  },
+                ),
+                Divider(
+                  height: 1,
+                  color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.file_download_outlined, size: 20, color: AppColors.matrixEmerald),
                   title: Text(
                     'Export Second Brain',
                     style: TextStyle(
@@ -524,16 +575,15 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                   ),
                   subtitle: Text(
-                    'Export notes, tasks & graph in Markdown / JSON',
+                    'Export local notes, tasks & graph in JSON / Markdown',
                     style: TextStyle(
                       fontSize: 11,
                       color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
                     ),
                   ),
                   onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Second Brain archive exported successfully.')),
-                    );
+                    final notes = ref.read(notesProvider);
+                    ref.read(cloudSyncProvider.notifier).exportNotes(notes);
                   },
                 ),
                 Divider(

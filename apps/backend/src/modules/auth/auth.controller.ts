@@ -56,6 +56,11 @@ export class AuthController {
     return this.authService.resetPassword(email, code, newPassword);
   }
 
+  @Get('config')
+  async getPublicAuthConfig() {
+    return this.authService.getPublicAuthConfig();
+  }
+
   @Post('guest')
   async guestLogin(@Body('deviceId') deviceId?: string) {
     return this.authService.guestLogin(deviceId);

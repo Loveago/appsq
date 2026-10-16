@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -105,8 +106,28 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     });
 
     try {
+      Map<String, dynamic> authConfig = {};
+      try {
+        authConfig = await ApiClient.instance.getAuthConfig();
+      } catch (_) {}
+
+      final googleConf = authConfig['google'] as Map<dynamic, dynamic>? ?? {};
+      final isGoogleEnabled = googleConf['isEnabled'] as bool? ?? true;
+      if (!isGoogleEnabled) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Google Sign-In is temporarily disabled by administrator.';
+        });
+        return;
+      }
+
+      final serverClientId = googleConf['webClientId']?.toString().trim();
+      final iosClientId = googleConf['iosClientId']?.toString().trim();
+
       final googleSignIn = GoogleSignIn(
         scopes: ['email', 'profile'],
+        serverClientId: (serverClientId != null && serverClientId.isNotEmpty) ? serverClientId : null,
+        clientId: (Platform.isIOS && iosClientId != null && iosClientId.isNotEmpty) ? iosClientId : null,
       );
       final account = await googleSignIn.signIn();
       if (account == null) {

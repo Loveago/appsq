@@ -206,6 +206,78 @@ class LocalStorageService {
     }
   }
 
+  static const String _keyCloudSyncEnabled = 'vynotes_cloud_sync_enabled';
+  static const String _keyLastCloudSyncTime = 'vynotes_last_cloud_sync_time';
+  static const String _keyCloudSyncQueue = 'vynotes_cloud_sync_queue';
+
+  Future<void> saveCloudSyncEnabled(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyCloudSyncEnabled, enabled);
+    } catch (_) {}
+  }
+
+  Future<bool> loadCloudSyncEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_keyCloudSyncEnabled) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> saveLastCloudSyncTime(String timestamp) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyLastCloudSyncTime, timestamp);
+    } catch (_) {}
+  }
+
+  Future<String?> loadLastCloudSyncTime() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_keyLastCloudSyncTime);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveCloudSyncQueue(List<Map<String, dynamic>> queue) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyCloudSyncQueue, jsonEncode(queue));
+    } catch (_) {}
+  }
+
+  Future<List<Map<String, dynamic>>> loadCloudSyncQueue() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final str = prefs.getString(_keyCloudSyncQueue);
+      if (str == null || str.isEmpty) return [];
+      final decoded = jsonDecode(str) as List<dynamic>;
+      return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> enqueueCloudSyncItem(Map<String, dynamic> item) async {
+    try {
+      final queue = await loadCloudSyncQueue();
+      // Remove any existing item with the same noteId to avoid redundant queue operations
+      queue.removeWhere((q) => q['id'] == item['id']);
+      queue.add(item);
+      await saveCloudSyncQueue(queue);
+    } catch (_) {}
+  }
+
+  Future<void> clearCloudSyncQueue() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_keyCloudSyncQueue);
+    } catch (_) {}
+  }
+
   Future<void> clearAll() async {
     try {
       final prefs = await SharedPreferences.getInstance();
