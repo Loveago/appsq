@@ -1085,43 +1085,48 @@ export class AdminService {
     const scheduledDate = dto.scheduledFor ? new Date(dto.scheduledFor) : null;
     const expiresDate = dto.expiresAt ? new Date(dto.expiresAt) : null;
 
-    const announcement = await this.prisma.announcement.create({
-      data: {
-        title: dto.title.trim(),
-        message: dto.message.trim(),
-        targetTier: dto.targetTier || 'ALL',
-        category: dto.category || 'ANNOUNCEMENT',
-        priority: dto.priority || 'NORMAL',
-        channel: dto.channel || 'BOTH',
-        actionUrl: dto.actionUrl,
-        actionLabel: dto.actionLabel,
-        status: dto.publishImmediately ? 'DRAFT' : (scheduledDate ? 'SCHEDULED' : 'DRAFT'),
-        scheduledFor: scheduledDate,
-        expiresAt: expiresDate,
-        createdByAdminId: admin.id,
-        isActive: true,
-      },
-    });
+    try {
+      const announcement = await this.prisma.announcement.create({
+        data: {
+          title: dto.title.trim(),
+          message: dto.message.trim(),
+          targetTier: dto.targetTier || 'ALL',
+          category: dto.category || 'ANNOUNCEMENT',
+          priority: dto.priority || 'NORMAL',
+          channel: dto.channel || 'BOTH',
+          actionUrl: dto.actionUrl,
+          actionLabel: dto.actionLabel,
+          status: dto.publishImmediately ? 'DRAFT' : (scheduledDate ? 'SCHEDULED' : 'DRAFT'),
+          scheduledFor: scheduledDate,
+          expiresAt: expiresDate,
+          createdByAdminId: admin.id,
+          isActive: true,
+        },
+      });
 
-    await this.logAdminAction({
-      adminId: admin.id,
-      adminEmail: admin.email,
-      action: 'CREATE_ANNOUNCEMENT',
-      targetType: 'ANNOUNCEMENT',
-      targetId: announcement.id,
-      details: {
-        title: dto.title,
-        targetTier: dto.targetTier,
-        channel: dto.channel,
-        priority: dto.priority,
-      },
-    });
+      await this.logAdminAction({
+        adminId: admin.id,
+        adminEmail: admin.email,
+        action: 'CREATE_ANNOUNCEMENT',
+        targetType: 'ANNOUNCEMENT',
+        targetId: announcement.id,
+        details: {
+          title: dto.title,
+          targetTier: dto.targetTier,
+          channel: dto.channel,
+          priority: dto.priority,
+        },
+      });
 
-    if (dto.publishImmediately) {
-      return this.publishAnnouncement(admin, announcement.id);
+      if (dto.publishImmediately) {
+        return await this.publishAnnouncement(admin, announcement.id);
+      }
+
+      return announcement;
+    } catch (err: any) {
+      this.logger.error(`Error creating announcement: ${err.message}`, err.stack);
+      throw err;
     }
-
-    return announcement;
   }
 
   /**
@@ -1196,7 +1201,8 @@ export class AdminService {
           if (res) {
             deliveredCount++;
           }
-        } catch {
+        } catch (err: any) {
+          this.logger.warn(`Failed delivering announcement to user ${u.id}: ${err.message}`);
           failedCount++;
         }
       }

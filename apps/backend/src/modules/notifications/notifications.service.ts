@@ -225,28 +225,51 @@ export class NotificationsService {
    * Get user notification preferences or initialize defaults
    */
   async getPreferences(userId: string) {
-    let pref = await this.prisma.notificationPreference.findUnique({
-      where: { userId },
-    });
+    const defaultPrefs = {
+      id: `pref_${userId}`,
+      userId,
+      pushEnabled: true,
+      inAppEnabled: true,
+      reminderAlerts: true,
+      noteReviewAlerts: true,
+      taskDueAlerts: true,
+      meetingAlerts: true,
+      voiceNoteAlerts: true,
+      announcements: true,
+      quietHoursStart: null,
+      quietHoursEnd: null,
+      timezone: 'UTC',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
 
-    if (!pref) {
-      pref = await this.prisma.notificationPreference.create({
-        data: {
-          userId,
-          pushEnabled: true,
-          inAppEnabled: true,
-          reminderAlerts: true,
-          noteReviewAlerts: true,
-          taskDueAlerts: true,
-          meetingAlerts: true,
-          voiceNoteAlerts: true,
-          announcements: true,
-          timezone: 'UTC',
-        },
+    try {
+      let pref = await this.prisma.notificationPreference.findUnique({
+        where: { userId },
       });
-    }
 
-    return pref;
+      if (!pref) {
+        pref = await this.prisma.notificationPreference.create({
+          data: {
+            userId,
+            pushEnabled: true,
+            inAppEnabled: true,
+            reminderAlerts: true,
+            noteReviewAlerts: true,
+            taskDueAlerts: true,
+            meetingAlerts: true,
+            voiceNoteAlerts: true,
+            announcements: true,
+            timezone: 'UTC',
+          },
+        });
+      }
+
+      return pref;
+    } catch (err: any) {
+      this.logger.warn(`Could not load or create notification preferences for user ${userId}: ${err.message}`);
+      return defaultPrefs as any;
+    }
   }
 
   /**
