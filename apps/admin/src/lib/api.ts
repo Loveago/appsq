@@ -1,4 +1,20 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://appsq-two.vercel.app';
+export function getApiBase(): string {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('vynotes_api_base');
+    if (saved) return saved;
+  }
+  return process.env.NEXT_PUBLIC_API_URL || 'https://appsq-two.vercel.app';
+}
+
+export function setApiBase(url: string) {
+  if (typeof window !== 'undefined') {
+    if (!url) {
+      localStorage.removeItem('vynotes_api_base');
+    } else {
+      localStorage.setItem('vynotes_api_base', url.replace(/\/+$/, ''));
+    }
+  }
+}
 
 export function getAdminToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -22,6 +38,7 @@ export function clearAdminToken() {
 
 export async function adminFetch(endpoint: string, options: RequestInit = {}) {
   const token = getAdminToken();
+  const apiBase = getApiBase();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {}),
@@ -31,10 +48,15 @@ export async function adminFetch(endpoint: string, options: RequestInit = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase}${endpoint}`, {
+      ...options,
+      headers,
+    });
+  } catch (netErr: any) {
+    throw new Error(`Cannot connect to backend at ${apiBase}. Please verify the server is running.`);
+  }
 
   if (response.status === 401 || response.status === 403) {
     // Session expired or unauthorized
@@ -44,6 +66,10 @@ export async function adminFetch(endpoint: string, options: RequestInit = {}) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.message || (isUnauth ? 'Session expired. Please sign in again.' : 'Access restricted to administrators.'));
     }
+  }
+
+  if (response.status === 404) {
+    throw new Error(`Endpoint "${endpoint}" not found (404) on backend ${apiBase}. Please redeploy or update your backend.`);
   }
 
   if (!response.ok) {
