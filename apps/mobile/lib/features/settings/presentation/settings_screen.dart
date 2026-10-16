@@ -255,7 +255,7 @@ class SettingsScreen extends ConsumerWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                'Upgrade \$4.99',
+                                'Upgrade \$5.99',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 11,
@@ -268,7 +268,7 @@ class SettingsScreen extends ConsumerWidget {
                       )
                     else
                       Text(
-                        '\$4.99/mo',
+                        '\$5.99/mo',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,

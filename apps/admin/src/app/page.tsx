@@ -1664,7 +1664,7 @@ export default function AdminDashboard() {
                   </div>
                   <div>
                     <div className="text-4xl font-black text-white tracking-tight">
-                      ${metrics?.revenue?.mrr ? metrics.revenue.mrr.toFixed(2) : "4.99"}
+                      ${metrics?.revenue?.mrr ? metrics.revenue.mrr.toFixed(2) : "5.99"}
                     </div>
                     <div className="text-xs text-pink-400 font-semibold mt-1.5">
                       {metrics?.users?.pro ?? 1} Pro subs ({metrics?.users?.conversionRate ?? "2.1%"} conversion)
@@ -1761,7 +1761,7 @@ export default function AdminDashboard() {
                     {/* Floating callout pin */}
                     <div className="absolute top-2 left-[62%] -translate-x-1/2 glass-dropdown text-[10px] text-white px-3 py-1.5 rounded-xl flex flex-col items-center z-10 animate-bounce">
                       <span className="text-slate-400 text-[9px] font-mono">Oct Peak</span>
-                      <span className="font-black text-pink-300 font-mono">${metrics?.revenue?.mrr ? metrics.revenue.mrr.toFixed(2) : "4.99"}</span>
+                      <span className="font-black text-pink-300 font-mono">${metrics?.revenue?.mrr ? metrics.revenue.mrr.toFixed(2) : "5.99"}</span>
                     </div>
 
                     <svg className="w-full h-40 overflow-visible" viewBox="0 0 300 100" preserveAspectRatio="none">

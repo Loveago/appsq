@@ -26,15 +26,15 @@ void main() {
     expect(find.text('PRO ACCESS'), findsOneWidget);
     expect(find.text('7-DAY FREE TRIAL'), findsOneWidget);
 
-    // Initial state is Annual ($3.29)
-    expect(find.text('\$3.29'), findsOneWidget);
+    // Initial state is Annual ($4.00)
+    expect(find.text('\$4.00'), findsOneWidget);
 
     // Tap Monthly toggle
     await tester.tap(find.text('Monthly'));
     await tester.pumpAndSettle();
 
-    // Verify price updates to $4.99
-    expect(find.text('\$4.99'), findsOneWidget);
+    // Verify price updates to $5.99
+    expect(find.text('\$5.99'), findsOneWidget);
 
     // Ensure button is visible before tapping
     final proButtonFinder = find.text('Start 7-Day Free Trial');

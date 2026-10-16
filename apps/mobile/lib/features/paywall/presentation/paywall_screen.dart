@@ -240,12 +240,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
       if (_annualPackage != null) {
         return _annualPackage!.storeProduct.priceString;
       }
-      return '\$3.29';
+      return '\$4.00';
     } else {
       if (_monthlyPackage != null) {
         return _monthlyPackage!.storeProduct.priceString;
       }
-      return '\$4.99';
+      return '\$5.99';
     }
   }
 
@@ -254,7 +254,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
       if (_annualPackage != null) {
         return 'Billed annually at ${_annualPackage!.storeProduct.priceString}/yr';
       }
-      return 'Billed annually at \$39.50/yr';
+      return 'Billed annually at \$48.00/yr';
     } else {
       return 'Billed monthly, cancel anytime';
     }
@@ -402,7 +402,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _buildToggleItem(
-                      title: 'Annual (Save 35%)',
+                      title: 'Annual (Save 33%)',
                       isSelected: _isAnnual,
                       isDark: isDark,
                       onTap: () => setState(() => _isAnnual = true),

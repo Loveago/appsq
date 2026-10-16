@@ -108,7 +108,7 @@ export class AdminService {
         }).catch(() => []),
       ]);
 
-      const mrr = proUsers * 4.99;
+      const mrr = proUsers * 5.99;
       const arr = mrr * 12;
       const conversionRate = totalUsers > 0 ? ((proUsers / totalUsers) * 100).toFixed(1) + '%' : '0%';
 
@@ -125,7 +125,7 @@ export class AdminService {
         revenue: {
           mrr: Number(mrr.toFixed(2)),
           arr: Number(arr.toFixed(2)),
-          proPrice: 4.99,
+          proPrice: 5.99,
           currency: 'USD',
         },
         ai: {
@@ -153,7 +153,7 @@ export class AdminService {
       this.logger.error(`Error calculating overview metrics: ${err.message}`);
       return {
         users: { total: 0, pro: 0, trial: 0, free: 0, activeToday: 0, newThisWeek: 0, conversionRate: '0%' },
-        revenue: { mrr: 0, arr: 0, proPrice: 4.99, currency: 'USD' },
+        revenue: { mrr: 0, arr: 0, proPrice: 5.99, currency: 'USD' },
         ai: { monthlyUsageRecords: 0, activeProvidersCount: 0, primaryProvider: 'Unreachable' },
         product: { notes: 0, meetings: 0, tasks: 0, scannedDocuments: 0 },
         systemStatus: { api: 'OPERATIONAL', database: 'DEGRADED', aiGateway: 'ERROR', backgroundJobs: 'DEGRADED', storage: 'DEGRADED' },

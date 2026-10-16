@@ -604,7 +604,7 @@ class _AccountProfileScreenState extends ConsumerState<AccountProfileScreen> {
                                 onPressed: () {
                                   Navigator.push(context, MaterialPageRoute(builder: (ctx) => const PaywallScreen()));
                                 },
-                                child: const Text('Upgrade Pro \$4.99', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700)),
+                                child: const Text('Upgrade Pro \$5.99', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700)),
                               ),
                             ),
                           ],
