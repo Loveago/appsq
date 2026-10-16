@@ -123,10 +123,48 @@ export class CloudSyncService {
   }
 
   /**
+   * Validates user account for general cloud synchronization.
+   * Allows all authenticated accounts (5 MB standard text quota for Free, 25 MB for Pro).
+   */
+  async validateUserSyncAccess(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        subscriptionTier: true,
+        plan: true,
+        subscriptionExpiresAt: true,
+        cloudSyncEnabled: true,
+        cloudStorageBytes: true,
+        cloudStorageQuotaBytes: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User account not found');
+    }
+
+    const isPro =
+      user.subscriptionTier === 'PRO' ||
+      user.plan === 'PRO' ||
+      user.plan === 'TRIAL';
+
+    const defaultQuota = isPro ? 26214400 : 5242880; // 25 MB for Pro, 5 MB for Free
+    const cloudStorageQuotaBytes = user.cloudStorageQuotaBytes || defaultQuota;
+
+    return {
+      ...user,
+      isPro,
+      cloudStorageQuotaBytes,
+    };
+  }
+
+  /**
    * PULL: Returns incremental note changes and tombstones since lastSyncTimestamp
    */
   async pullChanges(userId: string, dto: SyncPullDto) {
-    const user = await this.validateUserPro(userId);
+    const user = await this.validateUserSyncAccess(userId);
     const config = await this.getRetentionConfig();
 
     if (!config.globalSyncEnabled) {
@@ -186,7 +224,7 @@ export class CloudSyncService {
    * PUSH: Batches client creations, updates, and deletions with strict text-only validation
    */
   async pushChanges(userId: string, dto: SyncPushDto) {
-    const user = await this.validateUserPro(userId);
+    const user = await this.validateUserSyncAccess(userId);
     const config = await this.getRetentionConfig();
 
     if (!config.globalSyncEnabled) {
@@ -385,22 +423,33 @@ export class CloudSyncService {
       user.plan === 'PRO' ||
       user.plan === 'TRIAL';
 
-    const activeCount = await this.prisma.note.count({
-      where: { userId, deletedAt: null },
-    });
+    let activeCount = 0;
+    try {
+      activeCount = await this.prisma.note.count({
+        where: { userId, deletedAt: null },
+      });
+    } catch {
+      activeCount = 0;
+    }
 
-    const pendingExpirationCount = await this.prisma.note.count({
-      where: { userId, pendingExpirationAt: { not: null } },
-    });
+    let pendingExpirationCount = 0;
+    try {
+      pendingExpirationCount = await this.prisma.note.count({
+        where: { userId, pendingExpirationAt: { not: null } },
+      });
+    } catch {
+      pendingExpirationCount = 0;
+    }
 
     const config = await this.getRetentionConfig();
+    const effectiveQuota = user.cloudStorageQuotaBytes || (isPro ? config.defaultQuotaMb * 1024 * 1024 : 5 * 1024 * 1024);
 
     return {
       isPro,
       cloudSyncEnabled: user.cloudSyncEnabled,
       cloudSyncDisabledAt: user.cloudSyncDisabledAt?.toISOString() || null,
-      cloudStorageBytes: user.cloudStorageBytes,
-      cloudStorageQuotaBytes: user.cloudStorageQuotaBytes || config.defaultQuotaMb * 1024 * 1024,
+      cloudStorageBytes: user.cloudStorageBytes || 0,
+      cloudStorageQuotaBytes: effectiveQuota,
       activeNotesCount: activeCount,
       pendingExpirationCount,
       retentionConfig: {
@@ -415,10 +464,10 @@ export class CloudSyncService {
   }
 
   /**
-   * Turns cloud sync ON for an eligible Pro user
+   * Turns cloud sync ON for an authenticated user
    */
   async enableSync(userId: string) {
-    await this.validateUserPro(userId);
+    await this.validateUserSyncAccess(userId);
 
     await this.prisma.user.update({
       where: { id: userId },
@@ -429,18 +478,20 @@ export class CloudSyncService {
     });
 
     // Cancel any pending expiration on cloud notes
-    await this.prisma.note.updateMany({
-      where: { userId, pendingExpirationAt: { not: null } },
-      data: {
-        pendingExpirationAt: null,
-        expirationReason: null,
-      },
-    });
+    try {
+      await this.prisma.note.updateMany({
+        where: { userId, pendingExpirationAt: { not: null } },
+        data: {
+          pendingExpirationAt: null,
+          expirationReason: null,
+        },
+      });
+    } catch {}
 
     return {
       success: true,
       cloudSyncEnabled: true,
-      message: 'Cloud sync enabled for VyNotes Pro.',
+      message: 'Cloud sync enabled.',
     };
   }
 

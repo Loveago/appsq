@@ -21,6 +21,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "cloudStorageBytes" INTEGER NOT NULL DEFAULT 0;',
       'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "cloudStorageQuotaBytes" INTEGER NOT NULL DEFAULT 26214400;',
       'ALTER TABLE "Note" ADD COLUMN IF NOT EXISTS "version" INTEGER NOT NULL DEFAULT 1;',
+      'ALTER TABLE "Note" ADD COLUMN IF NOT EXISTS "serverRevision" INTEGER NOT NULL DEFAULT 1;',
+      'ALTER TABLE "Note" ADD COLUMN IF NOT EXISTS "clientModifiedAt" TIMESTAMP(3);',
+      'ALTER TABLE "Note" ADD COLUMN IF NOT EXISTS "pendingExpirationAt" TIMESTAMP(3);',
+      'ALTER TABLE "Note" ADD COLUMN IF NOT EXISTS "expirationReason" TEXT;',
       'ALTER TABLE "Note" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);',
       'ALTER TABLE "Meeting" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);',
       `CREATE TABLE IF NOT EXISTS "Subscription" (

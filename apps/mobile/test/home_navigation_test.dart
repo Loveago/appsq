@@ -15,7 +15,7 @@ void main() {
 
     // Verify Home screen content is visible
     expect(find.byType(HomeScreen), findsOneWidget);
-    expect(find.text('MINDORA'), findsOneWidget);
+    expect(find.text('VYNOTES'), findsOneWidget);
     expect(find.text('PULSE METRICS'), findsOneWidget);
     expect(find.text('Home'), findsOneWidget); // Selected label
 
@@ -47,7 +47,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.grid_view_rounded));
     await tester.pumpAndSettle();
 
-    expect(find.text('MINDORA'), findsOneWidget);
+    expect(find.text('VYNOTES'), findsOneWidget);
     expect(find.text('PULSE METRICS'), findsOneWidget);
     expect(find.text('Home'), findsOneWidget);
   });
@@ -67,7 +67,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.arrow_back_ios_new_rounded));
     await tester.pumpAndSettle();
 
-    expect(find.text('MINDORA'), findsOneWidget);
+    expect(find.text('VYNOTES'), findsOneWidget);
   });
 
   testWidgets('Home screen renders cleanly on standard mobile screen bounds (360x640)', (WidgetTester tester) async {
@@ -78,7 +78,7 @@ void main() {
     await tester.pumpWidget(const ProviderScope(child: MindoraApp()));
     await tester.pumpAndSettle();
 
-    expect(find.text('MINDORA'), findsOneWidget);
+    expect(find.text('VYNOTES'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -97,7 +97,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('MINDORA'), findsOneWidget);
+    expect(find.text('VYNOTES'), findsOneWidget);
     final err = tester.takeException();
     if (err != null) {
       if (err is FlutterError) {

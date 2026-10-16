@@ -90,8 +90,7 @@ void main() {
 
       expect(find.text('Cloud Sync & Storage'), findsOneWidget);
       expect(find.text('Automatic Cloud Sync'), findsOneWidget);
-      expect(find.text('PRO'), findsWidgets);
-      expect(find.text('Requires VyNotes Pro subscription'), findsOneWidget);
+      expect(find.text('Sync is paused'), findsOneWidget);
       expect(find.textContaining('Text notes only'), findsOneWidget);
       expect(find.text('Text Storage Quota'), findsOneWidget);
       expect(find.text('Cloud Retention & Protection Policy'), findsOneWidget);

@@ -321,7 +321,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                   borderRadius: BorderRadius.circular(100),
                 ),
                 child: const Text(
-                  '✦ MINDORA PRO MEMBERSHIP',
+                  '✦ VYNOTES PRO MEMBERSHIP',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 10,

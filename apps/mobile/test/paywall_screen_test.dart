@@ -21,7 +21,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify header and features
-    expect(find.text('✦ MINDORA PRO MEMBERSHIP'), findsOneWidget);
+    expect(find.text('✦ VYNOTES PRO MEMBERSHIP'), findsOneWidget);
     expect(find.text('Unlimited Second Brain.'), findsOneWidget);
     expect(find.text('PRO ACCESS'), findsOneWidget);
     expect(find.text('7-DAY FREE TRIAL'), findsOneWidget);

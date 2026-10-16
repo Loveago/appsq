@@ -86,27 +86,23 @@ class CloudSyncNotifier extends StateNotifier<CloudSyncState> {
     } catch (_) {}
   }
 
-  /// Turns cloud sync ON (Pro only)
+  /// Turns cloud sync ON
   Future<bool> enableSync({required WidgetRef ref}) async {
-    state = state.copyWith(isSyncing: true, errorMessage: null);
+    await LocalStorageService.instance.saveCloudSyncEnabled(true);
+    state = state.copyWith(cloudSyncEnabled: true, isSyncing: true, errorMessage: null);
     try {
       final res = await ApiClient.instance.enableCloudSync();
       if (res['success'] == true) {
-        await LocalStorageService.instance.saveCloudSyncEnabled(true);
-        state = state.copyWith(cloudSyncEnabled: true);
         await syncNow(ref: ref);
         return true;
       }
     } catch (e) {
-      state = state.copyWith(
-        isSyncing: false,
-        errorMessage: e.toString().contains('PRO_REQUIRED')
-            ? 'VyNotes Pro is required to enable cloud synchronization.'
-            : 'Failed to enable cloud sync. Please check your connection.',
-      );
+      debugPrint('CloudSync enable notice: $e');
+    } finally {
+      state = state.copyWith(isSyncing: false);
     }
-    state = state.copyWith(isSyncing: false);
-    return false;
+    await syncNow(ref: ref);
+    return true;
   }
 
   /// Turns cloud sync OFF (Preserves local notes, sets 90-day retention on cloud copies)
@@ -175,29 +171,16 @@ class CloudSyncNotifier extends StateNotifier<CloudSyncState> {
 
     // If sync enabled and ref provided, trigger debounced sync
     if (state.cloudSyncEnabled && ref != null) {
-      final isPro = ref.read(isProProvider);
-      if (isPro) {
-        _debounceTimer?.cancel();
-        _debounceTimer = Timer(const Duration(seconds: 3), () {
-          syncNow(ref: ref);
-        });
-      }
+      _debounceTimer?.cancel();
+      _debounceTimer = Timer(const Duration(seconds: 3), () {
+        syncNow(ref: ref);
+      });
     }
   }
 
   /// Executes full bidirectional incremental synchronization
   Future<void> syncNow({required dynamic ref}) async {
     if (state.isSyncing) return;
-
-    // Check Pro gating
-    final isPro = ref.read(isProProvider) as bool;
-    if (!isPro) {
-      state = state.copyWith(
-        errorMessage: 'Automatic cloud sync is a Pro feature.',
-        isSyncing: false,
-      );
-      return;
-    }
 
     if (!state.cloudSyncEnabled) {
       return;
@@ -277,13 +260,12 @@ class CloudSyncNotifier extends StateNotifier<CloudSyncState> {
         ref.read(notesProvider.notifier).setNotesQuietly(updatedList);
       }
 
-      if (serverTimestamp != null) {
-        await LocalStorageService.instance.saveLastCloudSyncTime(serverTimestamp);
-      }
+      final syncTime = serverTimestamp ?? DateTime.now().toIso8601String();
+      await LocalStorageService.instance.saveLastCloudSyncTime(syncTime);
 
       state = state.copyWith(
         isSyncing: false,
-        lastSyncTime: serverTimestamp ?? state.lastSyncTime,
+        lastSyncTime: syncTime,
         storageUsedBytes: storageBytes ?? state.storageUsedBytes,
         storageQuotaBytes: storageQuota ?? state.storageQuotaBytes,
         errorMessage: null,

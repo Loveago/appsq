@@ -21,13 +21,26 @@ class _CloudSyncScreenState extends ConsumerState<CloudSyncScreen> {
     });
   }
 
-  Future<void> _handleToggleSync(bool val) async {
-    final isPro = ref.read(isProProvider);
-    if (!isPro) {
-      _showUpgradeDialog();
-      return;
+  String _formatLastSync(String? timeStr) {
+    if (timeStr == null || timeStr.isEmpty) return 'Never';
+    try {
+      final dt = DateTime.parse(timeStr).toLocal();
+      final now = DateTime.now();
+      final diff = now.difference(dt);
+      if (diff.inSeconds < 60) return 'Just now';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+      if (diff.inHours < 24 && dt.day == now.day) {
+        final hour = dt.hour.toString().padLeft(2, '0');
+        final min = dt.minute.toString().padLeft(2, '0');
+        return 'Today, $hour:$min';
+      }
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return timeStr.contains('T') ? timeStr.split('T').first : timeStr;
     }
+  }
 
+  Future<void> _handleToggleSync(bool val) async {
     if (val) {
       // Explain upload before enabling
       final confirmed = await showDialog<bool>(
@@ -67,52 +80,7 @@ class _CloudSyncScreenState extends ConsumerState<CloudSyncScreen> {
     }
   }
 
-  void _showUpgradeDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(context).brightness == Brightness.dark
-            ? AppColors.darkSurface
-            : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.cloud_sync_rounded, color: AppColors.primary, size: 20),
-            ),
-            const SizedBox(width: 10),
-            const Text('Pro Feature', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          ],
-        ),
-        content: const Text(
-          'Automatic cloud synchronization is available exclusively for VyNotes Pro subscribers. Free users can continue creating, editing, and searching local notes completely offline and export manual backups anytime.',
-          style: TextStyle(fontSize: 13, height: 1.4),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Maybe Later'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.pushNamed(context, '/paywall');
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Upgrade to Pro'),
-          ),
-        ],
-      ),
-    );
-  }
+
 
   Future<void> _handleDeleteCloudData() async {
     final confirmed = await showDialog<bool>(
@@ -243,12 +211,10 @@ class _CloudSyncScreenState extends ConsumerState<CloudSyncScreen> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              isPro
-                                  ? (syncState.cloudSyncEnabled ? 'Active & Synchronizing' : 'Sync is paused')
-                                  : 'Requires VyNotes Pro subscription',
+                              syncState.cloudSyncEnabled ? 'Active & Synchronizing' : 'Sync is paused',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: syncState.cloudSyncEnabled && isPro
+                                color: syncState.cloudSyncEnabled
                                     ? AppColors.matrixEmerald
                                     : (isDark ? AppColors.darkTextSecondary : AppColors.textSecondary),
                               ),
@@ -258,7 +224,7 @@ class _CloudSyncScreenState extends ConsumerState<CloudSyncScreen> {
                       ],
                     ),
                     Switch(
-                      value: syncState.cloudSyncEnabled && isPro,
+                      value: syncState.cloudSyncEnabled,
                       onChanged: _handleToggleSync,
                       activeThumbColor: AppColors.primary,
                     ),
@@ -316,9 +282,7 @@ class _CloudSyncScreenState extends ConsumerState<CloudSyncScreen> {
                   children: [
                     Text('Last Synced', style: TextStyle(fontSize: 13, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
                     Text(
-                      syncState.lastSyncTime != null
-                          ? syncState.lastSyncTime!.split('T').first
-                          : 'Never',
+                      _formatLastSync(syncState.lastSyncTime),
                       style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                     ),
                   ],
@@ -342,7 +306,7 @@ class _CloudSyncScreenState extends ConsumerState<CloudSyncScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: (!isPro || !syncState.cloudSyncEnabled || syncState.isSyncing)
+                    onPressed: (!syncState.cloudSyncEnabled || syncState.isSyncing)
                         ? null
                         : () => ref.read(cloudSyncProvider.notifier).syncNow(ref: ref),
                     style: ElevatedButton.styleFrom(
