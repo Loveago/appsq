@@ -202,58 +202,92 @@ export class AdminService {
     }
 
     try {
-      const [total, users] = await Promise.all([
-        this.prisma.user.count({ where }),
-        this.prisma.user.findMany({
-          where,
-          select: {
-            id: true,
-            email: true,
-            fullName: true,
-            avatarUrl: true,
-            role: true,
-            plan: true,
-            subscriptionTier: true,
-            accountStatus: true,
-            isSuspended: true,
-            suspendedReason: true,
-            trialStartedAt: true,
-            trialEndsAt: true,
-            subscriptionStartedAt: true,
-            subscriptionExpiresAt: true,
-            monthlyAiTokensUsed: true,
-            lastActiveAt: true,
-            lastLoginAt: true,
-            createdAt: true,
-            subscriptions: {
-              where: { status: 'ACTIVE' },
-              take: 1,
-              select: {
-                id: true,
-                provider: true,
-                status: true,
-                autoRenewing: true,
-                expiresAt: true,
-                store: true,
-                productId: true,
+      let total = 0;
+      let users: any[] = [];
+      try {
+        [total, users] = await Promise.all([
+          this.prisma.user.count({ where }),
+          this.prisma.user.findMany({
+            where,
+            select: {
+              id: true,
+              email: true,
+              fullName: true,
+              avatarUrl: true,
+              role: true,
+              plan: true,
+              subscriptionTier: true,
+              accountStatus: true,
+              isSuspended: true,
+              suspendedReason: true,
+              trialStartedAt: true,
+              trialEndsAt: true,
+              subscriptionStartedAt: true,
+              subscriptionExpiresAt: true,
+              monthlyAiTokensUsed: true,
+              lastActiveAt: true,
+              lastLoginAt: true,
+              createdAt: true,
+              subscriptions: {
+                where: { status: 'ACTIVE' },
+                take: 1,
+                select: {
+                  id: true,
+                  provider: true,
+                  status: true,
+                  autoRenewing: true,
+                  expiresAt: true,
+                  store: true,
+                  productId: true,
+                },
+              },
+              _count: {
+                select: {
+                  notes: true,
+                  tasks: true,
+                  meetings: true,
+                  projects: true,
+                  aiConversations: true,
+                },
               },
             },
-            _count: {
-              select: {
-                notes: true,
-                tasks: true,
-                meetings: true,
-                projects: true,
-                aiConversations: true,
-                scannedDocuments: true,
-              },
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+        ]);
+      } catch (innerErr: any) {
+        this.logger.warn(`listUsers inner fallback: ${innerErr?.message}`);
+        [total, users] = await Promise.all([
+          this.prisma.user.count({ where }),
+          this.prisma.user.findMany({
+            where,
+            select: {
+              id: true,
+              email: true,
+              fullName: true,
+              avatarUrl: true,
+              role: true,
+              plan: true,
+              subscriptionTier: true,
+              accountStatus: true,
+              isSuspended: true,
+              suspendedReason: true,
+              trialStartedAt: true,
+              trialEndsAt: true,
+              subscriptionStartedAt: true,
+              subscriptionExpiresAt: true,
+              monthlyAiTokensUsed: true,
+              lastActiveAt: true,
+              lastLoginAt: true,
+              createdAt: true,
             },
-          },
-          orderBy: { createdAt: 'desc' },
-          skip,
-          take: limit,
-        }),
-      ]);
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+          }),
+        ]);
+      }
 
       const now = new Date();
       const enrichedUsers = users.map((u) => {
