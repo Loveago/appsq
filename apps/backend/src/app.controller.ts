@@ -34,11 +34,17 @@ export class AppController {
       `;
       let userCount = -1;
       let userError: string | null = null;
+      let admins: any = [];
       try {
         userCount = await this.prisma.user.count();
+        admins = await this.prisma.user.findMany({
+          where: { role: { in: ['ADMIN', 'SUPERADMIN'] } },
+          select: { id: true, email: true, role: true },
+        });
       } catch (e: any) {
         userError = e.message || String(e);
       }
+
       return {
         status: 'CONNECTED',
         hasDbUrl,
@@ -46,6 +52,7 @@ export class AppController {
         tables,
         userCount,
         userError,
+        admins,
       };
     } catch (err: any) {
       return {

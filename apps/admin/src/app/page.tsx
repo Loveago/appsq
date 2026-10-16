@@ -654,7 +654,7 @@ export default function AdminDashboard() {
     try {
       const data = await adminFetch('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+        body: JSON.stringify({ email: loginEmail.trim(), password: loginPassword.trim() }),
       });
 
       if (!data.accessToken) {
